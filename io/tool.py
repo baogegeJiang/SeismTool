@@ -138,7 +138,7 @@ class quickTaupModel:
     '''
     pre-calculated taup model for quick usage
     '''
-    def __init__(self, modelFile='include/iaspTaupMat'):
+    def __init__(self, modelFile=os.path.dirname(__file__)+'/../data/iaspTaupMat'):
         matload = sio.loadmat(modelFile)
         self.interpP = interp.interp2d(matload['dep'].reshape([-1]),\
             matload['deg'].reshape([-1]), matload['taupMatP'])
@@ -1490,7 +1490,7 @@ def loadPRF1(file='PRF1'):
     M=np.loadtxt(file)
     return M.reshape(phaseN,testSetN,thresN,pN,trainSetN)
 
-def plotPRF1(M=loadPRF1()):
+def plotPRF1(M):#=loadPRF1()):
     trainSetN=8
     testSetN=2
     pN=5
@@ -1912,7 +1912,7 @@ def compDateD():
             pass
         cmpD[sta]=[num, numBtz, dnum, dnumBtz]
     return cmpD
-'''
+
 class Record(list):
     '''
     the basic class 'Record' used for single station's P and S record
@@ -2853,4 +2853,3 @@ class QuakeCC(Quake):
         self.tmpName=tmpName
         self.filename=self.getFilename()
         return self
-'''

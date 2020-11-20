@@ -346,7 +346,7 @@ def getReloc(quakeL,filename='abc'):
             line=line.split()
             time=quakeL[0].tomoTime(line)
             index=int(line[0])
-            print(quakeL[index].time-time)
+            print(quakeL[index]['time']-time)
             quakeRelocL.append(quakeL[index])
             quakeRelocL[-1].getReloc(line)
     return quakeRelocL

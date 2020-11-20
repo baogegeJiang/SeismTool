@@ -561,8 +561,7 @@ class Quake(Dist):
             if T3.bTime<0:
                 continue
             T3.adjust(kzTime=self['time'],pTime=pTime,sTime=sTime,net=staL[staIndex].sta['net'],\
-                sta=staL[staIndex].sta['sta'],stloc=staL[staIndex].sta.loc(),eloc=self.loc)
-            
+                sta=staL[staIndex].sta['sta'],stloc=staL[staIndex].sta.loc(),eloc=self.loc())
             T3.write(filenames)
         return self.calML(staInfos=staInfos,T3L=T3L)
     def loadSacs(self,staInfos,matDir='output',\
@@ -668,14 +667,14 @@ class Quake(Dist):
                     data.write(resSacNames[i],format='SAC')
         print(tmpDir,len(glob(tmpDir+'/*Z')))
         return None
-    def calML(self, staInfos,minSACount=3,T3L=None):
+    def calML(self, staInfos=[],minSACount=3,T3L=None):
         def getSA(data):
             data=data-data.mean()
             return data.cumsum(axis=0).max()
         ml = 0
         sACount=0
         for i in range(len(self.records)):
-            record = self.records[0]
+            record = self.records[i]
             T3 =  T3L[i]
             if T3.bTime <0 or record['sTime']<0:
                 continue
@@ -683,6 +682,7 @@ class Quake(Dist):
             if len(data)==0:
                 continue
             sA  = getSA(data)*T3.delta
+            #print(staInfos,record['staIndex'])
             dk = self.dist(staInfos[record['staIndex']]) 
             ml+=np.log10(sA)+1.1*np.log10(dk)+0.00189*dk-2.09-0.23
             sACount+=1
@@ -1372,6 +1372,8 @@ class Trace3(obspy.Stream):
         #print(bTime,eTime)
         new = self.slice(bTime,eTime,nearest_sample=True)
         n = round((eTime.timestamp-bTime.timestamp)/self.delta)+1
+        if n<0:
+            return np.zeros([0,len(self)],np.float32)
         data = np.zeros([n,len(self)],np.float32)
         for i in range(len(self)):
             if new[i].data.size >= n:
@@ -1396,6 +1398,8 @@ class Trace3(obspy.Stream):
             return T0
         bTime = UTCDateTime(bTime)
         eTime = UTCDateTime(eTime)
+        if bTime> eTime:
+            return T0
         new=Trace3(super().slice(bTime,eTime,nearest_sample=nearest_sample))
         new.compStr =self.compStr
         new.dis=self.dis
@@ -1459,7 +1463,7 @@ def saveSacs(staL, quakeL, staInfos,matDir='output/',\
     if not os.path.exists(matDir):
         os.mkdir(matDir)
     for i in range(len(quakeL)):
-         quakeL[i].ml=quakeL[i].saveSacs(staL, i,\
+         quakeL[i].ml=quakeL[i].saveSacs(staL, staInfos,\
           matDir=matDir,index0=index0,index1=index1,dtype=dtype)
 #用一个文件存相关信息，然后根据文件载入,实验一下，小台阵
 #明天看有无问题

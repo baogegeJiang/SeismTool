@@ -10,17 +10,14 @@ import math
 from numba import jit
 from ..mathTool.mathFunc_bak import getDetec, prob2color
 from ..io import tool
-from ..io.seism import getTrace3ByFileName,Quake,QuakeL,Record
+from ..io.seism import getTrace3ByFileName,Quake,QuakeL,Record,QuakeCC,RecordCC
 from ..io.sacTool import staTimeMat
 
 from ..mapTool.mapTool import readFault
 import mpl_toolkits.basemap as basemap
-
-
-
 maxA=2e19
-os.environ["MKL_NUM_THREADS"] = "10"
-faultL = readFault('Chinafault_fromcjw.dat')
+os.environ["MKL_NUM_THREADS"] = "32"
+faultL = readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
 @jit
 def isZeros(a):
     new = a.reshape([-1,10,a.shape[-1]])
@@ -558,7 +555,7 @@ def showExampleV2(filenameL,modelL,delta=0.02,t=[],staName='sta'):
 
 def plotRes(staL, quake, filename=None):
     colorStr='br'
-    for record in quake:
+    for record in quake.records:
         color=0
         pTime=record['pTime']
         sTime=record['sTime']
@@ -633,7 +630,7 @@ def plotResS(staL,quakeL, outDir='output/'):
         #    pass
 
 def plotQuakeL(staL,quakeL,laL,loL,outDir='output/'):
-    dayIndex = int(quakeL[-1].time/86400)
+    dayIndex = int(quakeL[-1]['time']/86400)
     Ymd = obspy.UTCDateTime(dayIndex*86400).strftime('%Y%m%d')
     filename = '%s/%s_quake_loc.jpg'%(outDir,Ymd)
     dayDir=os.path.dirname(filename)
