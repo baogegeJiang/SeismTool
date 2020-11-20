@@ -431,7 +431,7 @@ class Quake(Dist):
         if self['randID'] == None:
             self['randID']=int(10000*np.random.rand(1))
         if self['filename'] == None:
-            self['filename'] = self.getFilename() 
+            self['filename'] = self.getFileName() 
     def defaultSet(self):
         #               quake: 34.718277 105.928949 1388535219.080064 num: 7 index: 0    randID: 1    filename: 16071/1388535216_1.mat -0.300000
         super().defaultSet()
@@ -494,6 +494,17 @@ class Quake(Dist):
         return self['time']==self1['time']
     def staIndexs(self):
         return [record['staIndex'] for record in self.records]
+    def getReloc(self,line):
+        self['time']=self.tomoTime(line)
+        self['la']=float(line[1])
+        self['lo']=float(line[2])
+        self['dep']=float(line[3])
+        return self
+    def tomoTime(self,line):
+        m=int(line[14])
+        sec=float(line[15])
+        return UTCDateTime(int(line[10]),int(line[11]),int(line[12])\
+            ,int(line[13]),m+int(sec/60),sec%60).timestamp
     def resDir(self,resDir):
         return '%s/%s/'%(resDir,self.name(s='_'))
     def select(self,req):
@@ -549,7 +560,7 @@ class Quake(Dist):
             T3L.append(T3)
             if T3.bTime<0:
                 continue
-            T3.adjust(kzTime=self.time,pTime=pTime,sTime=sTime,net=staL[staIndex].sta['net'],\
+            T3.adjust(kzTime=self['time'],pTime=pTime,sTime=sTime,net=staL[staIndex].sta['net'],\
                 sta=staL[staIndex].sta['sta'],stloc=staL[staIndex].sta.loc(),eloc=self.loc)
             
             T3.write(filenames)
@@ -895,6 +906,10 @@ class QuakeL(list):
         self.inQuake = {}
         self.inRecord= {}
         self.keys = ['#','*','q-','d-',' ',' ']
+        if 'mode' in kwargs:
+            if kwargs['mode']=='CC':
+                self.Quake= QuakeCC
+                self.Record=RecordCC
         if 'Quake' in kwargs:
             self.Quake = kwargs['Quake']
         else:
@@ -1234,7 +1249,8 @@ from scipy import interpolate
 iasp91 = TauPyModel(model="iasp91")
 
 class taup:
-    def __init__(self,quickFile='iasp91_time',phase_list=['P','p'], recal=False):
+    def __init__(self,quickFile='iasp91_time',phase_list=['P','p'], \
+        recal=False):
         self.dep = np.arange(0,1500,25)
         self.dist= np.arange(0.1,180,2)
         quickFileNew = quickFile
@@ -1243,7 +1259,8 @@ class taup:
         if not os.path.exists(quickFileNew) or recal:
             self.genFile(quickFileNew,phase_list)
         self.M = np.loadtxt(quickFileNew)
-        self.interpolate = interpolate.interp2d(self.dep,self.dist,self.M,\
+        self.interpolate = interpolate.interp2d(self.dep,self.dist,\
+            self.M,\
             kind='linear',bounds_error=False,fill_value=1e-8)
     def genFile(self,quickFile='iasp91_timeP',phase_list=['P','p'] ):
         M = np.zeros([len(self.dist),len(self.dep)])
@@ -1282,7 +1299,8 @@ class Trace3(obspy.Stream):
         self.sTime=sTime
         self.pTime,self.sTime=self.getPSTime()
         self.delta=self.Delta()
-        self.bTime,self.eTime=self.getTimeLim(bTime=UTCDateTime(1970,1,1),eTime=UTCDateTime(2099,1,1),delta=delta)
+        self.bTime,self.eTime=self.getTimeLim(bTime=UTCDateTime(1970,1,1),\
+            eTime=UTCDateTime(2099,1,1),delta=delta)
         if self.bTime>=self.eTime:
             self.dis=180*110
             self.pTime=pTime
@@ -1293,7 +1311,8 @@ class Trace3(obspy.Stream):
             return
         if delta>0 and delta!=self.delta:
             for i in range(len(self)):
-                self[i].interpolate(1/self.delta, method='nearest', starttime=self.bTime,\
+                self[i].interpolate(1/self.delta, method='nearest',\
+                 starttime=self.bTime,\
                  npts=int((self.eTime-self.bTime)/self.delta))
             decMul= round(delta/self.delta)
             self.decimate(decMul,no_filter=True)
@@ -1304,9 +1323,11 @@ class Trace3(obspy.Stream):
         sTime = self.sTime
         if 'sac' in self[0].stats:
             if 't0' in self[0].stats['sac'] and pTime<0:
-                pTime=self[0].stats['starttime']+self[0].stats['sac']['t0']-self[0].stats['sac']['b']
+                pTime=self[0].stats['starttime']+self[0].stats['sac']['t0']\
+                -self[0].stats['sac']['b']
             if 't1' in self[0].stats['sac'] and sTime<0:
-                sTime=self[0].stats['starttime']+self[0].stats['sac']['t1']-self[0].stats['sac']['b']
+                sTime=self[0].stats['starttime']+self[0].stats['sac']['t1']\
+                -self[0].stats['sac']['b']
             if pTime>0 and sTime>0 and self.dis==180*110:
                 self.dis=(sTime.timestamp-pTime.timestamp)*6/0.7
         return pTime,sTime
@@ -1433,7 +1454,13 @@ def getTrace3ByFileName(sacFileNamesL, delta0=0.02, freq=[-1, -1], \
         return Trace3([])
     #print('read',time1-time0,'dec',time2-time1)
     #return Data(dataL[0], dataL[1], dataL[2], dataL[3], freq,dataL[4],dataL[5],dataL[6])
-
+def saveSacs(staL, quakeL, staInfos,matDir='output/',\
+    index0=-500,index1=500,dtype=np.float32):
+    if not os.path.exists(matDir):
+        os.mkdir(matDir)
+    for i in range(len(quakeL)):
+         quakeL[i].ml=quakeL[i].saveSacs(staL, i,\
+          matDir=matDir,index0=index0,index1=index1,dtype=dtype)
 #用一个文件存相关信息，然后根据文件载入,实验一下，小台阵
 #明天看有无问题
 #降采和对齐的先后顺序可能有影响

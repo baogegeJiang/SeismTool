@@ -1,13 +1,13 @@
 import dispersion as d
 import os
 from imp import reload
+import random
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 import mathFunc
-import fcn
-import seism
-import random
+from ..deepLearning import fcn
+from ..io import seism
 import DSur
 #主要还是需要看如何分批次更新
 #提前分配矩阵可能不影响

@@ -2,10 +2,11 @@ import numpy as np
 import os 
 from scipy import interpolate,stats
 from matplotlib import pyplot as plt
-from distaz import DistAz
-from netCDF4 import Dataset
-import mapTool as mt
 import pycpt
+from netCDF4 import Dataset
+from ..mapTool import mapTool as mt
+from ..mathTool.distaz import DistAz
+
 cmap = pycpt.load.gmtColormap('cpt/temperatureInv')
 ##程序中又控制的大bug
 ##必须按顺序(period source)

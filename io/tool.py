@@ -42,946 +42,7 @@ def getYmdHMSj(date):
     return YmdHMSj
 
 
-class Record(list):
-    '''
-    the basic class 'Record' used for single station's P and S record
-    it's based on python's default list
-    [staIndex pTime sTime]
-    we can setByLine
-    we provide a way to copy
-    '''
-    def __init__(self,staIndex=-1, pTime=-1, sTime=-1, pProb=100, sProb=100):
-        super(Record, self).__init__()
-        self.append(staIndex)
-        self.append(pTime)
-        self.append(sTime)
-        self.append(pProb)
-        self.append(sProb)
-    def __repr__(self):
-        return self.summary()
-    def summary(self):
-        Summary='%d'%self[0]
-        for i in range(1,len(self)):
-            Summary=Summary+" %f "%self[i]
-        Summary=Summary+'\n'
-        return Summary
-    def copy(self):
-        return Record(self[0],self[1],self[2])
-    def getStaIndex(self):
-        return self[0]
-    def staIndex(self):
-        return self.getStaIndex()
-    def pTime(self):
-        return self[1]
-    def sTime(self):
-        return self[2]
-    def pProb(self):
-        return self[-2]
-    def sProb(self):
-        return self[-1]
-    def setByLine(self,line):
-        if isinstance(line,str):
-            line=line.split()
-        self[0]=int(line[0])
-        for i in range(1,len(line)):
-            self[i]=float(line[i])
-        return self
-    def set(self,line,mode='byLine'):
-        return self.setByLine(line)
-    def clear(self):
-            self[1]=.0
-            self[2]=.0
-    def selectByReq(self,req={},waveform=None,oTime=None):
-        '''
-        maxDT oTime
-        minSNR tLBe tlAf
-        minP(modelL, predictLongData)
-        '''
-        if 'minRatio' in req and oTime!=None:
-            if self.pTime()>0 and self.sTime()>0:
-                if (self.sTime()-oTime)/(self.pTime()-oTime)<req['minRatio']:
-                    self.clear()
-        if 'maxDT' in req and 'oTime' in req:
-            if self.pTime()>0 and \
-                self.pTime()-req['oTime']>req['maxDT']:
-                self.clear()
-        if isinstance(waveform,dict):
-            if 'minSNR' in req :
-                if self.calSNR(req,waveform)< req['minSNR']:
-                    self.clear()
-            if 'minP' in req or 'minS' in req :
-                p, s = self.calPS(req, waveform)
-                if 'minP' in req:
-                    if p < req['minP']:
-                        self[1] = 0.
-                if 'minS' in req:
-                    if s < req['minS']:
-                        self[2] = 0.
-        return self
-    def calSNR(self,req={},waveform=None):
-        '''
-        tLBe tlAf
-        '''
-        if not isinstance(waveform,dict):
-            return -1
-        staIndexNew=np.where(waveform['staIndexL'][0]==self.getStaIndex())[0]
-        i0=np.where(waveform['indexL'][0]==0)[0]
-        delta=waveform['deltaL'][0][staIndexNew]
-        if delta==0:
-            return -1
-        iN=waveform['indexL'][0].size
-        tLBe=[-15,-5]
-        tLAf=[0,10]
-        if 'tLBe' in req:
-            tlBe=tLBe
-        if 'tLAf' in req:
-            tLAf=tLAf
-        isBe=int(max(0,i0+int(tLBe[0]/delta)))
-        ieBe=int(i0+int(tLBe[1]/delta))
-        isAf=int(i0+int(tLAf[0]/delta))
-        ieAf=int(min(iN-1,i0+int(tLAf[1]/delta)))
-        aBe=np.abs(waveform['pWaveform'][staIndexNew,isBe:ieBe]).max()
-        aAf=np.abs(waveform['pWaveform'][staIndexNew,isAf:ieAf]).max()
-        return aAf/(aBe+1e-9)
-    def calPS(self,req={},waveform=None):
-        '''
-        tLBe tlAf
-        '''
-        if not isinstance(waveform,dict):
-            return -1
-        staIndexNew=np.where(waveform['staIndexL'][0]==self.getStaIndex())[0][0]
-        i0=np.where(waveform['indexL'][0]==0)[0][0]
-        delta=waveform['deltaL'][0][staIndexNew]
-        if delta==0:
-            return -1
-        p = -1
-        s = -1
-        if self.pProb()<=1:
-            p = self.pProb()
-            s = self.sProb()
-            return p, s
-        if 'modelL' in req and 'predictLongData' in req:
-            modelL = req['modelL']
-            if self.pTime()>100 and 'minP' in req:
-                predictLongData = req['predictLongData']
-                y = predictLongData(modelL[0], waveform['pWaveform'][staIndexNew])
-                #print(y.shape)
-                p = y[int(i0-5):int(i0+5)].max()
-            if self.sTime()>100 and 'minS' in req:
-                predictLongData = req['predictLongData']
-                y = predictLongData(modelL[1], waveform['sWaveform'][staIndexNew])
-                s = y[int(i0-5):int(i0+5)].max()
-        #print(p,s)
-        return p, s
 
-#MLI  1976/01/01 01:29:39.6 -28.61 -177.64  59.0 6.2 0.0 KERMADEC ISLANDS REGION 
-class Quake(list):
-    '''
-    a basic class 'Quake' used for quake's information and station records
-    it's baed on list class
-    the elements in list are composed by Records
-    the basic information: loc, time, ml, filename, randID
-    we use randID to distinguish time close quakes
-    you can set the filename (file path) storing the waveform by yourself in .mat form
-    otherwise, we would generate the file like dayNum/time_randID.mat
-
-    we provide way for set by line/WLX/Mat and from IRIS/NDK
-    '''
-    def __init__(self, loc=[-999, -999,10], time=-1, randID=None, filename=None, ml=None):
-        super(Quake, self).__init__()
-        self.loc = [0,0,0]
-        self.loc[:len(loc)]=loc
-        self.time = time
-        self.ml=ml
-        if randID != None:
-            self.randID=randID
-        else:
-            self .randID=int(10000*np.random.rand(1))
-        if filename != None:
-            self.filename = filename
-        else:
-            self.filename = self.getFilename()
-    def __repr__(self):
-        return self.summary()
-    def summary(self,count=0,inShort=False):
-        ml=-9
-        if self.ml!=None:
-            ml=self.ml
-        if inShort:
-            return '%.2f %.4f %.4f %.1f %.1f '%(self.time, self.loc[0]\
-                , self.loc[1], self.loc[2], self.ml)
-        Summary='quake: %f %f %f num: %d index: %d randID: %d filename: \
-            %s %f %f\n' % (self.loc[0], self.loc[1],\
-            self.time, self.num(),count, self.randID, \
-            self.filename,ml,self.loc[2])
-        return Summary
-
-    def getFilename(self):
-        dayDir = str(int(self.time/86400))+'/'
-        return dayDir+str(int(self.time))+'_'+str(self.randID)+'.mat'
-
-    def append(self, addOne):
-        if isinstance(addOne, Record):
-            super(Quake, self).append(addOne)
-        else:
-            raise ValueError('should pass in a Record class')
-
-    def copy(self):
-        quake=Quake(loc=self.loc,time=self.time,randID=self.randID,filename=self.filename\
-            ,ml=self.ml)
-        for record in self:
-            quake.append(record.copy())
-        return quake
-
-    def set(self,line,mode='byLine'):
-        if mode=='byLine':
-            return self.setByLine(line)
-        elif mode=='fromNDK':
-            return self.setFromNDK(line)
-        elif mode=='fromIris':
-            return self.setFromIris(line)
-        elif mode=='byWLX':
-            return self.setByWLX(line)
-        elif mode=='byMat':
-            return self.setByMat(line)
-    def setByLine(self,line):
-        if len(line) >= 4:
-            if len(line)>12:
-                self.loc = [float(line[1]), float(line[2]),float(line[-1])]
-            else:
-                self.loc = [float(line[1]), float(line[2]),0.]
-            if len(line)>=14:
-                self.ml=float(line[-2])
-            self.time = float(line[3])
-            self.randID=int(line[9])
-            self.filename=line[11]
-        return self
-    def setFromNDK(self,line):
-        sec=float(line[22:26])
-        self.time=UTCDateTime(line[5:22]+"0.00").timestamp+sec
-        self.loc=[float(line[27:33]),float(line[34:41]),float(line[42:47])]
-        m1=float(line[48:55].split()[0])
-        m2=float(line[48:55].split()[-1])
-        self.ml=max(m1,m2)
-        self.filename = self.getFilename()
-        return self
-    def setFromIris(self,line):
-        line=line.split('|')
-        self.time=UTCDateTime(line[1]).timestamp
-        self.loc[0]=float(line[2])
-        self.loc[1]=float(line[3])
-        self.loc[2]=float(line[4])
-        self.ml=float(line[10])
-        self.filename = self.getFilename()
-        return self
-
-    def setByWLX(self,line,staInfos=None):
-        self.time=UTCDateTime(line[:22]).timestamp
-        self.loc=[float(line[23:29]),float(line[30:37]),float(line[38:41])]
-        self.ml=float(line[44:])
-        self.filename=self.getFilename()
-        return self
-
-    def setByMat(self,q):
-        pTimeL=q[0].reshape(-1)
-        sTimeL=q[1].reshape(-1)
-        PS=q[2].reshape(-1)
-        self.randID=1
-        self.time=matTime2UTC(PS[0])
-        self.loc=PS[1:4]
-        self.ml=PS[4]
-        self.filename=self.getFilename()
-        for i in range(len(pTimeL)):
-            pTime=0
-            sTime=0
-            if pTimeL[i]!=0:
-                pTime=matTime2UTC(pTimeL[i])
-                if sTimeL[i]!=0:
-                    sTime=matTime2UTC(sTimeL[i])
-                self.append(Record(i,pTime,sTime))
-        return self
-
-    def getReloc(self,line):
-        self.time=self.tomoTime(line)
-        self.loc[0]=float(line[1])
-        self.loc[1]=float(line[2])
-        self.loc[2]=float(line[3])
-        return self
-
-    def tomoTime(self,line):
-        m=int(line[14])
-        sec=float(line[15])
-        return UTCDateTime(int(line[10]),int(line[11]),int(line[12])\
-            ,int(line[13]),m+int(sec/60),sec%60).timestamp
-
-    def calCover(self,staInfos,maxDT=None):
-        '''
-        calculate the radiation coverage
-        '''
-        coverL=np.zeros(360)
-        for record in self:
-            if record.pTime()==0 and record.sTime()==0:
-                continue
-            if maxDT!=None:
-                if record.pTime()-self.time>maxDT:
-                    continue
-            staIndex= int(record[0])
-            la=staInfos[staIndex]['la']
-            lo=staInfos[staIndex]['lo']
-            dep=staInfos[staIndex]['dep']/1e3
-            delta,dk,Az=self.calDelta(la,lo,dep)
-            R=int(60/(1+dk/200)+60)
-            N=((int(Az)+np.arange(-R,R))%360).astype(np.int64)
-            coverL[N]=coverL[N]+1
-        L=((np.arange(360)+180)%360).astype(np.int64)
-        coverL=np.sign(coverL)*np.sign(coverL[L])*(coverL+coverL[L])
-        coverRate=np.sign(coverL).sum()/360
-        return coverRate
-
-    def getPTimeL(self,staInfos):
-        timePL=np.zeros(len(staInfos))
-        for record in self:
-            if record.pTime()!=0:
-                timePL[record.getStaIndex()]=record.pTime()
-        return timePL
-        
-    def getSTimeL(self,staInfos):
-        timeSL=np.zeros(len(staInfos))
-        for record in self:
-            if record.sTime()!=0:
-                timeSL[record.getStaIndex()]=record.sTime()
-        return timeSL
-
-    def findTmpIndex(self,staIndex):
-        count=0
-        for record in self:
-            if int(record.getStaIndex())==int(staIndex):
-                return count
-            count+=1
-        return -999
-
-    def setRandIDByMl(self):
-        self.randID=int(np.floor(np.abs(10+self.ml)*100));
-        namePre=self.filename.split('_')[0]
-        self.filename=namePre+'_'+str(self.randID)+'.mat'
-
-    def outputWLX(self):
-        Y=getYmdHMSj(UTCDateTime(self.time))
-        tmpStr=Y['Y']+'/'+Y['m']+'/'+Y['d']+' '+\
-        Y['H']+':'+Y['M']+':'+'%05.2f'%(self.time%60)+\
-        ' '+'%6.3f %7.3f %3.1f M %3.1f'%(self.loc[0],\
-            self.loc[1],self.loc[2],self.ml)
-        return tmpStr
-
-    def num(self,maxDT=None): 
-        count=0
-        for record in self:
-            if record.pTime()==0 and record.sTime()==0:
-                continue
-            if maxDT!=None:
-                if record.pTime()-self.time>maxDT:
-                    continue
-            count+=1
-        return count
-
-    def calDelta(self,la,lo,dep=0):
-        D=DistAz(la,lo,self.loc[0],self.loc[1])
-        delta=D.getDelta()
-        dk=D.degreesToKilometers(delta)
-        dk=np.linalg.norm(np.array([dk,self.loc[2]+dep]))
-        Az=D.getAz()
-        return delta,dk,Az
-
-    def calDeltaDt(self,staInfos):
-        deltaP=[]
-        deltaS=[]
-        dtP=[]
-        dtS=[]
-        dkP=[]
-        dkS=[]
-        for record in self:
-            staIndex=record.staIndex()
-            la=staInfos[staIndex]['la']
-            lo=staInfos[staIndex]['lo']
-            dep=staInfos[staIndex]['dep']/1e3
-            delta,dk,Az=self.calDelta(la,lo,dep)
-            if record.pTime()>0:
-                deltaP.append(delta)
-                dkP.append(dk)
-                dtP.append(record.pTime()-self.time)
-            if record.sTime()>0:
-                deltaS.append(delta)
-                dtS.append(record.sTime()-self.time)
-                dkS.append(dk)
-        return deltaP,dkP,dtP,deltaS,dkS,dtS
-
-    def calTimePS(self):
-        PS=[]
-        for record in self:
-            if record.pTime()>0 and record.sTime()>0:
-                PS.append([record.pTime()-self.time,\
-                    record.sTime()-self.time])
-        return PS
-
-    def selectByReq(self,req={},waveform=None,isPrint=False):
-        '''
-        bTime eTime ((R inR) minDis maxDis) minMl maxDep \
-        minCover outDir (maxErr locator --maxDTLoc) minSta
-        
-        Record:
-            maxDT (oTime)
-            minSNR (tLBe tlAf)
-        
-        '''
-        maxDTLoc=None
-        if 'maxDTLoc' in req:
-            maxDTLoc=req['maxDTLoc']
-        if 'bTime' in req:
-            if self.time<req['bTime']:
-                if isPrint:
-                    print('before bTime')
-                return False
-        if 'eTime' in req:
-            if self.time > req['eTime']:
-                if isPrint:
-                    print('after bTime')
-                return False
-        if 'R' in req:
-            R=req['R']
-            if 'inR' in req and (self.loc[0]<R[0] or \
-                self.loc[0]>R[1] or self.loc[1]<R[2] or self.loc[1]>R[3]):
-                if req['inR']:
-                    if isPrint:
-                        print('not in R')
-                    return False
-            if 'minDis' in req or 'maxDis' in req:
-                midLa=(R[0]+R[1])/2
-                midLo=(R[2]+R[3])/2
-                delta=self.calDelta(midLa,midLo)
-                if 'minDis' in req:
-                    if delta<req['minDis'] :
-                        if isPrint:
-                            print('less than minDis')
-                        return False  
-                if 'maxDis' in req:
-                    if delta>req['maxDis'] :
-                        if isPrint:
-                            print('more than maxDis')
-                        return False
-        if 'minMl' in req:
-            if self.ml<req['minMl']:
-                if isPrint:
-                    print('less than minML')
-                return False
-        if 'maxDep' in req:
-            if self.loc[2]>req['maxDep']:
-                if isPrint:
-                    print('deeper than maxDeep')
-                return False
-        if 'minSta' in req:
-            if self.num(maxDTLoc)< req['minSta']:
-                if isPrint:
-                    print('not enough records')
-                return False
-        if 'minCover' in req and 'staInfos' in req:
-            if self.calCover(req['staInfos'],maxDTLoc)<req['minCover']:
-                if isPrint:
-                    print('not enough ray coverage')
-                return False
-        for record in self:
-            req['oTime']=self.time
-            for record in self:
-                record.selectByReq(req,waveform,self.time)
-        if 'minCover' in req and 'staInfos' in req:
-            if self.calCover(req['staInfos'],maxDTLoc)<req['minCover']:
-                if isPrint:
-                    print('not enough ray coverage')
-                return False
-        if 'outDir' in req :
-            if not os.path.exists(req['outDir']+self.filename):
-                if isPrint:
-                    print('no file')
-                return False
-        if 'maxErr' in req and 'locator' in req:
-            if 'maxDTLoc' in req:
-                maxDT=req['maxDTLoc']
-            else:
-                maxDT=30
-            self,res=req['locator'].locate(self,maxDT=maxDT,\
-                isDel=True,maxErr=req['maxErr'])
-            if 'maxStd' in req:
-                if res>req['maxStd']:
-                    if isPrint:
-                        if res == 999:
-                            print('not enough record to locate')
-                        else:
-                            print('too much erro')
-                    return False
-        if 'minSta' in req:
-            if self.num(maxDTLoc) < req['minSta']:
-                if isPrint:
-                    print('not enough records')
-                return False
-        return True
-
-    def loadWaveform(self,matDir='output',\
-        isCut=False,index0=-250,index1=250,\
-        f=[-1,-1],filtOrder=2):
-        fileName = matDir+'/'+self.filename
-        waveform=sio.loadmat(fileName)
-        if f[0]>0:
-            if len(waveform['deltaL'])==0:
-                print('wrong delta')
-                return None
-            f0=0.5/waveform['deltaL'].max()
-            b, a = signal.butter(filtOrder, [f[0]/f0,f[1]/f0], 'bandpass')
-            waveform['pWaveform']=signal.filtfilt(b,a,waveform['pWaveform'],axis=1)
-            waveform['sWaveform']=signal.filtfilt(b,a,waveform['sWaveform'],axis=1)
-        if isCut:
-            i0=np.where(waveform['indexL'][0]==index0)[0][0]
-            i1=np.where(waveform['indexL'][0]==index1)[0][0]
-            waveform['pWaveform']=waveform['pWaveform'][:,i0:i1,:].\
-            astype(np.float32)
-            waveform['sWaveform']=waveform['sWaveform'][:,i0:i1,:].\
-            astype(np.float32)
-            waveform['indexL']=[waveform['indexL'][0][i0:i1]]
-        return waveform
-
-    def isP(self,staIndex):
-        for record in self:
-            if record.getStaIndex()==staIndex and record.pTime()>0:
-                return True
-        return False
-
-    def isS(self,staIndex):
-        for record in self:
-            if record.getStaIndex()==staIndex and record.sTime()>0:
-                return True
-        return False
-
-    def saveWaveform(self,staL, quakeIndex, matDir='output/'\
-    ,index0=-500,index1=500,dtype=np.float32):
-        indexL = np.arange(index0, index1)
-        iNum=indexL.size
-        fileName = matDir+'/'+self.filename
-        loc=self.loc
-        dayDir=os.path.dirname(fileName)
-        if not os.path.exists(dayDir):
-            os.mkdir(dayDir)
-        pWaveform = np.zeros((len(self), iNum, 3),dtype=dtype)
-        sWaveform = np.zeros((len(self), iNum, 3),dtype=dtype)
-        staIndexL = np.zeros(len(self))
-        pTimeL = np.zeros(len(self))
-        sTimeL = np.zeros(len(self))
-        deltaL = np.zeros(len(self))
-        ml=0
-        sACount=0
-        for i in range(len(self)):
-            record = self[i]
-            staIndex = record.getStaIndex()
-            pTime = record.pTime()
-            sTime = record.sTime()
-            staIndexL[i] = staIndex
-            pTimeL[i] = pTime
-            sTimeL[i] = sTime
-            if pTime != 0:
-                try:
-                    pWaveform[i, :, :] = staL[staIndex].data.getDataByTimeLQuick\
-                    (pTime + indexL*staL[staIndex].data.delta)
-                except:
-                    print("wrong p wave")
-                else:
-                    pass
-                deltaL[i] = staL[staIndex].data.delta
-            if sTime != 0:
-                try:
-                    sWaveform[i, :, :] = staL[staIndex].data.getDataByTimeLQuick\
-                    (sTime + indexL*staL[staIndex].data.delta)
-                except:
-                    print("wrong s wave")
-                else:
-                    deltaL[i]= staL[staIndex].data.delta
-                    dk=DistAz(staL[staIndex].loc[0],staL[staIndex].loc[1],loc[0],loc[1]).getDelta()*111.19
-                    sA=getSA(sWaveform[i, :, :])*staL[staIndex].data.delta
-                    ml=ml+np.log10(sA)+1.1*np.log10(dk)+0.00189*dk-2.09-0.23
-                    sACount+=1
-        if sACount==0:
-            ml=-999
-        else:
-            ml/=sACount
-        sio.savemat(fileName, {'time': self.time, 'loc': self.loc, \
-            'staIndexL': staIndexL, 'pTimeL': pTimeL, 'pWaveform': \
-            pWaveform, 'sTimeL': sTimeL, 'sWaveform': sWaveform, \
-            'deltaL': deltaL, 'indexL': indexL,'ml':ml})
-        return ml
-    def saveSacs(self,staL, quakeIndex, matDir='output/'\
-    ,index0=-500,index1=500,dtype=np.float32):
-        indexL = np.arange(index0, index1)
-        iNum=indexL.size
-        eventDir = matDir+'/'+self.filename.split('.mat')[0]+'/'
-        loc=self.loc
-        if not os.path.exists(eventDir):
-            os.makedirs(eventDir)
-        ml=0
-        sACount=0
-        for i in range(len(self)):
-            record = self[i]
-            staIndex = record.getStaIndex()
-            pTime = record.pTime()
-            sTime = record.sTime()
-            bTime = self.time-20
-            eTime = max(pTime,sTime)+40
-            bTime,eTime=staL[staIndex].data.getTimeLim(bTime,eTime)
-            if bTime>=eTime:
-                continue
-            filenames=staL[staIndex].sta.baseSacName(resDir=eventDir)
-            T3 = staL[staIndex].data.slice(bTime,eTime,nearest_sample=True)
-            T3.adjust(kzTime=self.time,pTime=pTime,sTime=sTime,net=staL[staIndex].sta['net'],\
-                sta=staL[staIndex].sta['sta'],stloc=staL[staIndex].sta.loc(),eloc=self.loc)
-            if T3.bTime>0:
-                T3.write(filenames)
-        return ml
-    def loadSacs(self,staInfos,matDir='output',\
-        f=[-1,-1],filtOrder=2):
-        T3L=[]
-        eventDir = matDir+'/'+self.filename.split('.mat')[0]+'/'
-        for record in self:
-            staIndex = record.getStaIndex()
-            sacsFile = staInfos[staIndex].baseSacName(resDir=eventDir)
-            sacFilesL = [[tmp] for tmp in sacsFile]
-            T3L.append(getDataByFileName(sacFilesL,pTime=record.pTime(),\
-                sTime=record.sTime()))
-            T3L.filt(f,filtOrder)
-        return T3L
-    def loadPSSacs(self,staInfos,matDir='output',\
-        isCut=False,index0=-250,index1=250,\
-        f=[-1,-1],filtOrder=2):
-        T3L = self.loadSacs(staInfos,f=f,filtOrder=filtOrder,matDir=matDir)
-        T3PL=[]
-        T3SL=[]
-        for T3 in T3L:
-            T3PL.append(T3.slice(T3.pTime+index0*T3.delta,\
-                T3.pTime+index1*T3.delta))
-            T3SL.append(T3.slice(T3.sTime+index0*T3.delta,\
-                T3.sTime+index1*T3.delta))
-        return T3SL,T3SL
-
-    def calML(self, staInfos, matDir='output/',minSACount=3,waveform=None):
-        if not isinstance(waveform,dict):
-            waveform=self.loadWaveform(matDir=matDir)
-        ml=0
-        loc=self.loc
-        sACount=0
-        if len(waveform['staIndexL'])<=0:
-            ml=-999
-            print('wrong ml')
-            return ml
-        for i in range(len(waveform['staIndexL'][0])):
-            if waveform['sTimeL'][0][i]!=0:
-                staIndex=int(waveform['staIndexL'][0][i])
-                dk=DistAz(staInfos[staIndex]['la'],\
-                    staInfos[staIndex]['lo'],loc[0],loc[1]).getDelta()*111.19
-                if dk<30 or dk>300:
-                    continue
-                sA=getSA(waveform['sWaveform'][i, :, :])*waveform['deltaL'][0][i]
-                ml=ml+np.log10(sA)+1.1*np.log10(dk)+0.00189*dk-2.09-0.23
-                sACount+=1
-        if sACount<minSACount:
-            ml=-999
-        else:
-            ml/=sACount
-        self.ml=ml
-        print(sACount,ml)
-        return ml
-
-    def plotByMat(self,staInfos,matDir='NM/output20190901/',mul=0.15,\
-        compP=2,compS=1,outDir='NM/output20190901V2/',waveform=None,\
-        figFileName=None,isAl=True,isAd=False,vp=6,vs=6/1.73,isK=False,
-        az0=0,daz0=-9):
-        #loadWaveformByQuake(quake,matDir='output',isCut=False,index0=-250,index1=250,f=[-1,-1]):
-        
-        if isAl:
-            al=0
-        else:
-            al=1
-        if isAd:
-            ad=1
-        else:
-            ad=0
-        if not isinstance(waveform,dict):
-            waveform=self.loadWaveform(matDir=matDir)
-        pWaveform=waveform['pWaveform'].reshape((-1,\
-            waveform['pWaveform'].shape[1],1,3))
-        sWaveform=waveform['sWaveform'].reshape((-1,\
-            waveform['sWaveform'].shape[1],1,3))
-        pWaveform/=pWaveform.max(axis=1,keepdims=True)/mul
-        sWaveform/=sWaveform.max(axis=1,keepdims=True)/mul
-        staIndexL=waveform['staIndexL'][0].astype(np.int64)
-        shift=1
-        eqLa=self.loc[0]
-        eqLo=self.loc[1]
-        maxDis=0
-        minDis=100
-        pTimeL=self.getPTimeL(staInfos)
-        sTimeL=self.getPTimeL(staInfos)
-        #ml=self.calML(staInfos,waveform=waveform)
-        print(self.summary(inShort=True))
-        plt.figure(figsize=[6,4])
-        for i in range(len(staIndexL)):
-            staInfo=staInfos[staIndexL[i]]
-            timeL=waveform['indexL'][0]*waveform['deltaL'][0][i]
-            Dis=DistAz(eqLa,eqLo,staInfo['la'],staInfo['lo'])
-            dis=Dis.getDelta()
-            az=Dis.getAz()
-            if daz0>0:
-                daz=az-az0
-                if np.abs(daz%180)>daz0:
-                    continue
-                shift=np.sign(np.cos(daz/180*np.pi))
-            if isK:
-                dz=(staInfo['dep']/1e3+self.loc[2])/111.19
-                dis=(dz**2+dis**2)**0.5
-            maxDis=max(dis,maxDis)
-            minDis=min(dis,minDis)
-
-            if pTimeL[staIndexL[i]]!=0 and waveform['pTimeL'][0][i]!=0:
-                plt.subplot(2,1,1)
-                adTime=-dis*111.19/vp*ad
-                plt.plot(timeL+ al*(waveform['pTimeL'][0][i]-self.time)+adTime\
-                    ,pWaveform[i,:,0,compP]\
-                    +dis*shift,'k',linewidth=0.3)
-                oTime=(timeL[0]+timeL[-1])/2
-                #plt.plot(np.array([oTime,oTime])+ waveform['pTimeL'][0][i]-quake.time,np.array([dis-0.5,dis+0.5]),'-.r',linewidth=0.5)
-            if sTimeL[staIndexL[i]]!=0 and waveform['sTimeL'][0][i]!=0:
-                plt.subplot(2,1,2)
-                adTime=-dis*111.19/vs*ad
-                plt.plot(timeL+ al*(waveform['sTimeL'][0][i]-self.time)+adTime,\
-                    sWaveform[i,:,0,compS]\
-                    +dis*shift,'k',linewidth=0.3)
-                oTime=(timeL[0]+timeL[-1])/2
-                #plt.plot(np.array([oTime,oTime])+ waveform['sTimeL'][0][i]-quake.time,np.array([dis-0.5,dis+0.5]),'-.r',linewidth=0.5)
-        plt.subplot(2,1,1)
-        #plt.title(self.summary(inShort=True))
-        for i in range(2):
-            plt.subplot(2,1,i+1)
-            if isAl:
-                plt.xlim([timeL[0],timeL[-1]])
-                h0,=plt.plot(np.array([oTime,oTime])*0,\
-                    np.array([minDis-2.5,maxDis+2.5]),\
-                    '-.k',linewidth=1)
-                if i==0:
-                    plt.legend((h0,),['p'])
-                else:
-                    plt.legend((h0,),['s'])
-                plt.ylim(minDis-0.5,maxDis+0.8)
-            if i==1:
-                plt.xlabel('t/s')
-            plt.ylabel('D/Rad')
-        if not isinstance(figFileName,str):
-            dirName=os.path.dirname('%s/%s.eps'%(\
-                outDir,self.filename[:-4]))
-            if not os.path.exists(dirName):
-                os.makedirs(dirName)
-            plt.savefig('%s/%s.eps'%(outDir,self.filename[:-4]))
-            plt.savefig('%s/%s.png'%(outDir,self.filename[:-4]),\
-                dpi=300)
-        else:
-            dirName=os.path.dirname(figFileName)
-            if not os.path.exists(dirName):
-                os.makedirs(dirName)
-            plt.savefig(figFileName,dpi=300)
-        plt.close()
-
-    def __gt__(self,self1):
-        return self.time>self1.time
-
-    def __ge__(self,self1):
-        return self.time>=self1.time
-
-    def __eq__(self,self1):
-        return self.time==self1.time
-
-    def __lt__(self,self1):
-        return self.time<self1.time
-
-    def __le__(self,self1):
-        return self.time<=self1.time
-
-class RecordCC(Record):
-    def __init__(self,staIndex=-1, pTime=-1, sTime=-1, pCC=-1, sCC=-1, pM=-1, pS=-1, sM=-1, sS=-1):
-        self.append(staIndex)
-        self.append(pTime)
-        self.append(sTime)
-        self.append(pCC)
-        self.append(sCC)
-        self.append(pM)
-        self.append(pS)
-        self.append(sM)
-        self.append(sS)
-
-    def getPCC(self):
-        return self[3]
-
-    def getSCC(self):
-        return self[4]
-
-    def getPM(self):
-        return self[5]
-
-    def getPS(self):
-        return self[6]
-
-    def getSM(self):
-        return self[7]
-
-    def getSS(self):
-        return self[8]
-
-    def getPMul(self):
-        return (self.getPCC()-self.getPM())/self.getPS()
-
-    def getSMul(self):
-        return (self.getSCC()-self.getSM())/self.getSS()
-
-
-
-class QuakeCC(Quake):
-    '''
-    expand the basic class Quake for storing the quake result 
-    of MFT and WMFT
-    the basic information include more: cc,M,S,tmpName
-    '''
-    def __init__(self, cc=-9, M=-9, S=-9, loc=[-999, -999,10],  time=-1, randID=None, \
-        filename=None,tmpName=None,ml=None):
-        super(Quake, self).__init__()
-        self.cc=cc
-        self.M=M
-        self.S=S
-        self.loc = [0,0,0]
-        self.loc[:len(loc)]=loc
-        self.time = time
-        self.tmpName=tmpName
-        self.ml=ml
-        if randID != None:
-            self.randID=randID
-        else:
-            self .randID=int(10000*np.random.rand(1))+10000*2
-        if filename != None:
-            self.filename = filename
-        else:
-            self.filename = self.getFilename()
-
-    def append(self, addOne):
-        if isinstance(addOne, RecordCC):
-            super(Quake, self).append(addOne)
-        else:
-            raise ValueError('should pass in a RecordCC class')
-
-    def getMul(self, isNum=False):
-        if not isNum:
-            return (self.cc-self.M)/self.S
-        else:
-            return (self.cc-self.M)/self.S*((len(self)+10)**0.5)
-
-    def calCover(self,staInfos,minCC=0.5):
-        '''
-        calculate the radiation coverage which have higher CC than minCC
-        '''
-        coverL=np.zeros(360)
-        for record in self:
-            if (record.pTime()>0 or record.sTime())>0 \
-            and(record.getPCC()>minCC or record.getSCC()>minCC): 
-                staIndex= int(record[0])
-                Az=DistAz(staInfos[staIndex]['la'],staInfos[staIndex]['lo'],\
-                    self.loc[0],self.loc[1]).getAz()
-                dk=DistAz(staInfos[staIndex]['la'],staInfos[staIndex]['lo'],\
-                    self.loc[0],self.loc[1]).getDelta()*111.19
-                R=int(45/(1+dk/50)+45)
-                N=((int(Az)+np.arange(-R,R))%360).astype(np.int64)
-                coverL[N]=coverL[N]+1
-        L=((np.arange(360)+180)%360).astype(np.int64)
-        coverL=np.sign(coverL)*np.sign(coverL[L])*(coverL+coverL[L])
-        coverRate=np.sign(coverL).sum()/360
-        return coverRate
-
-    def summary(self,count=0):
-        ml=-9
-        if self.ml!=None:
-            ml=self.ml
-        Summary='quake: %f %f %f num: %d index: %d randID: %d filename: \
-            %s %s %f %f %f %f %f\n' % (self.loc[0], self.loc[1],\
-            self.time, len(self),count, self.randID, \
-            self.filename,str(self.tmpName),self.cc,self.M,self.S,ml,self.loc[2])
-        return Summary
-
-    def setByLine(self,line):
-        if len(line) >= 4:
-            self.loc = [float(line[1]), float(line[2]),float(line[-1])]
-            if len(line)>=18:
-                self.ml=float(line[-2])
-                self.S=float(line[-3])
-                self.M=float(line[-4])
-                self.cc=float(line[-5])
-                self.tmpName=line[-6]
-            self.time = float(line[3])
-            self.randID=int(line[9])
-            self.filename=line[11]
-        return self
-
-    def setByMat(self,q):
-        '''
-        0('tmpIndex', 'O'), ('name', 'O'), ('CC', 'O'), 
-        3('mean', 'O'), ('std', 'O'), ('mul', 'O'), 
-        6('pCC', 'O'), ('sCC', 'O'), ('pM', 'O'), 
-        9('sM', 'O'), ('pS', 'O'), ('sS', 'O'), 
-        12('PS', 'O'), ('pTime', 'O'), ('sTime', 'O'),
-        15('pD', 'O'), ('sD', 'O'), ('tmpTime', 'O'), 
-        18('oTime', 'O'), ('eTime', 'O')])
-        '''
-        self.cc=q[2][0,0]
-        self.S=q[4][0,0]
-        self.M=q[3][0,0]
-        self.tmpName=str(q[1][0])
-        pTimeL=q[13].reshape(-1)
-        sTimeL=q[14].reshape(-1)
-        pCC=q[6].reshape(-1)
-        sCC=q[7].reshape(-1)
-        pM=q[8].reshape(-1)
-        sM=q[9].reshape(-1)
-        pS=q[10].reshape(-1)
-        sS=q[11].reshape(-1)
-        PS=q[12].reshape(-1)
-        self.time=matTime2UTC(PS[0])
-        self.loc=PS[1:4]
-        self.ml=PS[4]
-        self.filename=self.getFilename()
-        for i in range(len(pTimeL)):
-            pTime=0
-            sTime=0
-            if pTimeL[i]!=0:
-                pTime=matTime2UTC(pTimeL[i])
-                if sTimeL[i]!=0:
-                    sTime=matTime2UTC(sTimeL[i])
-                self.append(RecordCC(i,pTime,sTime,pCC[i],sCC[i],pM[i],pS[i],sM[i],sS[i]))
-        return self
-
-    def setByWLX(self,line,tmpNameL=None):
-        lines=line.split()
-        self.time=UTCDateTime(lines[1]+' '+lines[2]).timestamp
-        self.loc=[float(lines[3]),float(lines[4]),float(lines[5])]
-        self.ml=float(lines[6])
-        self.cc=float(lines[7])
-        tmpStr=lines[10]
-        tmpTime=UTCDateTime(int(tmpStr[0:4]),int(tmpStr[4:6]),int(tmpStr[6:8]),int(tmpStr[8:10]),\
-                int(tmpStr[10:12]),int(tmpStr[12:14])).timestamp
-        tmpName=str(int(tmpTime))
-        if tmpNameL!=None:       
-            for tmpN in tmpNameL:
-                if tmpName == tmpN.split('/')[-1].split('_')[0]:
-                    tmpName=tmpN
-        self.tmpName=tmpName
-        self.filename=self.getFilename()
-        return self
 
 def plotDeltaDt(quakeL,staInfos,figName1='delta-dt.png',\
     figName2='dk-dt.png',figName3='P-S.png'):
@@ -2851,3 +1912,945 @@ def compDateD():
             pass
         cmpD[sta]=[num, numBtz, dnum, dnumBtz]
     return cmpD
+'''
+class Record(list):
+    '''
+    the basic class 'Record' used for single station's P and S record
+    it's based on python's default list
+    [staIndex pTime sTime]
+    we can setByLine
+    we provide a way to copy
+    '''
+    def __init__(self,staIndex=-1, pTime=-1, sTime=-1, pProb=100, sProb=100):
+        super(Record, self).__init__()
+        self.append(staIndex)
+        self.append(pTime)
+        self.append(sTime)
+        self.append(pProb)
+        self.append(sProb)
+    def __repr__(self):
+        return self.summary()
+    def summary(self):
+        Summary='%d'%self[0]
+        for i in range(1,len(self)):
+            Summary=Summary+" %f "%self[i]
+        Summary=Summary+'\n'
+        return Summary
+    def copy(self):
+        return Record(self[0],self[1],self[2])
+    def getStaIndex(self):
+        return self[0]
+    def staIndex(self):
+        return self.getStaIndex()
+    def pTime(self):
+        return self[1]
+    def sTime(self):
+        return self[2]
+    def pProb(self):
+        return self[-2]
+    def sProb(self):
+        return self[-1]
+    def setByLine(self,line):
+        if isinstance(line,str):
+            line=line.split()
+        self[0]=int(line[0])
+        for i in range(1,len(line)):
+            self[i]=float(line[i])
+        return self
+    def set(self,line,mode='byLine'):
+        return self.setByLine(line)
+    def clear(self):
+            self[1]=.0
+            self[2]=.0
+    def selectByReq(self,req={},waveform=None,oTime=None):
+        '''
+        maxDT oTime
+        minSNR tLBe tlAf
+        minP(modelL, predictLongData)
+        '''
+        if 'minRatio' in req and oTime!=None:
+            if self.pTime()>0 and self.sTime()>0:
+                if (self.sTime()-oTime)/(self.pTime()-oTime)<req['minRatio']:
+                    self.clear()
+        if 'maxDT' in req and 'oTime' in req:
+            if self.pTime()>0 and \
+                self.pTime()-req['oTime']>req['maxDT']:
+                self.clear()
+        if isinstance(waveform,dict):
+            if 'minSNR' in req :
+                if self.calSNR(req,waveform)< req['minSNR']:
+                    self.clear()
+            if 'minP' in req or 'minS' in req :
+                p, s = self.calPS(req, waveform)
+                if 'minP' in req:
+                    if p < req['minP']:
+                        self[1] = 0.
+                if 'minS' in req:
+                    if s < req['minS']:
+                        self[2] = 0.
+        return self
+    def calSNR(self,req={},waveform=None):
+        '''
+        tLBe tlAf
+        '''
+        if not isinstance(waveform,dict):
+            return -1
+        staIndexNew=np.where(waveform['staIndexL'][0]==self.getStaIndex())[0]
+        i0=np.where(waveform['indexL'][0]==0)[0]
+        delta=waveform['deltaL'][0][staIndexNew]
+        if delta==0:
+            return -1
+        iN=waveform['indexL'][0].size
+        tLBe=[-15,-5]
+        tLAf=[0,10]
+        if 'tLBe' in req:
+            tlBe=tLBe
+        if 'tLAf' in req:
+            tLAf=tLAf
+        isBe=int(max(0,i0+int(tLBe[0]/delta)))
+        ieBe=int(i0+int(tLBe[1]/delta))
+        isAf=int(i0+int(tLAf[0]/delta))
+        ieAf=int(min(iN-1,i0+int(tLAf[1]/delta)))
+        aBe=np.abs(waveform['pWaveform'][staIndexNew,isBe:ieBe]).max()
+        aAf=np.abs(waveform['pWaveform'][staIndexNew,isAf:ieAf]).max()
+        return aAf/(aBe+1e-9)
+    def calPS(self,req={},waveform=None):
+        '''
+        tLBe tlAf
+        '''
+        if not isinstance(waveform,dict):
+            return -1
+        staIndexNew=np.where(waveform['staIndexL'][0]==self.getStaIndex())[0][0]
+        i0=np.where(waveform['indexL'][0]==0)[0][0]
+        delta=waveform['deltaL'][0][staIndexNew]
+        if delta==0:
+            return -1
+        p = -1
+        s = -1
+        if self.pProb()<=1:
+            p = self.pProb()
+            s = self.sProb()
+            return p, s
+        if 'modelL' in req and 'predictLongData' in req:
+            modelL = req['modelL']
+            if self.pTime()>100 and 'minP' in req:
+                predictLongData = req['predictLongData']
+                y = predictLongData(modelL[0], waveform['pWaveform'][staIndexNew])
+                #print(y.shape)
+                p = y[int(i0-5):int(i0+5)].max()
+            if self.sTime()>100 and 'minS' in req:
+                predictLongData = req['predictLongData']
+                y = predictLongData(modelL[1], waveform['sWaveform'][staIndexNew])
+                s = y[int(i0-5):int(i0+5)].max()
+        #print(p,s)
+        return p, s
+
+#MLI  1976/01/01 01:29:39.6 -28.61 -177.64  59.0 6.2 0.0 KERMADEC ISLANDS REGION 
+class Quake(list):
+    '''
+    a basic class 'Quake' used for quake's information and station records
+    it's baed on list class
+    the elements in list are composed by Records
+    the basic information: loc, time, ml, filename, randID
+    we use randID to distinguish time close quakes
+    you can set the filename (file path) storing the waveform by yourself in .mat form
+    otherwise, we would generate the file like dayNum/time_randID.mat
+
+    we provide way for set by line/WLX/Mat and from IRIS/NDK
+    '''
+    def __init__(self, loc=[-999, -999,10], time=-1, randID=None, filename=None, ml=None):
+        super(Quake, self).__init__()
+        self.loc = [0,0,0]
+        self.loc[:len(loc)]=loc
+        self.time = time
+        self.ml=ml
+        if randID != None:
+            self.randID=randID
+        else:
+            self .randID=int(10000*np.random.rand(1))
+        if filename != None:
+            self.filename = filename
+        else:
+            self.filename = self.getFilename()
+    def __repr__(self):
+        return self.summary()
+    def summary(self,count=0,inShort=False):
+        ml=-9
+        if self.ml!=None:
+            ml=self.ml
+        if inShort:
+            return '%.2f %.4f %.4f %.1f %.1f '%(self.time, self.loc[0]\
+                , self.loc[1], self.loc[2], self.ml)
+        Summary='quake: %f %f %f num: %d index: %d randID: %d filename: \
+            %s %f %f\n' % (self.loc[0], self.loc[1],\
+            self.time, self.num(),count, self.randID, \
+            self.filename,ml,self.loc[2])
+        return Summary
+
+    def getFilename(self):
+        dayDir = str(int(self.time/86400))+'/'
+        return dayDir+str(int(self.time))+'_'+str(self.randID)+'.mat'
+
+    def append(self, addOne):
+        if isinstance(addOne, Record):
+            super(Quake, self).append(addOne)
+        else:
+            raise ValueError('should pass in a Record class')
+
+    def copy(self):
+        quake=Quake(loc=self.loc,time=self.time,randID=self.randID,filename=self.filename\
+            ,ml=self.ml)
+        for record in self:
+            quake.append(record.copy())
+        return quake
+
+    def set(self,line,mode='byLine'):
+        if mode=='byLine':
+            return self.setByLine(line)
+        elif mode=='fromNDK':
+            return self.setFromNDK(line)
+        elif mode=='fromIris':
+            return self.setFromIris(line)
+        elif mode=='byWLX':
+            return self.setByWLX(line)
+        elif mode=='byMat':
+            return self.setByMat(line)
+    def setByLine(self,line):
+        if len(line) >= 4:
+            if len(line)>12:
+                self.loc = [float(line[1]), float(line[2]),float(line[-1])]
+            else:
+                self.loc = [float(line[1]), float(line[2]),0.]
+            if len(line)>=14:
+                self.ml=float(line[-2])
+            self.time = float(line[3])
+            self.randID=int(line[9])
+            self.filename=line[11]
+        return self
+    def setFromNDK(self,line):
+        sec=float(line[22:26])
+        self.time=UTCDateTime(line[5:22]+"0.00").timestamp+sec
+        self.loc=[float(line[27:33]),float(line[34:41]),float(line[42:47])]
+        m1=float(line[48:55].split()[0])
+        m2=float(line[48:55].split()[-1])
+        self.ml=max(m1,m2)
+        self.filename = self.getFilename()
+        return self
+    def setFromIris(self,line):
+        line=line.split('|')
+        self.time=UTCDateTime(line[1]).timestamp
+        self.loc[0]=float(line[2])
+        self.loc[1]=float(line[3])
+        self.loc[2]=float(line[4])
+        self.ml=float(line[10])
+        self.filename = self.getFilename()
+        return self
+
+    def setByWLX(self,line,staInfos=None):
+        self.time=UTCDateTime(line[:22]).timestamp
+        self.loc=[float(line[23:29]),float(line[30:37]),float(line[38:41])]
+        self.ml=float(line[44:])
+        self.filename=self.getFilename()
+        return self
+
+    def setByMat(self,q):
+        pTimeL=q[0].reshape(-1)
+        sTimeL=q[1].reshape(-1)
+        PS=q[2].reshape(-1)
+        self.randID=1
+        self.time=matTime2UTC(PS[0])
+        self.loc=PS[1:4]
+        self.ml=PS[4]
+        self.filename=self.getFilename()
+        for i in range(len(pTimeL)):
+            pTime=0
+            sTime=0
+            if pTimeL[i]!=0:
+                pTime=matTime2UTC(pTimeL[i])
+                if sTimeL[i]!=0:
+                    sTime=matTime2UTC(sTimeL[i])
+                self.append(Record(i,pTime,sTime))
+        return self
+
+    def getReloc(self,line):
+        self.time=self.tomoTime(line)
+        self.loc[0]=float(line[1])
+        self.loc[1]=float(line[2])
+        self.loc[2]=float(line[3])
+        return self
+
+    def tomoTime(self,line):
+        m=int(line[14])
+        sec=float(line[15])
+        return UTCDateTime(int(line[10]),int(line[11]),int(line[12])\
+            ,int(line[13]),m+int(sec/60),sec%60).timestamp
+
+    def calCover(self,staInfos,maxDT=None):
+        '''
+        calculate the radiation coverage
+        '''
+        coverL=np.zeros(360)
+        for record in self:
+            if record.pTime()==0 and record.sTime()==0:
+                continue
+            if maxDT!=None:
+                if record.pTime()-self.time>maxDT:
+                    continue
+            staIndex= int(record[0])
+            la=staInfos[staIndex]['la']
+            lo=staInfos[staIndex]['lo']
+            dep=staInfos[staIndex]['dep']/1e3
+            delta,dk,Az=self.calDelta(la,lo,dep)
+            R=int(60/(1+dk/200)+60)
+            N=((int(Az)+np.arange(-R,R))%360).astype(np.int64)
+            coverL[N]=coverL[N]+1
+        L=((np.arange(360)+180)%360).astype(np.int64)
+        coverL=np.sign(coverL)*np.sign(coverL[L])*(coverL+coverL[L])
+        coverRate=np.sign(coverL).sum()/360
+        return coverRate
+
+    def getPTimeL(self,staInfos):
+        timePL=np.zeros(len(staInfos))
+        for record in self:
+            if record.pTime()!=0:
+                timePL[record.getStaIndex()]=record.pTime()
+        return timePL
+        
+    def getSTimeL(self,staInfos):
+        timeSL=np.zeros(len(staInfos))
+        for record in self:
+            if record.sTime()!=0:
+                timeSL[record.getStaIndex()]=record.sTime()
+        return timeSL
+
+    def findTmpIndex(self,staIndex):
+        count=0
+        for record in self:
+            if int(record.getStaIndex())==int(staIndex):
+                return count
+            count+=1
+        return -999
+
+    def setRandIDByMl(self):
+        self.randID=int(np.floor(np.abs(10+self.ml)*100));
+        namePre=self.filename.split('_')[0]
+        self.filename=namePre+'_'+str(self.randID)+'.mat'
+
+    def outputWLX(self):
+        Y=getYmdHMSj(UTCDateTime(self.time))
+        tmpStr=Y['Y']+'/'+Y['m']+'/'+Y['d']+' '+\
+        Y['H']+':'+Y['M']+':'+'%05.2f'%(self.time%60)+\
+        ' '+'%6.3f %7.3f %3.1f M %3.1f'%(self.loc[0],\
+            self.loc[1],self.loc[2],self.ml)
+        return tmpStr
+
+    def num(self,maxDT=None): 
+        count=0
+        for record in self:
+            if record.pTime()==0 and record.sTime()==0:
+                continue
+            if maxDT!=None:
+                if record.pTime()-self.time>maxDT:
+                    continue
+            count+=1
+        return count
+
+    def calDelta(self,la,lo,dep=0):
+        D=DistAz(la,lo,self.loc[0],self.loc[1])
+        delta=D.getDelta()
+        dk=D.degreesToKilometers(delta)
+        dk=np.linalg.norm(np.array([dk,self.loc[2]+dep]))
+        Az=D.getAz()
+        return delta,dk,Az
+
+    def calDeltaDt(self,staInfos):
+        deltaP=[]
+        deltaS=[]
+        dtP=[]
+        dtS=[]
+        dkP=[]
+        dkS=[]
+        for record in self:
+            staIndex=record.staIndex()
+            la=staInfos[staIndex]['la']
+            lo=staInfos[staIndex]['lo']
+            dep=staInfos[staIndex]['dep']/1e3
+            delta,dk,Az=self.calDelta(la,lo,dep)
+            if record.pTime()>0:
+                deltaP.append(delta)
+                dkP.append(dk)
+                dtP.append(record.pTime()-self.time)
+            if record.sTime()>0:
+                deltaS.append(delta)
+                dtS.append(record.sTime()-self.time)
+                dkS.append(dk)
+        return deltaP,dkP,dtP,deltaS,dkS,dtS
+
+    def calTimePS(self):
+        PS=[]
+        for record in self:
+            if record.pTime()>0 and record.sTime()>0:
+                PS.append([record.pTime()-self.time,\
+                    record.sTime()-self.time])
+        return PS
+
+    def selectByReq(self,req={},waveform=None,isPrint=False):
+        '''
+        bTime eTime ((R inR) minDis maxDis) minMl maxDep \
+        minCover outDir (maxErr locator --maxDTLoc) minSta
+        
+        Record:
+            maxDT (oTime)
+            minSNR (tLBe tlAf)
+        
+        '''
+        maxDTLoc=None
+        if 'maxDTLoc' in req:
+            maxDTLoc=req['maxDTLoc']
+        if 'bTime' in req:
+            if self.time<req['bTime']:
+                if isPrint:
+                    print('before bTime')
+                return False
+        if 'eTime' in req:
+            if self.time > req['eTime']:
+                if isPrint:
+                    print('after bTime')
+                return False
+        if 'R' in req:
+            R=req['R']
+            if 'inR' in req and (self.loc[0]<R[0] or \
+                self.loc[0]>R[1] or self.loc[1]<R[2] or self.loc[1]>R[3]):
+                if req['inR']:
+                    if isPrint:
+                        print('not in R')
+                    return False
+            if 'minDis' in req or 'maxDis' in req:
+                midLa=(R[0]+R[1])/2
+                midLo=(R[2]+R[3])/2
+                delta=self.calDelta(midLa,midLo)
+                if 'minDis' in req:
+                    if delta<req['minDis'] :
+                        if isPrint:
+                            print('less than minDis')
+                        return False  
+                if 'maxDis' in req:
+                    if delta>req['maxDis'] :
+                        if isPrint:
+                            print('more than maxDis')
+                        return False
+        if 'minMl' in req:
+            if self.ml<req['minMl']:
+                if isPrint:
+                    print('less than minML')
+                return False
+        if 'maxDep' in req:
+            if self.loc[2]>req['maxDep']:
+                if isPrint:
+                    print('deeper than maxDeep')
+                return False
+        if 'minSta' in req:
+            if self.num(maxDTLoc)< req['minSta']:
+                if isPrint:
+                    print('not enough records')
+                return False
+        if 'minCover' in req and 'staInfos' in req:
+            if self.calCover(req['staInfos'],maxDTLoc)<req['minCover']:
+                if isPrint:
+                    print('not enough ray coverage')
+                return False
+        for record in self:
+            req['oTime']=self.time
+            for record in self:
+                record.selectByReq(req,waveform,self.time)
+        if 'minCover' in req and 'staInfos' in req:
+            if self.calCover(req['staInfos'],maxDTLoc)<req['minCover']:
+                if isPrint:
+                    print('not enough ray coverage')
+                return False
+        if 'outDir' in req :
+            if not os.path.exists(req['outDir']+self.filename):
+                if isPrint:
+                    print('no file')
+                return False
+        if 'maxErr' in req and 'locator' in req:
+            if 'maxDTLoc' in req:
+                maxDT=req['maxDTLoc']
+            else:
+                maxDT=30
+            self,res=req['locator'].locate(self,maxDT=maxDT,\
+                isDel=True,maxErr=req['maxErr'])
+            if 'maxStd' in req:
+                if res>req['maxStd']:
+                    if isPrint:
+                        if res == 999:
+                            print('not enough record to locate')
+                        else:
+                            print('too much erro')
+                    return False
+        if 'minSta' in req:
+            if self.num(maxDTLoc) < req['minSta']:
+                if isPrint:
+                    print('not enough records')
+                return False
+        return True
+
+    def loadWaveform(self,matDir='output',\
+        isCut=False,index0=-250,index1=250,\
+        f=[-1,-1],filtOrder=2):
+        fileName = matDir+'/'+self.filename
+        waveform=sio.loadmat(fileName)
+        if f[0]>0:
+            if len(waveform['deltaL'])==0:
+                print('wrong delta')
+                return None
+            f0=0.5/waveform['deltaL'].max()
+            b, a = signal.butter(filtOrder, [f[0]/f0,f[1]/f0], 'bandpass')
+            waveform['pWaveform']=signal.filtfilt(b,a,waveform['pWaveform'],axis=1)
+            waveform['sWaveform']=signal.filtfilt(b,a,waveform['sWaveform'],axis=1)
+        if isCut:
+            i0=np.where(waveform['indexL'][0]==index0)[0][0]
+            i1=np.where(waveform['indexL'][0]==index1)[0][0]
+            waveform['pWaveform']=waveform['pWaveform'][:,i0:i1,:].\
+            astype(np.float32)
+            waveform['sWaveform']=waveform['sWaveform'][:,i0:i1,:].\
+            astype(np.float32)
+            waveform['indexL']=[waveform['indexL'][0][i0:i1]]
+        return waveform
+
+    def isP(self,staIndex):
+        for record in self:
+            if record.getStaIndex()==staIndex and record.pTime()>0:
+                return True
+        return False
+
+    def isS(self,staIndex):
+        for record in self:
+            if record.getStaIndex()==staIndex and record.sTime()>0:
+                return True
+        return False
+
+    def saveWaveform(self,staL, quakeIndex, matDir='output/'\
+    ,index0=-500,index1=500,dtype=np.float32):
+        indexL = np.arange(index0, index1)
+        iNum=indexL.size
+        fileName = matDir+'/'+self.filename
+        loc=self.loc
+        dayDir=os.path.dirname(fileName)
+        if not os.path.exists(dayDir):
+            os.mkdir(dayDir)
+        pWaveform = np.zeros((len(self), iNum, 3),dtype=dtype)
+        sWaveform = np.zeros((len(self), iNum, 3),dtype=dtype)
+        staIndexL = np.zeros(len(self))
+        pTimeL = np.zeros(len(self))
+        sTimeL = np.zeros(len(self))
+        deltaL = np.zeros(len(self))
+        ml=0
+        sACount=0
+        for i in range(len(self)):
+            record = self[i]
+            staIndex = record.getStaIndex()
+            pTime = record.pTime()
+            sTime = record.sTime()
+            staIndexL[i] = staIndex
+            pTimeL[i] = pTime
+            sTimeL[i] = sTime
+            if pTime != 0:
+                try:
+                    pWaveform[i, :, :] = staL[staIndex].data.getDataByTimeLQuick\
+                    (pTime + indexL*staL[staIndex].data.delta)
+                except:
+                    print("wrong p wave")
+                else:
+                    pass
+                deltaL[i] = staL[staIndex].data.delta
+            if sTime != 0:
+                try:
+                    sWaveform[i, :, :] = staL[staIndex].data.getDataByTimeLQuick\
+                    (sTime + indexL*staL[staIndex].data.delta)
+                except:
+                    print("wrong s wave")
+                else:
+                    deltaL[i]= staL[staIndex].data.delta
+                    dk=DistAz(staL[staIndex].loc[0],staL[staIndex].loc[1],loc[0],loc[1]).getDelta()*111.19
+                    sA=getSA(sWaveform[i, :, :])*staL[staIndex].data.delta
+                    ml=ml+np.log10(sA)+1.1*np.log10(dk)+0.00189*dk-2.09-0.23
+                    sACount+=1
+        if sACount==0:
+            ml=-999
+        else:
+            ml/=sACount
+        sio.savemat(fileName, {'time': self.time, 'loc': self.loc, \
+            'staIndexL': staIndexL, 'pTimeL': pTimeL, 'pWaveform': \
+            pWaveform, 'sTimeL': sTimeL, 'sWaveform': sWaveform, \
+            'deltaL': deltaL, 'indexL': indexL,'ml':ml})
+        return ml
+    def saveSacs(self,staL, quakeIndex, matDir='output/'\
+    ,index0=-500,index1=500,dtype=np.float32):
+        indexL = np.arange(index0, index1)
+        iNum=indexL.size
+        eventDir = matDir+'/'+self.filename.split('.mat')[0]+'/'
+        loc=self.loc
+        if not os.path.exists(eventDir):
+            os.makedirs(eventDir)
+        ml=0
+        sACount=0
+        for i in range(len(self)):
+            record = self[i]
+            staIndex = record.getStaIndex()
+            pTime = record.pTime()
+            sTime = record.sTime()
+            bTime = self.time-20
+            eTime = max(pTime,sTime)+40
+            bTime,eTime=staL[staIndex].data.getTimeLim(bTime,eTime)
+            if bTime>=eTime:
+                continue
+            filenames=staL[staIndex].sta.baseSacName(resDir=eventDir)
+            T3 = staL[staIndex].data.slice(bTime,eTime,nearest_sample=True)
+            T3.adjust(kzTime=self.time,pTime=pTime,sTime=sTime,net=staL[staIndex].sta['net'],\
+                sta=staL[staIndex].sta['sta'],stloc=staL[staIndex].sta.loc(),eloc=self.loc)
+            if T3.bTime>0:
+                T3.write(filenames)
+        return ml
+    def loadSacs(self,staInfos,matDir='output',\
+        f=[-1,-1],filtOrder=2):
+        T3L=[]
+        eventDir = matDir+'/'+self.filename.split('.mat')[0]+'/'
+        for record in self:
+            staIndex = record.getStaIndex()
+            sacsFile = staInfos[staIndex].baseSacName(resDir=eventDir)
+            sacFilesL = [[tmp] for tmp in sacsFile]
+            T3L.append(getDataByFileName(sacFilesL,pTime=record.pTime(),\
+                sTime=record.sTime()))
+            T3L.filt(f,filtOrder)
+        return T3L
+    def loadPSSacs(self,staInfos,matDir='output',\
+        isCut=False,index0=-250,index1=250,\
+        f=[-1,-1],filtOrder=2):
+        T3L = self.loadSacs(staInfos,f=f,filtOrder=filtOrder,matDir=matDir)
+        T3PL=[]
+        T3SL=[]
+        for T3 in T3L:
+            T3PL.append(T3.slice(T3.pTime+index0*T3.delta,\
+                T3.pTime+index1*T3.delta))
+            T3SL.append(T3.slice(T3.sTime+index0*T3.delta,\
+                T3.sTime+index1*T3.delta))
+        return T3SL,T3SL
+
+    def calML(self, staInfos, matDir='output/',minSACount=3,waveform=None):
+        if not isinstance(waveform,dict):
+            waveform=self.loadWaveform(matDir=matDir)
+        ml=0
+        loc=self.loc
+        sACount=0
+        if len(waveform['staIndexL'])<=0:
+            ml=-999
+            print('wrong ml')
+            return ml
+        for i in range(len(waveform['staIndexL'][0])):
+            if waveform['sTimeL'][0][i]!=0:
+                staIndex=int(waveform['staIndexL'][0][i])
+                dk=DistAz(staInfos[staIndex]['la'],\
+                    staInfos[staIndex]['lo'],loc[0],loc[1]).getDelta()*111.19
+                if dk<30 or dk>300:
+                    continue
+                sA=getSA(waveform['sWaveform'][i, :, :])*waveform['deltaL'][0][i]
+                ml=ml+np.log10(sA)+1.1*np.log10(dk)+0.00189*dk-2.09-0.23
+                sACount+=1
+        if sACount<minSACount:
+            ml=-999
+        else:
+            ml/=sACount
+        self.ml=ml
+        print(sACount,ml)
+        return ml
+
+    def plotByMat(self,staInfos,matDir='NM/output20190901/',mul=0.15,\
+        compP=2,compS=1,outDir='NM/output20190901V2/',waveform=None,\
+        figFileName=None,isAl=True,isAd=False,vp=6,vs=6/1.73,isK=False,
+        az0=0,daz0=-9):
+        #loadWaveformByQuake(quake,matDir='output',isCut=False,index0=-250,index1=250,f=[-1,-1]):
+        
+        if isAl:
+            al=0
+        else:
+            al=1
+        if isAd:
+            ad=1
+        else:
+            ad=0
+        if not isinstance(waveform,dict):
+            waveform=self.loadWaveform(matDir=matDir)
+        pWaveform=waveform['pWaveform'].reshape((-1,\
+            waveform['pWaveform'].shape[1],1,3))
+        sWaveform=waveform['sWaveform'].reshape((-1,\
+            waveform['sWaveform'].shape[1],1,3))
+        pWaveform/=pWaveform.max(axis=1,keepdims=True)/mul
+        sWaveform/=sWaveform.max(axis=1,keepdims=True)/mul
+        staIndexL=waveform['staIndexL'][0].astype(np.int64)
+        shift=1
+        eqLa=self.loc[0]
+        eqLo=self.loc[1]
+        maxDis=0
+        minDis=100
+        pTimeL=self.getPTimeL(staInfos)
+        sTimeL=self.getPTimeL(staInfos)
+        #ml=self.calML(staInfos,waveform=waveform)
+        print(self.summary(inShort=True))
+        plt.figure(figsize=[6,4])
+        for i in range(len(staIndexL)):
+            staInfo=staInfos[staIndexL[i]]
+            timeL=waveform['indexL'][0]*waveform['deltaL'][0][i]
+            Dis=DistAz(eqLa,eqLo,staInfo['la'],staInfo['lo'])
+            dis=Dis.getDelta()
+            az=Dis.getAz()
+            if daz0>0:
+                daz=az-az0
+                if np.abs(daz%180)>daz0:
+                    continue
+                shift=np.sign(np.cos(daz/180*np.pi))
+            if isK:
+                dz=(staInfo['dep']/1e3+self.loc[2])/111.19
+                dis=(dz**2+dis**2)**0.5
+            maxDis=max(dis,maxDis)
+            minDis=min(dis,minDis)
+
+            if pTimeL[staIndexL[i]]!=0 and waveform['pTimeL'][0][i]!=0:
+                plt.subplot(2,1,1)
+                adTime=-dis*111.19/vp*ad
+                plt.plot(timeL+ al*(waveform['pTimeL'][0][i]-self.time)+adTime\
+                    ,pWaveform[i,:,0,compP]\
+                    +dis*shift,'k',linewidth=0.3)
+                oTime=(timeL[0]+timeL[-1])/2
+                #plt.plot(np.array([oTime,oTime])+ waveform['pTimeL'][0][i]-quake.time,np.array([dis-0.5,dis+0.5]),'-.r',linewidth=0.5)
+            if sTimeL[staIndexL[i]]!=0 and waveform['sTimeL'][0][i]!=0:
+                plt.subplot(2,1,2)
+                adTime=-dis*111.19/vs*ad
+                plt.plot(timeL+ al*(waveform['sTimeL'][0][i]-self.time)+adTime,\
+                    sWaveform[i,:,0,compS]\
+                    +dis*shift,'k',linewidth=0.3)
+                oTime=(timeL[0]+timeL[-1])/2
+                #plt.plot(np.array([oTime,oTime])+ waveform['sTimeL'][0][i]-quake.time,np.array([dis-0.5,dis+0.5]),'-.r',linewidth=0.5)
+        plt.subplot(2,1,1)
+        #plt.title(self.summary(inShort=True))
+        for i in range(2):
+            plt.subplot(2,1,i+1)
+            if isAl:
+                plt.xlim([timeL[0],timeL[-1]])
+                h0,=plt.plot(np.array([oTime,oTime])*0,\
+                    np.array([minDis-2.5,maxDis+2.5]),\
+                    '-.k',linewidth=1)
+                if i==0:
+                    plt.legend((h0,),['p'])
+                else:
+                    plt.legend((h0,),['s'])
+                plt.ylim(minDis-0.5,maxDis+0.8)
+            if i==1:
+                plt.xlabel('t/s')
+            plt.ylabel('D/Rad')
+        if not isinstance(figFileName,str):
+            dirName=os.path.dirname('%s/%s.eps'%(\
+                outDir,self.filename[:-4]))
+            if not os.path.exists(dirName):
+                os.makedirs(dirName)
+            plt.savefig('%s/%s.eps'%(outDir,self.filename[:-4]))
+            plt.savefig('%s/%s.png'%(outDir,self.filename[:-4]),\
+                dpi=300)
+        else:
+            dirName=os.path.dirname(figFileName)
+            if not os.path.exists(dirName):
+                os.makedirs(dirName)
+            plt.savefig(figFileName,dpi=300)
+        plt.close()
+
+    def __gt__(self,self1):
+        return self.time>self1.time
+
+    def __ge__(self,self1):
+        return self.time>=self1.time
+
+    def __eq__(self,self1):
+        return self.time==self1.time
+
+    def __lt__(self,self1):
+        return self.time<self1.time
+
+    def __le__(self,self1):
+        return self.time<=self1.time
+
+class RecordCC(Record):
+    def __init__(self,staIndex=-1, pTime=-1, sTime=-1, pCC=-1, sCC=-1, pM=-1, pS=-1, sM=-1, sS=-1):
+        self.append(staIndex)
+        self.append(pTime)
+        self.append(sTime)
+        self.append(pCC)
+        self.append(sCC)
+        self.append(pM)
+        self.append(pS)
+        self.append(sM)
+        self.append(sS)
+
+    def getPCC(self):
+        return self[3]
+
+    def getSCC(self):
+        return self[4]
+
+    def getPM(self):
+        return self[5]
+
+    def getPS(self):
+        return self[6]
+
+    def getSM(self):
+        return self[7]
+
+    def getSS(self):
+        return self[8]
+
+    def getPMul(self):
+        return (self.getPCC()-self.getPM())/self.getPS()
+
+    def getSMul(self):
+        return (self.getSCC()-self.getSM())/self.getSS()
+
+
+
+class QuakeCC(Quake):
+    '''
+    expand the basic class Quake for storing the quake result 
+    of MFT and WMFT
+    the basic information include more: cc,M,S,tmpName
+    '''
+    def __init__(self, cc=-9, M=-9, S=-9, loc=[-999, -999,10],  time=-1, randID=None, \
+        filename=None,tmpName=None,ml=None):
+        super(Quake, self).__init__()
+        self.cc=cc
+        self.M=M
+        self.S=S
+        self.loc = [0,0,0]
+        self.loc[:len(loc)]=loc
+        self.time = time
+        self.tmpName=tmpName
+        self.ml=ml
+        if randID != None:
+            self.randID=randID
+        else:
+            self .randID=int(10000*np.random.rand(1))+10000*2
+        if filename != None:
+            self.filename = filename
+        else:
+            self.filename = self.getFilename()
+
+    def append(self, addOne):
+        if isinstance(addOne, RecordCC):
+            super(Quake, self).append(addOne)
+        else:
+            raise ValueError('should pass in a RecordCC class')
+
+    def getMul(self, isNum=False):
+        if not isNum:
+            return (self.cc-self.M)/self.S
+        else:
+            return (self.cc-self.M)/self.S*((len(self)+10)**0.5)
+
+    def calCover(self,staInfos,minCC=0.5):
+        '''
+        calculate the radiation coverage which have higher CC than minCC
+        '''
+        coverL=np.zeros(360)
+        for record in self:
+            if (record.pTime()>0 or record.sTime())>0 \
+            and(record.getPCC()>minCC or record.getSCC()>minCC): 
+                staIndex= int(record[0])
+                Az=DistAz(staInfos[staIndex]['la'],staInfos[staIndex]['lo'],\
+                    self.loc[0],self.loc[1]).getAz()
+                dk=DistAz(staInfos[staIndex]['la'],staInfos[staIndex]['lo'],\
+                    self.loc[0],self.loc[1]).getDelta()*111.19
+                R=int(45/(1+dk/50)+45)
+                N=((int(Az)+np.arange(-R,R))%360).astype(np.int64)
+                coverL[N]=coverL[N]+1
+        L=((np.arange(360)+180)%360).astype(np.int64)
+        coverL=np.sign(coverL)*np.sign(coverL[L])*(coverL+coverL[L])
+        coverRate=np.sign(coverL).sum()/360
+        return coverRate
+
+    def summary(self,count=0):
+        ml=-9
+        if self.ml!=None:
+            ml=self.ml
+        Summary='quake: %f %f %f num: %d index: %d randID: %d filename: \
+            %s %s %f %f %f %f %f\n' % (self.loc[0], self.loc[1],\
+            self.time, len(self),count, self.randID, \
+            self.filename,str(self.tmpName),self.cc,self.M,self.S,ml,self.loc[2])
+        return Summary
+
+    def setByLine(self,line):
+        if len(line) >= 4:
+            self.loc = [float(line[1]), float(line[2]),float(line[-1])]
+            if len(line)>=18:
+                self.ml=float(line[-2])
+                self.S=float(line[-3])
+                self.M=float(line[-4])
+                self.cc=float(line[-5])
+                self.tmpName=line[-6]
+            self.time = float(line[3])
+            self.randID=int(line[9])
+            self.filename=line[11]
+        return self
+
+    def setByMat(self,q):
+        '''
+        0('tmpIndex', 'O'), ('name', 'O'), ('CC', 'O'), 
+        3('mean', 'O'), ('std', 'O'), ('mul', 'O'), 
+        6('pCC', 'O'), ('sCC', 'O'), ('pM', 'O'), 
+        9('sM', 'O'), ('pS', 'O'), ('sS', 'O'), 
+        12('PS', 'O'), ('pTime', 'O'), ('sTime', 'O'),
+        15('pD', 'O'), ('sD', 'O'), ('tmpTime', 'O'), 
+        18('oTime', 'O'), ('eTime', 'O')])
+        '''
+        self.cc=q[2][0,0]
+        self.S=q[4][0,0]
+        self.M=q[3][0,0]
+        self.tmpName=str(q[1][0])
+        pTimeL=q[13].reshape(-1)
+        sTimeL=q[14].reshape(-1)
+        pCC=q[6].reshape(-1)
+        sCC=q[7].reshape(-1)
+        pM=q[8].reshape(-1)
+        sM=q[9].reshape(-1)
+        pS=q[10].reshape(-1)
+        sS=q[11].reshape(-1)
+        PS=q[12].reshape(-1)
+        self.time=matTime2UTC(PS[0])
+        self.loc=PS[1:4]
+        self.ml=PS[4]
+        self.filename=self.getFilename()
+        for i in range(len(pTimeL)):
+            pTime=0
+            sTime=0
+            if pTimeL[i]!=0:
+                pTime=matTime2UTC(pTimeL[i])
+                if sTimeL[i]!=0:
+                    sTime=matTime2UTC(sTimeL[i])
+                self.append(RecordCC(i,pTime,sTime,pCC[i],sCC[i],pM[i],pS[i],sM[i],sS[i]))
+        return self
+
+    def setByWLX(self,line,tmpNameL=None):
+        lines=line.split()
+        self.time=UTCDateTime(lines[1]+' '+lines[2]).timestamp
+        self.loc=[float(lines[3]),float(lines[4]),float(lines[5])]
+        self.ml=float(lines[6])
+        self.cc=float(lines[7])
+        tmpStr=lines[10]
+        tmpTime=UTCDateTime(int(tmpStr[0:4]),int(tmpStr[4:6]),int(tmpStr[6:8]),int(tmpStr[8:10]),\
+                int(tmpStr[10:12]),int(tmpStr[12:14])).timestamp
+        tmpName=str(int(tmpTime))
+        if tmpNameL!=None:       
+            for tmpN in tmpNameL:
+                if tmpName == tmpN.split('/')[-1].split('_')[0]:
+                    tmpName=tmpN
+        self.tmpName=tmpName
+        self.filename=self.getFilename()
+        return self
+'''

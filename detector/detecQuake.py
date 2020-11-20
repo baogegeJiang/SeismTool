@@ -376,7 +376,7 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                                         sIndex = staL[staIndex].pairD[pairDIndex][5]
                                         if staL[staIndex].timeL[0][pIndex] > 0 and \
                                                 staL[staIndex].timeL[1][sIndex] > 0:
-                                            quake.append(Record(staIndex=staIndex, \
+                                            quake.Append(Record(staIndex=staIndex, \
                                                 pTime=staL[staIndex].orignM[laIndex][loIndex][index][0], \
                                                 sTime=staL[staIndex].orignM[laIndex][loIndex][index][1],\
                                                 pProb=staL[staIndex].vL[0][pIndex],\
@@ -426,7 +426,7 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                                     staL[staIndex].timeL[0][pIndex]=0
                                     if sTime >1:
                                         staL[staIndex].timeL[1][sIndex]=0
-                                    quake.append(Record(staIndex=staIndex, pTime=pTime, sTime=sTime, pProb=pProb, sProb=sProb))
+                                    quake.Append(Record(staIndex=staIndex, pTime=pTime, sTime=sTime, pProb=pProb, sProb=sProb))
                     if locator != None and len(quake)>=3:
                         try:
                             quake,res=locator.locate(quake,maxDT=25)

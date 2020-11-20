@@ -1,25 +1,23 @@
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
-from mathFunc import getDetec,xcorrSimple,xcorrComplex,flat,validL,randomSource,disDegree,QC
+from numba import jit
+from sklearn import cluster
+import multiprocessing
 from numba import jit,float32, int64
 from scipy import fftpack,interpolate
-from fk import FK,getSourceSacName,FKL
 import os 
 from scipy import io as sio
 import obspy
 from multiprocessing import Process, Manager,Pool
 import random
-import seism
-from distaz import DistAz
 from glob import glob
 from obspy.taup import TauPyModel
 from seism import taup
-from mathFunc import fitexp
-from numba import jit
-from sklearn import cluster
-import multiprocessing
-
+from ..io import seism
+from fk import FK,getSourceSacName,FKL
+from ..mathTool.mathFunc import getDetec,xcorrSimple,xcorrComplex,flat,validL,randomSource,disDegree,QC,fitexp
+from ..mathTool.distaz import DistAz
 '''
 the specific meaning of them you can find in Chen Xiaofei's paper
 (A systematic and efficient method of computing normal modes for multilayered half-space)

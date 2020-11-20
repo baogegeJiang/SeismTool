@@ -38,6 +38,8 @@ class filePath:
                 staName = elements[0] + ' ' +elements[1]
                 self.himaDir[staName] = elements[2:]
         self.InventoryD={}
+        self.getStaDirLFunc={}
+        self.getFileFunc={}
     def __call__(self,net,sta,comp,time0,time1,nameMode=''):
         '''
         you should specify the timeL and staDirL by net sta comp and time0/1
@@ -62,6 +64,8 @@ class filePath:
             time = UTCDateTime(time)
         if nameMode == '':
             nameMode = net
+        if nameMode in self.getFileFunc:
+            return self.getFileFunc['nameMode'](net,sta,comp,time,staDir,nameMode)
         if nameMode =='hima':
             pattern = '%s/%s.*.%s.m'%(staDir,time.strftime('R%j.01/%H/%y.%j')\
                 ,filePath.himaComp[comp[-1]])
@@ -99,6 +103,8 @@ class filePath:
 
         if nameMode == '':
             nameMode = net
+        if nameMode in self.getStaDirLFunc:
+            return self.getStaDirLFunc['nameMode'](net,sta,nameMode)
         if nameMode in ['GS','NM']:
             staDirL = ['/media/jiangyr/shanxidata21/nmSacData/'+net+\
             '.'+sta+'/']
@@ -120,6 +126,7 @@ class filePath:
         if nameMode =='XU':
             staDirL = ['/HOME/jiangyr/YNSCMOVE/']
         return staDirL
+    
     def getSensorDas(self,net,sta,nameMode=''):
         if nameMode == '':
             nameMode = net
@@ -214,6 +221,7 @@ class filePath:
             self.InventoryD[dasName+comp]=\
             read_inventory(file)
         return self.InventoryD[sensorName+comp],self.InventoryD[dasName+comp]
+
 
 
 #/media/jiangyr/shanxidata21/nmSacData/GS.HXP//201410//GS.HXP.20141001.BHZ.SAC

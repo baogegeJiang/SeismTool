@@ -1,9 +1,9 @@
 import numpy as np
-from distaz import DistAz
 from obspy import UTCDateTime
-from tool import getYmdHMSj
 import matplotlib.pyplot as plt
-from mathFunc import xcorr
+from ..mathTool.mathFunc_bak import xcorr
+from ..io.tool import getYmdHMSj
+from ..mathTool.distaz import DistAz
 #from cudaFunc import  torchcorrnn as xcorr
 SPRatio=0.5
 wkdir='TOMODD'
@@ -14,13 +14,13 @@ def preEvent(quakeL,staInfos,filename='abc'):
         for i in range(len(quakeL)):
             quake=quakeL[i]
             ml=0
-            if quake.ml!=None :
-                if quake.ml>-2:
-                    ml=quake.ml
-            Y=getYmdHMSj(UTCDateTime(quake.time))
+            if quake['ml']!=None :
+                if quake['ml']>-2:
+                    ml=quake['ml']
+            Y=getYmdHMSj(UTCDateTime(quake['time']))
             f.write("%s  %s%02d   %.4f   %.4f    % 7.3f % 5.2f   0.15    0.51  % 5.2f   % 8d %1d\n"%\
-                (Y['Y']+Y['m']+Y['d'],Y['H']+Y['M']+Y['S'],int(quake.time*100)%100,\
-                    quake.loc[0],quake.loc[1],quake.loc[2],ml,1,i,0))
+                (Y['Y']+Y['m']+Y['d'],Y['H']+Y['M']+Y['S'],int(quake['time']*100)%100,\
+                    quake['la'],quake['lo'],quake['dep'],ml,1,i,0))
 
 def preABS(quakeL,staInfos,filename='abc',isNick=True,notTomo=False):
     if filename=='abc':
@@ -29,37 +29,37 @@ def preABS(quakeL,staInfos,filename='abc',isNick=True,notTomo=False):
         for i in range(len(quakeL)):
             quake=quakeL[i]
             ml=0
-            if quake.ml!=None :
-                if quake.ml>-2:
-                    ml=quake.ml
+            if quake['ml']!=None :
+                if quake['ml']>-2:
+                    ml=quake['ml']
             if notTomo:
                 Y=getYmdHMSj(UTCDateTime(quake.time))
                 f.write("%s %s %s  %s %s %s.%02d   %.4f   %.4f    % 7.3f % 5.2f   0.15    0.51  % 5.2f   % 8d %1d\n"%\
-                    (Y['Y'],Y['m'],Y['d'],Y['H'],Y['M'],Y['S'],int(quake.time*100)%100,\
-                    quake.loc[0],quake.loc[1],quake.loc[2],ml,1,i,0))
+                    (Y['Y'],Y['m'],Y['d'],Y['H'],Y['M'],Y['S'],int(quake['time']*100)%100,\
+                    quake['la'],quake['lo'],quake['dep'],ml,1,i,0))
             else:
                 f.write('#  % 8d\n'%i)
-            for record in quake:
-                staIndex=record.getStaIndex()
+            for record in quake.records:
+                staIndex=record['staIndex']
                 staInfo=staInfos[staIndex]
                 if not isNick:
                     staName=staInfo['sta']
                 else:
                     staName=staInfo['nickName']
-                if record.pTime()!=0:
+                if record.['pTime']>0:
                     if not isNick:
                         f.write('%8s    %7.2f   %5.3f   P\n'%\
-                            (staName,record.pTime()-quake.time,1.0))
+                            (staName,record['pTime']-quake['time'],1.0))
                     else:
                         f.write('%s     %7.2f   %5.3f   P\n'%\
-                            (staName,record.pTime()-quake.time,1.0))
-                if record.sTime()!=0:
+                            (staName,record['pTime']-quake['time'],1.0))
+                if record['sTime']>0:
                     if not isNick:
                         f.write('%8s    %7.2f   %5.3f   S\n'%\
-                            (staName,record.pTime()-quake.time,1.0))
+                            (staName,record['sTime']-quake['time'],SPRatio))
                     else:
                         f.write('%s     %7.2f   %5.3f   S\n'%\
-                            (staName,record.sTime()-quake.time,SPRatio))
+                            (staName,record['sTime']-quake['time'],SPRatio))
 
 def preSta(staInfos,filename='abc',isNick=True):
     if filename=='abc':
@@ -82,36 +82,41 @@ def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
     with open(filename,'w+') as f:
         for i in range(len(quakeL)):
             print(i)
-            pTime0=quakeL[i].getPTimeL(staInfos)
-            sTime0=quakeL[i].getSTimeL(staInfos)
-            time0=quakeL[i].time
+            quake0 = quakeL[i]
+            indexL0=quake0.staIndexs()
+            time0=quake0['time']
             if countL[i]>perCount:
                 continue
             jL=np.arange(i+1,len(quakeL))
             np.random.shuffle(jL) 
             for j in jL:
+                quake1=quakeL[j]
                 if dTM[i][j]==None:
                     continue
                 if countL[j]>perCount:
                     continue
-                if DistAz(quakeL[j].loc[0],quakeL[j].loc[1],quakeL[j].loc[0],\
-                    quakeL[j].loc[1]).getDelta()>maxD:
+                if quake0.distaz(quake1).getDelta()>maxD:
                     continue
-                pTime1=quakeL[j].getPTimeL(staInfos)
-                sTime1=quakeL[j].getSTimeL(staInfos)
+                indexL1=quake1.staIndexs()
                 time1=quakeL[j].time
-                if len(sameSta(pTime0,pTime1))<minSameSta:
+                sameIndexL =[]
+                for I in indexL0:
+                    if I in indexL1:
+                        sameIndexL.append(I)
+                if len(sameIndexL)<minSameSta:
                     continue                  
                 for dtD in dTM[i][j]:
                     dt,maxC,staIndex,phaseType=dtD
+                    index0 = indexL0.index(staIndex)
+                    index1 = indexL1.index(staIndex)
                     if phaseType==1 and maxC>minPCC:
-                        dt=pTime0[staIndex]-time0-(pTime1[staIndex]-time1+dt)
+                        dt=quake0.records[index0]['pTime']-time0-(quake1.records[index1]['pTime']-time1+dt)
                         f.write("% 9d % 9d %s %8.3f %6.4f %s\n"%(i,j,\
                             staInfos[staIndex]['nickName'],dt,maxC*maxC,'P'))
                         countL[i]+=1
                         countL[j]+=1
                     if phaseType==2 and maxC>minSCC:
-                        dt=sTime0[staIndex]-time0-(sTime1[staIndex]-time1+dt)
+                        dt=quake0.records[index0]['sTime']-time0-(quake1.records[index1]['sTime']-time1+dt)
                         f.write("% 9d % 9d %s %8.3f %6.4f %s\n"%(i,j,\
                             staInfos[staIndex]['nickName'],dt,maxC*maxC*SPRatio,'S'))
                         countL[i]+=1
