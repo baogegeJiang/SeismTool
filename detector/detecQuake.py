@@ -1,29 +1,23 @@
 import obspy
 import numpy as np
-from sacTool import staTimeMat
 import os
 from glob import glob
 import matplotlib.pyplot as plt
-import tool
-import sacTool
-import sys
-sys.path.append("..")
-from seism import getTrace3ByFileName
-from tool import Record, Quake, QuakeCC,getYmdHMSj
 from multiprocessing import Process, Manager
 import threading
 import time
 import math
-from mathFunc import getDetec, prob2color
-try:
-    from mapTool import plotQuakeCCDis, plotQuakeDis,readFault
-    import mpl_toolkits.basemap as basemap
-except:
-    print('warning cannot load mapTool')
-else:
-    pass
-from distaz import DistAz
 from numba import jit
+from ..mathTool.mathFunc_bak import getDetec, prob2color
+from ..io import tool
+from ..io.seism import getTrace3ByFileName,Quake,QuakeL,Record
+from ..io.sacTool import staTimeMat
+
+from ..mapTool.mapTool import readFault
+import mpl_toolkits.basemap as basemap
+
+
+
 maxA=2e19
 os.environ["MKL_NUM_THREADS"] = "10"
 faultL = readFault('Chinafault_fromcjw.dat')
@@ -123,11 +117,11 @@ class sta(object):
         self.comp = comp
         self.taupM=taupM
         if loc[0]<R[0] or loc[0]>R[1] or loc[1]<R[2] or loc[1]>R[3]:
-            self.data=getDataByFileName([[],[],[]], freq=freq,delta0=delta0,\
+            self.data=getTrace3ByFileName([[],[],[]], freq=freq,delta0=delta0,\
                 maxA=maxA,bTime=bTime,eTime=eTime,isData=False)
             print('skip')
         else:
-            self.data = getDataByFileName(station.getFileNames(self.day), freq=freq,delta0=delta0,\
+            self.data = getTrace3ByFileName(station.getFileNames(self.day), freq=freq,delta0=delta0,\
                 maxA=maxA,bTime=bTime,eTime=eTime,isData=False)
         #print(len(sta.data.data))
         print(self.station,self.data.bTime,self.data.eTime)
@@ -271,7 +265,7 @@ def associateSta(staL, aMat, staTimeML, timeR=30, minSta=3, maxDTime=3, N=1, \
     startSec = int(startTime.timestamp-90)
     endSec = int(endTime.timestamp+30)
     if N==1:
-        quakeL=[]
+        quakeL=QuakeL()
         __associateSta(quakeL, staL, \
             aMat, staTimeML, startSec, \
             endSec, timeR=timeR, minSta=minSta,\
@@ -294,7 +288,6 @@ def associateSta(staL, aMat, staTimeML, timeR=30, minSta=3, maxDTime=3, N=1, \
     for process in processes:
         print(process)
         process.join()
-    quakeL=list()
 
     for quakeLTmp in quakeLL:
         for quakeTmp in quakeLTmp:
@@ -365,7 +358,8 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                     time = peak + sec0
                     laIndex, loIndex = argMax2D(stackM[peak, :, :].reshape((laN, loN)))
                     quakeCount+=1
-                    quake = Quake(loc=[aMat[laIndex][loIndex].midLa, aMat[laIndex][loIndex].midLo,10.0],\
+                    quake = Quake(la=aMat[laIndex][loIndex].midLa,lo=aMat[laIndex][loIndex].midLo,\
+                        dep=10.0,\
                         time=time, randID=quakeCount)
                     for staIndex in range(staN):
                         isfind=0
@@ -382,11 +376,11 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                                         sIndex = staL[staIndex].pairD[pairDIndex][5]
                                         if staL[staIndex].timeL[0][pIndex] > 0 and \
                                                 staL[staIndex].timeL[1][sIndex] > 0:
-                                            quake.append(Record(staIndex, \
-                                                staL[staIndex].orignM[laIndex][loIndex][index][0], \
-                                                staL[staIndex].orignM[laIndex][loIndex][index][1],\
-                                                staL[staIndex].vL[0][pIndex],\
-                                                staL[staIndex].vL[1][sIndex]))
+                                            quake.append(Record(staIndex=staIndex, \
+                                                pTime=staL[staIndex].orignM[laIndex][loIndex][index][0], \
+                                                sTime=staL[staIndex].orignM[laIndex][loIndex][index][1],\
+                                                pProb=staL[staIndex].vL[0][pIndex],\
+                                                sProb=staL[staIndex].vL[1][sIndex]))
                                             isfind=1
                                             staL[staIndex].timeL[0][pIndex] = 0
                                             staL[staIndex].timeL[1][sIndex] = 0
@@ -432,11 +426,11 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                                     staL[staIndex].timeL[0][pIndex]=0
                                     if sTime >1:
                                         staL[staIndex].timeL[1][sIndex]=0
-                                    quake.append(Record(staIndex, pTime, sTime, pProb, sProb))
+                                    quake.append(Record(staIndex=staIndex, pTime=pTime, sTime=sTime, pProb=pProb, sProb=sProb))
                     if locator != None and len(quake)>=3:
                         try:
                             quake,res=locator.locate(quake,maxDT=25)
-                            print(quake.time,quake.loc,res)
+                            print(quake['time'],quake.loc(),res)
                         except:
                             print('wrong in locate')
                         else:
@@ -505,8 +499,8 @@ def getStaL(staInfos, aMat=[], staTimeML=[], modelL=[],\
 
 '''
 def showExample(filenameL,modelL,delta=0.02,t=[]):
-    data=getDataByFileName(filenameL,freq=[2,15])
-    data=data.data[:2000*50]
+    data=getTrace3ByFileName(filenameL,freq=[2,15])
+    data=data.Data()[:2000*50]
     
     #i0=int(750/delta)
     #i1=int(870/delta)
@@ -534,8 +528,8 @@ def showExample(filenameL,modelL,delta=0.02,t=[]):
     
 
 def showExampleV2(filenameL,modelL,delta=0.02,t=[],staName='sta'):
-    data=getDataByFileName(filenameL,freq=[2,15])
-    data=data.data[:3500*50]
+    data=getTrace3ByFileName(filenameL,freq=[2,15],delta=delta)
+    data=data.Data()[:3500*50]
     
     #i0=int(750/delta)
     #i1=int(870/delta)
@@ -566,19 +560,19 @@ def plotRes(staL, quake, filename=None):
     colorStr='br'
     for record in quake:
         color=0
-        pTime=record[1]
-        sTime=record[2]
-        staIndex=record[0]
+        pTime=record['pTime']
+        sTime=record['sTime']
+        staIndex=record['staIndex']
         if staIndex>100:
             color=1
-        print(staIndex,pTime, sTime)
-        st=quake.time-10
+        print(staIndex,pTime,sTime)
+        st=quake['time']-10
         et=sTime+10
         if sTime==0:
             et=pTime+30
-        pD=(pTime-quake.time)%1000
+        pD=(pTime-quake['time'])%1000
         if pTime ==0:
-            pD = ((sTime-quake.time)/1.73)%1000
+            pD = ((sTime-quake['time'])/1.73)%1000
         if staL[staIndex].data.bTime<0:
             continue
         print(st, et, staL[staIndex].data.delta)
@@ -600,24 +594,24 @@ def plotRes(staL, quake, filename=None):
         #    plt.plot(timeL, data[:, 2]/data[indexL,2].max()+pD,colorStr[color],linewidth=0.3)
         #else:
         if True:
-            color = prob2color(record.pProb())
+            color = prob2color(record['pProb'])
             plt.plot(timeL, data[:, 2]/data[indexL,2].max()+pD,color=color,linewidth=0.3)
-        plt.text(timeL[0],pD+0.5,'%s %.2f %.2f'%(staL[staIndex].station,record.pProb(),\
-            record.sProb()))
+        plt.text(timeL[0],pD+0.5,'%s %.2f %.2f'%(staL[staIndex].station,record['pProb'],\
+            record['sProb']))
         if pTime>0:
             plt.plot([pTime, pTime], [pD+2, pD-2], 'g')
             if isinstance(quake,QuakeCC):
-                plt.text(pTime+1,pD+0.5,'%.2f'%record.getPCC())
+                plt.text(pTime+1,pD+0.5,'%.2f'%record['PCC'])
         if sTime >0:
             plt.plot([sTime, sTime], [pD+2, pD-2], 'k')
             if isinstance(quake,QuakeCC):
-                plt.text(sTime+1,pD+0.5,'%.2f'%record.getSCC())
+                plt.text(sTime+1,pD+0.5,'%.2f'%record['SCC'])
     if isinstance(quake,QuakeCC):
-        plt.title('%s %.3f %.3f %.3f cc:%.3f' % (obspy.UTCDateTime(quake.time).\
-            ctime(), quake.loc[0], quake.loc[1],quake.loc[2],quake.cc))
+        plt.title('%s %.3f %.3f %.3f cc:%.3f' % (obspy.UTCDateTime(quake['time']).\
+            ctime(), quake['la'], quake['lo'],quake['dep'],quake['cc']))
     else:
-        plt.title('%s %.3f %.3f %.3f' % (obspy.UTCDateTime(quake.time).\
-            ctime(), quake.loc[0], quake.loc[1],quake.loc[2]))
+        plt.title('%s %.3f %.3f %.3f' % (obspy.UTCDateTime(quake['time']).\
+            ctime(), quake['la'], quake['lo'],quake['dep']))
     if filename==None:
         plt.show()
     if filename!=None:
@@ -629,7 +623,7 @@ def plotRes(staL, quake, filename=None):
 
 def plotResS(staL,quakeL, outDir='output/'):
     for quake in quakeL:
-        filename=outDir+'/'+quake.filename[0:-3]+'png'
+        filename=outDir+'/'+quake['filename'][0:-3]+'png'
         #filename=outDir+'/'+str(quake.time)+'.jpg'
         #try:
         plotRes(staL,quake,filename=filename)
@@ -659,8 +653,8 @@ def plotQuakeL(staL,quakeL,laL,loL,outDir='output/'):
     eLa= []
     eLo=[]
     for quake in quakeL:
-        eLa.append(quake.loc[0])
-        eLo.append(quake.loc[1])
+        eLa.append(quake['la'])
+        eLo.append(quake['lo'])
     eX,eY=m(np.array(eLo),np.array(eLa))
     #m.etopo()
     for fault in faultL:
@@ -678,7 +672,7 @@ def plotQuakeL(staL,quakeL,laL,loL,outDir='output/'):
 
 
 
-
+'''
 
 def getStaLByQuake(staInfos, aMat, staTimeML, modelL,quake,\
     getFileName=originFileName,taupM=tool.quickTaupModel(), \
@@ -697,3 +691,4 @@ def getStaLByQuake(staInfos, aMat, staTimeML, modelL,quake,\
         getSta(staL, i, nt, st, date, modelL, staTimeML[i], loc, \
             [0.01, 15], getFileName, taupM, mode,isPre=isPre,delta0=delta0)
     return staL
+'''

@@ -1,6 +1,7 @@
-from tool import quickTaupModel,QuakeCC,RecordCC
+from ..io.seism import QuakeCC,RecordCC
+from ..io.tool import quickTaupModel
 import numpy as np
-from distaz import DistAz
+from ..mathTool.distaz import DistAz
 
 class locator:
     def __init__(self,staInfos,modelFile='include/iaspTaupMat'):
@@ -13,26 +14,22 @@ class locator:
         #mulL=[40]*2+[20]*2+[10]*2+[8   ]*2+[5  ]*3+[3  ]*5
         #adL =[1 ]*2+[1 ]*2+[1 ]*2+[0.75]*2+[0.5]*3+[0.25]*5
         time=365*86400*100
-        quake.loc[2]=10+10*np.random.rand(1)
-        quake.time=float(quake.time)
+        quake['dep']=10+10*np.random.rand(1)
+        quake['time']=float(quake['time'])
         self.maxErr=maxErr
         for i in range(len(quake)):
-            record=quake[i]
-            staInfo=self.staInfos[record.getStaIndex()]
-            if record.pTime()<time:
-                time=record.pTime()
+            record=quake.records[i]
+            staInfo=self.staInfos[record['staIndex']]
+            if record['pTime']<time:
+                time=record['pTime']
                 dLa=float((np.random.rand()-0.5)*0.3)
                 dLo=float((np.random.rand()-0.5)*0.3)
                 dLz=float((np.random.rand()-0.5)*5)
-                quake.loc=[staInfo['la']+dLa,staInfo['lo']+dLo,10+dLz]
+                quake['la'],quake['lo'],quake['dep']=\
+                [staInfo['la']+dLa,staInfo['lo']+dLo,10+dLz]
         for i in range(len(mulL)):
             quake,res=self.__locate__(quake,mul=mulL[i],r=r,ad=adL[i],e=e,maxDT=maxDT,\
                 isDel=(isDel and i+1==len(mulL)))
-        #for i in range(len(quake)):
-        #    print(quake[i].pTime())
-        #    if quake[i].pTime() <0.1 and isDel:
-        #        del(quake[i])
-        #        print('del')
         return quake,res
     def __locate__(self,quake,mul=10,r=1,ad=1,e=0.1,maxDT=30,isDel=False):
         phaseL=[]
@@ -40,28 +37,29 @@ class locator:
         staIndexL=[]
         rIndexL=[]
         wL=[]
-        for i in range(len(quake)):
-            record=quake[i]
-            if record.pTime()>0 and record.pTime()-quake.time<maxDT:
-                timeL.append(record.pTime()-quake.time)
+        for i in range(len(quake.records)):
+            record=quake.records[i]
+            if record['pTime']>0 and record['pTime']-quake['time']<maxDT:
+                timeL.append(record['pTime']-quake['time'])
                 phaseL.append('p')
-                staIndexL.append(record.getStaIndex())
+                staIndexL.append(record['staIndex'])
                 rIndexL.append(i)
                 r0=1
                 if isinstance(quake,QuakeCC):
-                    r0=max(record.getPCC(),0.01)
+                    r0=max(record['pCC'],0.01)
                 wL.append(1*r0)
-            if record.sTime()>0 and record.sTime()-quake.time<maxDT*1.7:
-                timeL.append(record.sTime()-quake.time)
+            if record['sTime']>0 and record['sTime']-quake['time']<maxDT*1.7:
+                timeL.append(record['sTime']-quake['time'])
                 phaseL.append('s')
-                staIndexL.append(record.getStaIndex())
+                staIndexL.append(record['staIndex'])
                 rIndexL.append(i)
                 r0=1
                 if isinstance(quake,QuakeCC):
-                    r0=max(record.getSCC(),0.01)
+                    r0=max(record['pCC'],0.01)
                 wL.append(r*r0)
         timeL=np.array(timeL)
         wL=np.array(wL).transpose()
+        #print(timeL,phaseL)
         gM=self.__timeG__(quake,phaseL,staIndexL)
         dTime=timeL-gM[:,0]
         #print(gM[-1,:],timeL[-1])
@@ -95,28 +93,30 @@ class locator:
         MM=np.linalg.pinv(gMTgM)
         dd=MM*dM
         #print(dd)
-        quake.loc[0]=quake.loc[0]+float(dd[0,0])*ad
-        quake.loc[1]=quake.loc[1]+float(dd[1,0])*ad
-        quake.loc[2]=float(max(-4,quake.loc[2]+float(dd[2,0])*ad))
-        quake.time+=float(dd[3,0])
+        quake['la']+=float(dd[0,0])*ad
+        quake['lo']+=float(dd[1,0])*ad
+        quake['dep']=float(max(-4,quake['dep']+float(dd[2,0])*ad))
+        quake['time']+=float(dd[3,0])
         return quake,dTime.std()
     def __timeG__(self,quake,phaseL,staIndexL):
         gM=np.zeros((len(phaseL),5))
-        loc=quake.loc
+        loc=quake.loc()
         for i in range(len(phaseL)):
             staLa=self.staInfos[staIndexL[i]]['la']
             staLo=self.staInfos[staIndexL[i]]['lo']
             dep=self.staInfos[staIndexL[i]]['dep']/1000
             dd=0.0001
             ddz=1
-            delta=DistAz(quake.loc[0],quake.loc[1],\
+            delta=DistAz(loc[0],loc[1],\
                     staLa,staLo).delta
-            time=self.timeM.get_travel_times(np.abs(loc[2]+dep),delta,phaseL[i])[0].time
-            ddLa=(DistAz(quake.loc[0]+dd,quake.loc[1],\
+            time=self.timeM.get_travel_times(\
+                np.abs(loc[2]+dep),delta,phaseL[i])[0].time
+            ddLa=(DistAz(loc[0]+dd,loc[1],\
                     staLa,staLo).delta-delta)/dd
-            ddLo=(DistAz(quake.loc[0],quake.loc[1]+dd,\
+            ddLo=(DistAz(loc[0],loc[1]+dd,\
                     staLa,staLo).delta-delta)/dd
-            dTime=(self.timeM.get_travel_times(np.abs(loc[2]+dep),delta+dd,phaseL[i])[0].time-\
+            dTime=(self.timeM.get_travel_times(\
+                np.abs(loc[2]+dep),delta+dd,phaseL[i])[0].time-\
                     time)/dd
             ddLaTime=dTime*ddLa
             ddLoTime=dTime*ddLo
@@ -127,6 +127,8 @@ class locator:
             gM[i,2]=ddLoTime
             gM[i,3]=ddZTime
             gM[i,4]=1
+        #print(gM)
+        #return
 
         return gM
 
@@ -136,37 +138,40 @@ class locator:
         if quakeRef != None:
             return self.getGRef(quake,quakeRef,minCC=minCC,minMul=minMul)
         for record in quake:
-            if record.pTime()>0:
+            if record['pTime']>0:
                 if isinstance(record,RecordCC):
-                    if record.getPCC()<minCC or record.getPMul()<minMul:
+                    if record['pCC']<minCC or record.getPMul()<minMul:
                         continue
-                staIndexL.append(record.getStaIndex())
+                staIndexL.append(record['staIndex'])
                 phaseL.append('p')
             if record.sTime()>0:
                 if isinstance(record,RecordCC):
-                    if record.getSCC()<minCC or record.getSMul()<minMul:
+                    if record['sCC']<minCC or record.getSMul()<minMul:
                         continue
-                staIndexL.append(record.getStaIndex())
+                staIndexL.append(record['staIndex'])
                 phaseL.append('s')
         return np.mat(self.__timeG__(quake,phaseL,staIndexL))
 
     def getGRef(self,quake,quakeRef,minCC=0.5,minMul=0):
         staIndexL=[]
         phaseL=[]
-        pTimeL0=quakeRef.getPTimeL(self.staInfos)
-        sTimeL0=quakeRef.getSTimeL(self.staInfos)
+        indexLRef=quakeRef.staIndex()
         for record in quake:
-            if record.pTime()>0 and pTimeL0[record.getStaIndex()]>0:
+            if record['pTime']>0 and record['staIndex'] in indexLRef>0:
                 if isinstance(record,RecordCC):
-                    if record.getPCC()<minCC or record.getPMul()<minMul:
+                    if record['pCC']<minCC or record.getPMul()<minMul\
+                     or quakeRef.records\
+                     [indexLRef.index(record['staIndex'])]['pTime']<0:
                         continue
-                staIndexL.append(record.getStaIndex())
+                staIndexL.append(record['staIndex'])
                 phaseL.append('p')
-            if record.sTime()>0 and sTimeL0[record.getStaIndex()]>0:
+            if record['sTime']>0 and record['staIndex'] in indexLRef>0:
                 if isinstance(record,RecordCC):
-                    if record.getSCC()<minCC or record.getSMul()<minMul:
+                    if record['SCC']<minCC or record.getSMul()<minMul \
+                     or quakeRef.records\
+                     [indexLRef.index(record['staIndex'])]['sTime']<0:
                         continue
-                staIndexL.append(record.getStaIndex())
+                staIndexL.append(record['staIndex'])
                 phaseL.append('s')
         return np.mat(self.__timeGRef__(quake,phaseL,staIndexL,quakeRef))
 
@@ -191,7 +196,8 @@ class locator:
         time=365*86400*100
         #quake.loc[2]=10+10*np.random.rand(1)
         for i in range(3):
-            quake.loc[i]=float(quakeRef.loc[i])
+            quake['la'],quake['lo'],quake['dep']=\
+            quakeRef['la'],quakeRef['lo'],quakeRef['dep']
         for i in range(len(mulL)):
             quake,res=self.__locateRef__(quake,quakeRef,mul=mulL[i],\
                 r=r,ad=adL[i],e=e,maxDT=maxDT,minCC=minCC)
@@ -202,32 +208,37 @@ class locator:
         timeL=[]
         staIndexL=[]
         wL=[]
-        pTimeL0=quakeRef.getPTimeL(self.staInfos)
-        sTimeL0=quakeRef.getSTimeL(self.staInfos)
+        indexLRef=quakeRef.staIndex()
         for record in quake:
-            if record.pTime()>0 and pTimeL0[record.getStaIndex()]>0 \
-            and record.pTime()-quake.time<maxDT:
-                timeL.append(record.pTime()-quake.time)
+            index = record['index']
+            if index in indexLRef:
+                indexRef = indexLRef.index(index)
+            else:
+                continue
+            if record['pTime']>0 and quakeRef.records[indexRef]['pTime']>0 \
+            and record['pTime']-quake['time']<maxDT:
+                timeL.append(record['pTime']-quake['time'])
                 #print(record.pTime(),timeL[-1])
                 phaseL.append('p')
-                staIndexL.append(record.getStaIndex())
+                staIndexL.append(index)
                 r0=1
                 if isinstance(quake,QuakeCC):
-                    r0=max(record.getPCC()**2,0.01)
-                    if record.getPCC()<minCC:
+                    r0=max(record['pCC']**2,0.01)
+                    if record['pCC']<minCC:
                         r0=1e-4
                 wL.append(1*r0)
-            if record.sTime()>0 and sTimeL0[record.getStaIndex()]>0 \
-            and record.sTime()-quake.time<maxDT*1.7:
-                timeL.append(record.sTime()-quake.time)
+            if record['sTime']>0 and quakeRef.records[indexRef]['sTime']>0 \
+            and record['sTime']-quake['time']<maxDT*1.7:
+                timeL.append(record['sTime']-quake['time'])
+                #print(record.pTime(),timeL[-1])
                 phaseL.append('s')
-                staIndexL.append(record.getStaIndex())
+                staIndexL.append(index)
                 r0=1
                 if isinstance(quake,QuakeCC):
-                    r0=max(record.getSCC()**2,0.01)
-                    if record.getSCC()<minCC:
+                    r0=max(record['sCC']**2,0.01)
+                    if record['sCC']<minCC:
                         r0=1e-4
-                wL.append(r*r0)
+                wL.append(1*r0)
         timeL=np.array(timeL)
         wL=np.array(wL).transpose()
         gM=self.__timeGRef__(quake,phaseL,staIndexL,quakeRef,minCC=minCC)
@@ -255,31 +266,31 @@ class locator:
         gMTgM[3,3]=gMTgM[3,3]+e/100
         MM=np.linalg.pinv(gMTgM)
         dd=MM*dM
-        quake.loc[0]=quake.loc[0]+float(dd[0,0])*ad
-        quake.loc[1]=quake.loc[1]+float(dd[1,0])*ad
-        quake.loc[2]=float(max(-3,quake.loc[2]+float(dd[2,0])*ad))
-        quake.time+=float(dd[3,0])
+        quake['la']+=float(dd[0,0])*ad
+        quake['lo']+=float(dd[1,0])*ad
+        quake['dep']=float(max(-4,quake['dep']+float(dd[2,0])*ad))
+        quake['time']+=float(dd[3,0])
         dTime=dTime.transpose()-gM*dd
         return quake,dTime.std()
     def __timeGRef__(self,quake,phaseL,staIndexL,quakeRef,minCC=0.5):
         gM=np.zeros((len(phaseL),5))
-        pTime=quakeRef.getPTimeL(self.staInfos)
-        sTime=quakeRef.getSTimeL(self.staInfos)
-        p=quake.getPTimeL(self.staInfos)
-        s=quake.getSTimeL(self.staInfos)
-        loc=quake.loc
+        indexLRef=quakeRef.staIndex()
+        indexL=quake.staIndex()
+        loc=quake.loc()
         for i in range(len(phaseL)):
+            index=indexL.index(staIndexL[i])
+            indexRef=indexLRef.index(staIndexL[i])
             staLa=self.staInfos[staIndexL[i]]['la']
             staLo=self.staInfos[staIndexL[i]]['lo']
             dep=self.staInfos[staIndexL[i]]['dep']/1000
             dd=0.0001
             ddz=0.1
-            delta=DistAz(quake.loc[0],quake.loc[1],\
+            delta=DistAz(quake['la'],quake['lo'],\
                 staLa,staLo).delta
-            time=self.timeM.get_travel_times(loc[2]+dep,delta,phaseL[i])[0].time
-            ddLa=(DistAz(quake.loc[0]+dd,quake.loc[1],\
+            time=self.timeM.get_travel_times(quake['dep']+dep,delta,phaseL[i])[0].time
+            ddLa=(DistAz(quake['la']+dd,quake['lo'],\
                 staLa,staLo).delta-delta)/dd
-            ddLo=(DistAz(quake.loc[0],quake.loc[1]+dd,\
+            ddLo=(DistAz(quake['la'],quake['lo']+dd,\
                 staLa,staLo).delta-delta)/dd
             dTime=(self.timeM.get_travel_times(loc[2]+dep,delta+dd,phaseL[i])[0].time-\
                 time)/dd
@@ -289,12 +300,12 @@ class locator:
                 time)/ddz
             gM[i,0]=time
             if phaseL[i]=='p':
-                if pTime[staIndexL[i]]>10:
-                    gM[i,0]=pTime[staIndexL[i]]-quakeRef.time
+                if quakeRef.records[indexRef]['pTime']>10:
+                    gM[i,0]=quakeRef.records[indexRef]['pTime']-quakeRef['time']
                     #print(staIndexL[i],gM[i,0],p[staIndexL[i]]-quake.time)
             else:
-                if sTime[staIndexL[i]]>10:
-                    gM[i,0]=sTime[staIndexL[i]]-quakeRef.time
+                if quakeRef.records[indexRef]['sTime']>10:
+                    gM[i,0]=quakeRef.records[indexRef]['sTime']-quakeRef['time']
                     #print(gM[i,0])
             gM[i,1]=ddLaTime
             gM[i,2]=ddLoTime
@@ -309,12 +320,12 @@ def getRefM(quakeRefs,staInfos):
     laloM=np.zeros((qN,2))
     for i in range(qN):
         timeM[i,:]=np.sign(quakeRefs[i].getPTimeL(staInfos)).reshape((1,-1))
-        laloM[i,:]=np.array(quakeRefs[i].loc[:2]).reshape((1,-1))
+        laloM[i,:]=np.array(quakeRefs[i].loc()[:2]).reshape((1,-1))
     return timeM,laloM
 
 def findNearQuake(quake,timeM,laloM,staInfos,maxDis=0.2,minSta=5):
     sameStaN=(timeM*quake.getPTimeL(staInfos)).sum(axis=1)
-    dis=np.linalg.norm(laloM-np.array(quake.loc[:2]).reshape((1,-1)),axis=1)
+    dis=np.linalg.norm(laloM-np.array(quake.loc()[:2]).reshape((1,-1)),axis=1)
     index=(dis/(1+sameStaN/100*(dis<maxDis))+100*(sameStaN<minSta)).argmin()
     if dis[index]>maxDis or sameStaN[index] < minSta:
         return None
@@ -350,9 +361,9 @@ def relocQuakeLs(quakeLs,quakeRefs,staInfos):
             if index!=None:
                 count+=1
                 #print(index)
-                print(count0,count,'###',quake.loc,quakeRefs[index].loc)
+                print(count0,count,'###',quake.loc(),quakeRefs[index].loc())
                 quake,res=loc.locateRef(quake,quakeRefs[index])
-                print(count0,count,'***',quake.loc,quakeRefs[index].loc,res)
+                print(count0,count,'***',quake.loc(),quakeRefs[index].loc(),res)
                 quakeRelocL.append(quake)
     return quakeRelocL
 

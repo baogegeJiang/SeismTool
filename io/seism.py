@@ -1,16 +1,15 @@
 import obspy 
 import numpy as np
-from distaz import DistAz
-from dataLib import filePath
 from obspy import UTCDateTime,read
 from obspy.io import sac
-from distaz import DistAz
 import os 
 import random
 from matplotlib import pyplot as plt
 import time
 from glob import glob
 from numba import jit
+from ..mathTool.distaz import DistAz
+from .dataLib import filePath
 plt.switch_backend('agg')
 fileP = filePath()
 def tolist(s,d='/'):
@@ -149,6 +148,19 @@ class Dist:
     def baz(self,loc):
         dis = self.distaz(loc)
         return dis.getBaz()
+    def __gt__(self,self1):
+        return self['time']>self1['time']
+    def __ge__(self,self1):
+        return self['time']>=self1['time']
+
+    #def __eq__(self,self1):
+    #    return self['time']==self1['time']
+
+    def __lt__(self,self1):
+        return self['time']<self1['time']
+
+    def __le__(self,self1):
+        return self['time']<=self1['time']
 
 defaultStats = {'network':'00','station':'00000','channel':'000'}
 class Station(Dist):
@@ -357,6 +369,16 @@ class StationList(list):
         netSta = netSta.split('/')[-1]
         net, sta = netSta.split(spl)[:2]
         return self.find(sta,net)
+    def index(self,net,sta):
+        for i in range(len(self)):
+            station = self[i]
+            if station['sta'] != sta:
+                continue
+            if net !='' and station['net'] != net:
+                continue
+            return i
+        return None
+
     def set(self,key,value):
         for tmp in self:
             tmp[key] = value
@@ -374,7 +396,6 @@ class StationList(list):
             loL.append(sta['lo'])
         return np.array(laL),np.array(loL)
 
-
         
 class Record(Dist):
     def __init__(self,*argv,**kwargs):
@@ -384,10 +405,20 @@ class Record(Dist):
         self.keysIn   = 'staIndex pTime sTime pProb sProb'.split()
         self.keys     = 'staIndex pTime sTime pProb sProb pCC  sCC  pM   pS   sM   sS staName no'.split()
         self.keysType = 'i        f     f     f      f    f    f    f    f    f    f  S'.split()
-        self.keys0    = [0,       None,  None,None,  None,None,None,None,None,None,None,None]
+        self.keys0    = [0,       -1,  -1,-1,  -1,-1,-1,-1,-1,-1,-1,-1]
         self.keysName = ['staIndex','pTime','sTime']
     def select(self,req):
         return True
+
+class RecordCC(Record):
+    def defaultSet(self):
+        super().defaultSet()
+        self.keysIn   = 'staIndex pTime sTime pCC sCC pM pS sM sS'.split()
+    def getPMul(self):
+        return (self['pCC']-self['pM'])/self['pS']
+    def getSMul(self):
+        return (self['sCC']-self['sM'])/self['sS']
+
 
 defaultStrL='ENZ'
 class Quake(Dist):
@@ -490,7 +521,12 @@ class Quake(Dist):
             self['strTime'] = UTCDateTime(self['time']).strftime('%Y:%m:%d %H:%M:%S.%f')
         if key =='HMS' and self['YMD']!='' and self['HMS']!='':
             self['time'] = UTCDateTime(self['YMD'] + ' ' + self['HMS'])
-    def saveSacs(self,staL, quakeIndex, matDir='output/'\
+    #def __getitem__(self,key):
+    #    if isinstance(key,str):
+    #        super().__getitem__(key)
+    #    else:
+    #        return self.record[key]
+    def saveSacs(self,staL, staInfos, matDir='output/'\
     ,index0=-500,index1=500,dtype=np.float32):
         indexL = np.arange(index0, index1)
         iNum=indexL.size
@@ -499,7 +535,7 @@ class Quake(Dist):
         if not os.path.exists(eventDir):
             os.makedirs(eventDir)
         ml=0
-        sACount=0
+        T3L =[]
         for i in range(len(self.records)):
             record = self.records[i]
             staIndex = record['staIndex']
@@ -508,15 +544,16 @@ class Quake(Dist):
             bTime = self['time']-20
             eTime = max(pTime,sTime)+40
             bTime,eTime=staL[staIndex].data.getTimeLim(bTime,eTime)
-            if bTime>=eTime:
-                continue
             filenames=staL[staIndex].sta.baseSacName(resDir=eventDir)
             T3 = staL[staIndex].data.slice(bTime,eTime,nearest_sample=True)
+            T3L.append(T3)
+            if T3.bTime<0:
+                continue
             T3.adjust(kzTime=self.time,pTime=pTime,sTime=sTime,net=staL[staIndex].sta['net'],\
                 sta=staL[staIndex].sta['sta'],stloc=staL[staIndex].sta.loc(),eloc=self.loc)
-            if T3.bTime>0:
-                T3.write(filenames)
-        return ml
+            
+            T3.write(filenames)
+        return self.calML(staInfos=staInfos,T3L=T3L)
     def loadSacs(self,staInfos,matDir='output',\
         f=[-1,-1],filtOrder=2):
         T3L=[]
@@ -540,7 +577,7 @@ class Quake(Dist):
                 T3.pTime+index1*T3.delta))
             T3SL.append(T3.slice(T3.sTime+index0*T3.delta,\
                 T3.sTime+index1*T3.delta))
-        return T3SL,T3SL
+        return T3PL,T3SL
     def calCover(self,staInfos,maxDT=None):
         '''
         calculate the radiation coverage
@@ -620,6 +657,32 @@ class Quake(Dist):
                     data.write(resSacNames[i],format='SAC')
         print(tmpDir,len(glob(tmpDir+'/*Z')))
         return None
+    def calML(self, staInfos,minSACount=3,T3L=None):
+        def getSA(data):
+            data=data-data.mean()
+            return data.cumsum(axis=0).max()
+        ml = 0
+        sACount=0
+        for i in range(len(self.records)):
+            record = self.records[0]
+            T3 =  T3L[i]
+            if T3.bTime <0 or record['sTime']<0:
+                continue
+            data = T3.Data(record['sTime']-3,record['sTime']+10)
+            if len(data)==0:
+                continue
+            sA  = getSA(data)*T3.delta
+            dk = self.dist(staInfos[record['staIndex']]) 
+            ml+=np.log10(sA)+1.1*np.log10(dk)+0.00189*dk-2.09-0.23
+            sACount+=1
+            if sACount<minSACount:
+                ml=-999
+            else:
+                ml/=sACount
+        return ml
+    def __len__(self):
+        return len(self.records)
+
     def getSacFiles(self,stations,isRead=False,resDir = 'eventSac/',strL='ENZ',\
         byRecord=True,maxDist=-1,minDist=-1,remove_resp=False,isPlot=False,\
         isSave=False,respStr='_remove_resp',para={},isSkip=False):
@@ -813,7 +876,18 @@ class Quake(Dist):
                 else:
                     sacsL.append(resSacNames)
         return sacsL
-
+class QuakeCC(Quake):
+    def defaultSet(self):
+        #               quake: 34.718277 105.928949 1388535219.080064 num: 7 index: 0    randID: 1    filename: 16071/1388535216_1.mat -0.300000
+        super().defaultSet()
+        self.keysIn   = 'type   la       lo          time          para0 num para1 index para2 randID para3 filename cc M S ml   dep tmpName'.split()
+        self.keys     = 'type   la       lo          time          para0 num \
+        para1 index para2 randID para3 filename tmpName ml   dep stationList strTime no YMD HMS cc M S '.split()
+        self.keysType = 'S      f        f           f             S     F   S     f     S     f      S     S        f    f   l  S S S S f f f S'.split()
+        self.keys0    = [None,  None,     None,      None,         None, None,None,None, None, None,  None,  None,   None,0 ,'','',10,1,0.1,'UN']
+        self.keysName = ['time','la','lo']
+    def getMul(self):
+        return (self['cc']-self['M'])/self['S']
 
 class QuakeL(list):
     def __init__(self,*argv,**kwargs):
@@ -821,6 +895,14 @@ class QuakeL(list):
         self.inQuake = {}
         self.inRecord= {}
         self.keys = ['#','*','q-','d-',' ',' ']
+        if 'Quake' in kwargs:
+            self.Quake = kwargs['Quake']
+        else:
+            self.Quake = Quake
+        if 'Record' in kwargs:
+            self.Record = kwargs['Record']
+        else:
+            self.Record = Record
         if 'quakeKeysIn' in kwargs:
             self.inQuake['keysIn'] = kwargs['quakeKeysIn']
         if 'recordKeysIn' in kwargs:
@@ -886,13 +968,13 @@ class QuakeL(list):
                 continue
             if line[0] in self.keys[2]:
                 self.inQuake['line'] = line
-                self.append(Quake(**self.inQuake))
+                self.append(self.Quake(**self.inQuake))
                 continue
             if line[0] in self.keys[3]:
                 continue
             #print(line[0],self.keys)
             self.inRecord['line'] = line
-            self[-1].Append(Record(**self.inRecord))
+            self[-1].Append(self.Record(**self.inRecord))
     def write(self,file,**kwargs):
         if 'quakeSplitKey' in kwargs:
             self.inQuake['splitKey'] = kwargs['quakeSplitKey']

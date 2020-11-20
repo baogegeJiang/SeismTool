@@ -1,15 +1,12 @@
 from obspy import UTCDateTime
 import os
-import seism
-import detecQuake
-import sacTool
-import sys
-sys.path.append("..")
-from seism import StationList
 from imp import reload
-import tool
-from locate import locator
+from SeismTool.io import seism,sacTool,tool
+from SeismTool.detector import detecQuake
+from SeismTool.io.seism import StationList
+from SeismTool.locate.locate import locator
 from multiprocessing import Pool
+from SeismTool.locate import locate
 detecQuake.maxA=1e15#这个是否有道理
 
 
@@ -24,7 +21,7 @@ detecQuake.maxA=1e15#这个是否有道理
 
 
 def do(l):
-import fcn as trainPS
+from seismTool.deepLearning import fcn as trainPS
 l=['SCYN_all1118','SCYN_all1118V1','0',UTCDateTime(2014,1,1).timestamp,UTCDateTime(2015,7,1).timestamp]
 v_i,p_i,cudaI,bSec,eSec =l 
 os.environ["CUDA_VISIBLE_DEVICES"] = cudaI
@@ -54,7 +51,7 @@ taupM=tool.quickTaupModel(modelFile='include/iaspTaupMat')
 modelL = [trainPS.genModel0('norm','p')[0],trainPS.genModel0('norm','s')[0]]
 modelL[0].load_weights('model/norm_p_400000_80000')
 modelL[1].load_weights('model/norm_s_400000_80000')
-staInfos=StationList(staLstFileL[0])#+StationList(staLstFileL[1])
+staInfos=StationList(staLstFileL[0])+StationList(staLstFileL[1])
 aMat=sacTool.areaMat(laL,loL,laN,loN)
 staTimeML= detecQuake.getStaTimeL(staInfos, aMat, taupM=taupM)
 quakeLs=list()
@@ -82,10 +79,7 @@ for date in range(int(bSec),int(eSec), 86400):
     '''
     tool.saveQuakeLs(quakeLs, workDir+'phaseDir/phaseLstV%s'%p_i)
     if len(quakeLs[-1])>0:
-        tool.saveQuakeLWaveform(staL, quakeLs[-1], \
-            matDir=workDir+'output/outputV%s/'%v_i,\
-                index0=-1500,index1=1500)
-        tool.saveSacs(staL, quakeLs[-1], \
+        tool.saveSacs(staL, quakeLs[-1], staInfos,\
             matDir=workDir+'output/outputV%s/'%v_i,\
                 index0=-1500,index1=1500)
         detecQuake.plotResS(staL,quakeLs[-1],outDir\

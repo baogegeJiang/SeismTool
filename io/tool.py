@@ -5,16 +5,18 @@ from scipy import interpolate as interp
 from obspy import UTCDateTime, taup
 import obspy
 from multiprocessing import Process, Manager
-from mathFunc import matTime2UTC,rad2deg, getDetec
-from seism import mergeSacByName,adjust, getTrace3ByFileName as getDataByFileName
+
 import re
 from glob import glob
-from distaz import DistAz
 import matplotlib.pyplot as plt
 from scipy import signal
 from openpyxl import Workbook
-from handleLog import getLocByLogsP
+#from .. .bak.handleLog import getLocByLogsP
 import os
+from ..mathTool.mathFunc import matTime2UTC,rad2deg, getDetec
+from ..mathTool.distaz import DistAz
+from .seism import mergeSacByName,adjust, getTrace3ByFileName as getDataByFileName
+
 
 plt.rcParams['font.sans-serif']=['Arial']
 plt.rcParams['font.size']=7

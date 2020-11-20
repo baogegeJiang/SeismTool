@@ -14,7 +14,8 @@ from tensorflow.keras.utils import get_custom_objects
 import random
 import obspy
 import time
-from mathFunc import findPos
+from .. import mathTool
+from ..mathTool.mathFunc import findPos
 import os
 from tensorflow.keras.utils import plot_model
 import tensorflow as tf
@@ -454,7 +455,7 @@ class fcnConfig:
             #self.featureL      = [min(2**(i+1)+20,80) for i in range(7)]#high
             #self.featureL      = [8,16,32,64,128,256,512]
             #self.featureL      = [6,12,24,48,96,192,384]
-            self.featureL      = [4,8,16,32,64,192,384]
+            self.featureL      = [4,8,16,32,64,192,192*3]
             self.strideL       = [(2,1),(2,1),(2,1),(2,1),(5,1),(5,1),(5,1)]
             #self.kernelL       = [(4,1),(4,1),(4,1),(4,1),(10,1),(10,1),(10,1),\
             #(8,1),(4,1),(4,1),(4,1)]
@@ -512,28 +513,14 @@ def lossFuncNew(y,yout):
 
     #yW=(K.sign(-y-0.1)+1)*10*(K.sign(yout-0.35)+1)+1
     #y=(K.sign(y+0.1)+1)*y/2
-    y0=0.13*1.2
+    y0=0.08
     return -K.mean((y*K.log(yout+1e-9)/y0+(1-y)*(K.log(1-yout+1e-9))/(1-y0))*(y*0+1)*(1+K.sign(y)*wY1),axis=[0,1,2,3])
-'''
-def lossFuncNew(y,yout):
 
-    yW=(K.sign(-y-0.1)+1)*10*(K.sign(yout-0.35)+1)+1
-    y=(K.sign(y+0.1)+1)*y/2
-    y0=0.13
-    return -K.mean((y*K.log(yout+1e-9)/y0+(1-y)*(K.log(1-yout+1e-9))/(1-y0))*(y*0+1)*(1+K.sign(y)*wY1)*yW,axis=[0,1,2,3])
-
-def lossFuncNewS(y,yout):
-    y=y
-    yW=(K.sign(-y-0.1)+1)*10*(K.sign(yout-0.35)+1)+1
-    y=(K.sign(y+0.1)+1)*y/2
-    y0=0.13
-    return -K.mean((y*K.log(yout+1e-9)/y0+(1-y)*(K.log(1-yout+1e-9))/(1-y0))*(y*0+1)*(1+K.sign(y)*wY1)*yW,axis=[0,1,2,3])
-'''
 def lossFuncNewS(y,yout):
     #y=y
     #yW=(K.sign(-y-0.1)+1)*10*(K.sign(yout-0.35)+1)+1
     #y=(K.sign(y+0.1)+1)*y/2
-    y0=0.13*1.2
+    y0=0.08
     return -K.mean((y*K.log(yout+1e-9)/y0+(1-y)*(K.log(1-yout+1e-9))/(1-y0))*(y*0+1)*(1+K.sign(y)*wY1),axis=[0,1,2,3])
 
 

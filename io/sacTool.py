@@ -1,13 +1,13 @@
 import obspy
 from obspy import UTCDateTime
-from distaz import DistAz
+from ..mathTool.distaz import DistAz
 import numpy as np
 from scipy import interpolate as interp
 from scipy import signal
 import obspy.core.trace as trace
 import obspy.core.stream as stream
 import os
-import tool
+from . import tool
 from obspy.taup import TauPyModel
 import matplotlib.pyplot as plt
 import time
@@ -16,9 +16,7 @@ from multiprocessing import Process, Manager,Pool
 from glob import glob
 import random
 from obspy.io import sac
-import sys
-sys.path.append("..")
-from seism import mergeSacByName,adjust, getTrace3ByFileName as getDataByFileName
+from .seism import mergeSacByName,adjust, getTrace3ByFileName as getDataByFileName
 
 
 class subarea:
@@ -301,7 +299,7 @@ def getCatalogFromFile(filename,mod='STEAD'):
         catalog=[]
         with open(filename,'r') as f:
             lines = f.readlines()
-            lines.sort()
+            #lines.sort()
             for line in lines:
                 catalog.append(Catalog([line.split('\n')[0]]\
                     ,getXYFromHinet,mode=mod))

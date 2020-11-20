@@ -4,7 +4,8 @@ from obspy import UTCDateTime
 from tool import  QuakeCC, RecordCC
 from mathFunc import getDetec, cmax,corrNP
 import time as Time
-from distaz import DistAz
+from .. import mathTool
+from mathTool.distaz import DistAz
 from multiprocessing import Process, Manager
 import cudaFunc
 import torch
@@ -30,68 +31,64 @@ def getTimeLim(staL):
         eTime = min([staL[i].eTime, eTime])
     return bTime, eTime
 
-def doMFT(staL,waveform,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
+def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
     ,dtype=nptype),delta=0.02,minMul=3,MINMUL=8, winTime=0.4,\
     minDelta=20*50, locator=None,tmpName=None,quakeRef=None,\
     maxCC=1,R=[-90,90,-180,180],staInfos=None,maxDis=200,\
-    deviceL=['cuda:0'],minChannel=8,mincc=0.4):
+    deviceL=['cuda:0'],minChannel=8,mincc=0.4,secL=defaultSecL):
     time_start = Time.time()
     winL=int(winTime/delta)
-    if waveform['pTimeL'].size<5:
-        return []
-    staSortL = np.argsort(waveform['pTimeL'][0])
-    tmpTimeL= np.arange(defaultSecL[0],defaultSecL[1],delta).astype(nptype)
-    tmpRefTime=waveform['indexL'][0][0]*delta
-    tmpIndexL=((tmpTimeL-tmpRefTime)/delta).astype(np.int64)
+    staSortL = np.argsort(quakeRef.records)
+    #tmpTimeL = np.arange(defaultSecL[0],defaultSecL[1],delta).astype(nptype)
+    #tmpRefTime=waveform['indexL'][0][0]*delta
+    #tmpIndexL=((tmpTimeL-tmpRefTime)/delta).astype(np.int64)
     aM=torch.zeros(n,device=deviceL[0],dtype=dtype)
+    indexL=[]
     staIndexL=[]
-    staIndexOL=[]
     phaseTypeL=[]
     mL=[]
     sL=[]
     oTimeL=[]
-    oTime=waveform['time']
     if isinstance(quakeRef,list):
         oTime=quakeRef.time
-    index=0
+    rIndex=0
     pCount=0
-    for i in range(staSortL.size):
-        staIndex=staSortL[i]
-        staIndexO=int(waveform['staIndexL'][0][staIndex])
-        if staIndexO>=len(staL):
+    for rIndex in staSortL.size:
+        staIndex=quakeRef.records[rIndex]['staIndex']
+        record = quakeRef.records[rIndex]
+        if staIndex>=len(staL):
             continue
         if staInfos!=None:
-            staInfo=staInfos[staIndexO]
+            staInfo=staInfos[staIndex]
             if staInfo['la']<R[0] or \
                 staInfo['la']>R[1] or \
                 staInfo['lo']<R[2] or \
                 staInfo['lo']>R[3]:
                 continue
         if quakeRef !=None and staInfos !=None:
-            staInfo=staInfos[staIndexO]
-            dis=DistAz(quakeRef.lco[0],quakeRef.loc[1],staInfo['la'],staInfo['lo'])
-            if dis.degreesToKilometers(dis.getDelta())>maxDis:
+            staInfo=staInfos[staIndex]
+            if staInfos[staIndex].dist(quakeRef)>maxDis:
                 continue
         
-        if waveform['pTimeL'][0][staIndex]!=0 and staL[staIndexO].data.data.shape[-1]>1000:
-            if (staL[staIndexO].data.data==0).sum()>60*3/staL[staIndexO].data.delta:
+        if record['pTime']>0 and staL[staIndex].data.data.shape[-1]>1000:
+            if (staL[staIndex].data.data==0).sum()>60*3/staL[staIndex].data.delta:
                 continue
-            if not quakeRef.isP(staIndexO):
-                continue
-            dTime=(waveform['pTimeL'][0][staIndex]-oTime+bTime-staL[staIndexO].data.bTime.timestamp)
+            dTime=(record['pTime']-oTime+bTime-staL[staIndex].data.bTime.timestamp)
             dIndex=int(dTime/delta)
             if dIndex<0:
                 continue
-            c,m,s=corrTorch(staL[staIndexO].data.data[2,:],waveform['pWaveform'][staIndex,tmpIndexL,2])
+            if len(T3PSL[0][rIndex].data)==0:
+                continue
+            c,m,s=corrTorch(staL[staIndex].data.data[2,:],T3PSL[0][rIndex].data[2])
             if torch.isnan(c).sum()>0:
-                print(staIndexO,staIndex)
+                print(staIndex,rIndex)
             if s==1:
                 continue
+            rIndexL.append(rIndex)
             staIndexL.append(staIndex)
-            staIndexOL.append(staIndexO)
             phaseTypeL.append(1)
-            oTimeL.append(dTime+staL[staIndexO].data.bTime.timestamp\
-                -tmpTimeL[0])
+            oTimeL.append(dTime+staL[staIndex].data.bTime.timestamp\
+                -secL[0])
             mL.append(m)
             sL.append(s)
             wM[index]=torch.zeros(n+50*100,device=c.device)
@@ -105,28 +102,26 @@ def doMFT(staL,waveform,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
             pCount+=1
             if pCount>=maxStaN:
                 break
-        if waveform['sTimeL'][0][staIndex]!=0 and staL[staIndexO].\
-        data.data.shape[-1]>1000:
-            if not quakeRef.isS(staIndexO):
-                continue
-            dTime=(waveform['sTimeL'][0][staIndex]-oTime+bTime\
-                -staL[staIndexO].data.bTime.timestamp)
+        if record['sTime']>0 and staL[staIndex].data.data.shape[-1]>1000:
+            dTime=(record['sTime']-oTime+bTime\
+                -staL[staIndex].data.bTime.timestamp)
             dIndex=int(dTime/delta)
             if dIndex<0:
                 continue
             chanelIndex=0
-            if waveform['sWaveform'][:,1].max()>\
-            waveform['sWaveform'][:,0].max():
+            if len(T3PSL[1][rIndex].data)==0:
+                continue
+            if T3PSL[1][rIndex][1].max()>T3PSL[1][rIndex][0].max():
                 chanelIndex=1
-            c,m,s=corrTorch(staL[staIndexO].data.data[chanelIndex,:],\
-                waveform['sWaveform'][staIndex,tmpIndexL,chanelIndex])
+            c,m,s=corrTorch(staL[staIndex].data.data[chanelIndex,:],\
+                T3PSL[1][rIndex][chanelIndex])
             if s==1:
                 continue
+            rIndexL.append(rIndex)
             staIndexL.append(staIndex)
-            staIndexOL.append(staIndexO)
             phaseTypeL.append(2)
-            oTimeL.append(dTime+staL[staIndexO].data.bTime.timestamp\
-                -tmpTimeL[0])
+            oTimeL.append(dTime+staL[staIndex].data.bTime.timestamp\
+                -secL[0])
             mL.append(m)
             sL.append(s)
             wM[index]=torch.zeros(n+50*100,device=c.device,dtype=dtype)
@@ -161,25 +156,26 @@ def doMFT(staL,waveform,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
             continue
         time= index*delta+bTime
         staD={}
-        quakeCC = QuakeCC(cc,M,S,loc=waveform['loc'][0], time=time,\
+        quakeCC = QuakeCC(cc=cc,M=M,S=S,la=quakeRef['la'],lo=quakeRef['lo'],\
+            dep=quakeRef['dep'], time=time,\
          tmpName=tmpName)
         phaseCount=0
         for j in range(len(staIndexL)):
-            staIndexO=staIndexOL[j]
+            staIndex=staIndexL[j]
             dIndex=wM[j][index+wLL].argmax().cpu().numpy()
             phaseTime=float(oTimeL[j]+(wLL[dIndex]+index)*delta)
             if phaseTypeL[j]==1:
-                quakeCC.append(RecordCC(staIndexO, phaseTime,0,\
-                    wM[j][index+wLL[dIndex]].cpu().numpy().astype(nptypeO)\
-                    , 0, mL[j].astype(nptypeO), sL[j].astype(nptypeO), 0, 0))
-                staD[staIndexO]=phaseCount
+                quakeCC.append(RecordCC(staIndex=staIndex, pTime=phaseTime,sTime=0,\
+                    pCC=wM[j][index+wLL[dIndex]].cpu().numpy().astype(nptypeO)\
+                    , sCC=0, pM=mL[j].astype(nptypeO), pS=sL[j].astype(nptypeO), sM=0, sS=0))
+                staD[staIndex]=phaseCount
                 phaseCount+=1
             if phaseTypeL[j]==2:
-                j0=staD[staIndexO]
-                quakeCC[j0][2]=phaseTime
-                quakeCC[j0][4]=wM[j][index+wLL[dIndex]].cpu().numpy().astype(nptypeO)
-                quakeCC[j0][7]=mL[j].astype(nptypeO)
-                quakeCC[j0][8]=sL[j].astype(nptypeO)
+                j0=staD[staIndex]
+                quakeCC[j0]['sTime']=phaseTime
+                quakeCC[j0]['sCC']=wM[j][index+wLL[dIndex]].cpu().numpy().astype(nptypeO)
+                quakeCC[j0]['sM']=mL[j].astype(nptypeO)
+                quakeCC[j0]['sS']=sL[j].astype(nptypeO)
         if locator != None and len(quakeCC)>=3:
             if quakeRef==None:
                 quakeCC,res=locator.locate(quakeCC)
@@ -190,7 +186,7 @@ def doMFT(staL,waveform,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
                 except:
                     print('wrong in locate')
                 else:
-                    print(quakeCC.time,quakeCC.loc,res,quakeCC.cc)
+                    print(quakeCC['time'],quakeCC.loc(),res,quakeCC['cc'])
                     pass
             
             if False:
@@ -209,32 +205,49 @@ def doMFT(staL,waveform,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
     print(time_end-time_start)
     return quakeL
 
-def doMFTAll(staL,waveformL,bTime,n=86400*50,delta=0.02\
+def doMFTAll(staL,T3PSLL,bTime,n=86400*50,delta=0.02\
         ,minMul=4,MINMUL=8, winTime=0.4,minDelta=20*50, \
         locator=None,tmpNameL=None, isParallel=False,\
         NP=2,quakeRefL=None,maxCC=1,R=[-90,90,-180,180],\
         maxDis=200,isUnique=True,isTorch=True,deviceL=['cuda:0'],\
-        minChannel=8,mincc=0.4):
+        minChannel=8,mincc=0.4,secL=defaultSecL):
     for sta in staL:
         sta.data=sta.Data()
+    for i in range(T3PSLL):
+        T3PSL = T3PSLL[i]
+        quakeRef = quakeRefL[i]
+        for j in range(len(T3PSL[0])):
+            T3=T3PSL[0][j]
+            record = quakeRefL[i].records[j]
+            if T3.pTime>0:
+                T3.data = T3.Data(secL[0]+T3.pTime,T3.pTime+secL[-1]).transpose()
+                if len(T3.data)>0:
+                    T3.data=torch.tensor(T3.data,\
+                            device=deviceL[record['staIndex']%len(deviceL)],dtype=dtype)
+            T3=T3PSL[1][j]
+            if T3.sTime>0:
+                T3.data = T3.Data(secL[0]+T3.sTime,T3.sTime+secL[-1]).transpose()
+                if len(T3.data)>0:
+                    T3.data=torch.tensor(T3.data,\
+                            device=deviceL[record['staIndex']%len(deviceL)],dtype=dtype)
     if not isParallel:
         quakeL=[]
         wM=[None for i in range(maxStaN*2)]
         count=0
         for sta in staL:
+            count+=1
+            sta.data.data = sta.data.Data()
             if sta.data.data.shape[0]>1/delta or sta.data.data.shape[-1]>1/delta:
-                
                 if sta.data.data.shape[0]>sta.data.data.shape[-1]:
                     sta.data.data=sta.data.data.transpose()
                 if not isinstance(sta.data.data,torch.Tensor):
                     sta.data.data=(sta.data.data*convert).astype(nptype)
                     if  isTorch :
-                        count+=1
                         sta.data.data=torch.tensor(sta.data.data,\
                             device=deviceL[(count)%len(deviceL)],dtype=dtype)
             if sta.data.data.shape[-1]>11*3600/delta:
                 bTime=max(bTime, sta.data.bTime.timestamp+1)
-        for i in range(len(waveformL)):
+        for i in range(len(T3PSLL)):
             print('doing on %d find %d'%(i,len(quakeL)))
             if tmpNameL!=None:
                 tmpName=tmpNameL[i]
@@ -243,7 +256,7 @@ def doMFTAll(staL,waveformL,bTime,n=86400*50,delta=0.02\
             quakeRef=None
             if quakeRefL!=None:
                 quakeRef=quakeRefL[i]
-            quakeL=quakeL+doMFT(staL,waveformL[i],bTime,n,wM=wM,\
+            quakeL=quakeL+doMFT(staL,T3PSLL[i],bTime,n,wM=wM,\
                 delta=delta,minMul=minMul,MINMUL=MINMUL,\
                 winTime=winTime, minDelta=minDelta,locator=locator,\
                 tmpName=tmpName, quakeRef=quakeRef,\
@@ -254,35 +267,7 @@ def doMFTAll(staL,waveformL,bTime,n=86400*50,delta=0.02\
 
         if isUnique:
             quakeL=uniqueQuake(quakeL)
-        for sta in staL:
-            if sta.data.data.shape[0]>1/delta or sta.data.data.shape[-1]>1/delta:
-                if isinstance(sta.data.data,torch.Tensor):
-                    sta.data.data=sta.data.data.cpu().numpy()
-                if sta.data.data.shape[0]<sta.data.data.shape[-1]:
-                    sta.data.data=sta.data.data.transpose()
-                sta.data.data=sta.data.data.astype(nptypeO)/convert
         return quakeL
-    else:
-        manager=Manager()
-        staLP=[]#manager.list()
-        staLP.append(staL)
-        waveformLP=[]#manager.list()
-        waveformLP.append(waveformL)
-        quakeLs=[manager.list() for i in range(NP)]
-        processes=[]
-        for i in range(NP):
-            process=Process(target=__doMFTAll,args=(\
-                staLP,waveformLP,bTime,quakeLs[i],n,delta,\
-                minMul,MINMUL,winTime,minDelta,locator,tmpNameL,NP,i))
-            process.start()
-            processes.append(process)
-        for process in processes:
-            print(process)
-            process.join()
-        quakeL=[]
-        for quakeLTmp in quakeLs:
-            quakeL=quakeL+quakeLTmp[0]
-        return uniqueQuake(quakeL)
 
 
 def __doMFTAll(staLP,waveformLP,bTime,quakeLP,n=86400*50,delta=0.02\
@@ -306,10 +291,10 @@ def uniqueQuake(quakeL,minDelta=5, minD=0.2):
     PS=np.zeros((len(quakeL),7))
     for i in range(len(quakeL)):
         PS[i,0]=i
-        PS[i,1]=quakeL[i].time
-        PS[i,2:3]=quakeL[i].loc[0:1]
+        PS[i,1]=quakeL[i]['time']
+        PS[i,2:4]=quakeL[i].loc()[0:2]
         PS[i,4]=quakeL[i].getMul(isNum)
-        PS[i,5]=quakeL[i].cc
+        PS[i,5]=quakeL[i]['cc']
         PS[i,6]=quakeL[i].M
     L=np.argsort(PS[:,1])
     PS=PS[L,:]

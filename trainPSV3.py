@@ -1,26 +1,27 @@
+#python
 import argparse
 import matplotlib.pyplot as plt
 import obspy
-import sys
 import math
 import scipy.io as sio
 import scipy
 import numpy as np
 from numpy import cos, sin
 import os
-import sys
-sys.path.append("..")
-from fcn import genModel0
 from tensorflow.keras import backend as K
 import h5py
 import tensorflow as tf
 import logging
-import sacTool
 import random
+import sys
+sys.path.append('/home/jiangyr/Surface-Wave-Dispersion/')
+from SeismTool import deepLearning,io
+from SeismTool.io import sacTool
+genModel0 = deepLearning.fcn.genModel0 
 os.environ["MKL_NUM_THREADS"] = "32"
 fileDir='/home/jiangyr/accuratePickerV3/testNew/'
 isBadPlus=1
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 config = tf.ConfigProto()
 config.gpu_options.per_process_gpu_memory_fraction = 1
 config.gpu_options.allow_growth = True
@@ -162,7 +163,7 @@ def train(modelFile, resFile, phase='p',validWN=10000,testWN=10000,\
     waveFile='/media/jiangyr/MSSD/waveforms_11_13_19.hdf5',\
     catalogFile1='data/metadata_11_13_19.csv'\
     ,catalogFile2='phaseDir/hinetFileLstNew',\
-    dtP=0.12,dtS=0.24):
+    dtP=0.1,dtS=0.2):
     rms0=1e5
     resCount=20
     logger=logging.getLogger(__name__)
@@ -177,7 +178,6 @@ def train(modelFile, resFile, phase='p',validWN=10000,testWN=10000,\
     if phase=='ps':
         channelIndex=np.arange(3)
     w = h5py.File(waveFile,'r')
-
     catalog1,d1=sacTool.getCatalogFromFile(catalogFile1,mod='STEAD')
     catalog2,d2=sacTool.getCatalogFromFile(catalogFile2,mod='hinet')
     catalogValid=[]
@@ -200,7 +200,6 @@ def train(modelFile, resFile, phase='p',validWN=10000,testWN=10000,\
     xValid,yValid,modeValid=sacTool.getXYFromCatalogP(catalogValid,w,dIndex=dIndex,\
         channelIndex=channelIndex,phase=phase,oIndex=-2,dtP=dtP,dtS=dtS)
     xValid=processX(xValid,isNoise=False,num=dIndex)
-
     
     increaseCount =4
     for i in range(5000):

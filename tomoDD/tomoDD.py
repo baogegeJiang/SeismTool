@@ -166,7 +166,7 @@ def preMod(R,nx=8,ny=8,nz=12,filename='abc'):
 def sameSta(timeL1,timeL2):
     return np.where(np.sign(timeL1*timeL2)>0)[0]
 
-def calDT(quake0,quake1,T3PSL,T3PSL,staInfos,bSec0=-2,eSec0=3,\
+def calDT(quake0,quake1,T3PSL0,T3PSL1,staInfos,bSec0=-2,eSec0=3,\
     bSec1=-3,eSec1=4,delta=0.02,minC=0.6,maxD=0.3,minSameSta=5):
     '''
     dT=[[dt,maxCC,staIndex,phaseType],....]
@@ -176,106 +176,99 @@ def calDT(quake0,quake1,T3PSL,T3PSL,staInfos,bSec0=-2,eSec0=3,\
     staIndex is the index of the station
     phaseType: 1 for P; 2 for S
     '''
-    pTime0=quake0.getPTimeL(staInfos)
-    sTime0=quake0.getSTimeL(staInfos)
-    pTime1=quake1.getPTimeL(staInfos)
-    sTime1=quake1.getSTimeL(staInfos)
-    sameIndex=sameSta(pTime0,pTime1)
+    indexL0 = quake0.staIndexs()
+    indexL1 = quake1.staIndexs()
+    sameIndex=[]
+    for I in indexL0:
+        if I in indexL1:
+            sameIndex.append(I)
     if len(sameIndex)<minSameSta:
         return None
-    if DistAz(quake0.loc[0],quake0.loc[1],quake1.loc[0],quake1.loc[1]).getDelta()>maxD:
+    if quake0.dist(quake1)>maxD:
         return None
     dT=[];
-    timeL0=np.arange(bSec0,eSec0,delta)
-    indexL0=(timeL0/delta).astype(np.int64)-waveform0['indexL'][0][0]
-    timeL1=np.arange(bSec1,eSec1,delta)
-    indexL1=(timeL1/delta).astype(np.int64)-waveform1['indexL'][0][0]
     for staIndex in sameIndex:
-        if pTime0[staIndex]!=0 and pTime1[staIndex]!=0:
-            index0=np.where(waveform0['staIndexL'][0]==staIndex)[0]
-            pWave0=waveform0['pWaveform'][index0,indexL0,2]
-            index1=np.where(waveform1['staIndexL'][0]==staIndex)[0]
-            #print(index1)
-            pWave1=waveform1['pWaveform'][index1,indexL1,2]
-            c=xcorr(pWave1,pWave0)#########
+        index0 = indexL0.index(staIndex)
+        index1 = indexL0.index(staIndex)
+        record0 = quake0.records[index0]
+        record1 = quake1.records[index1]
+        T3P0,T3S0=  [T3PSL0[0][index0],T3PSL0[1][index0]]
+        T3P1,T3S1=  [T3PSL1[0][index1],T3PSL1[1][index1]]
+        if record0['pTime']>0 and record1['pTime']>0:
+            pWave0=T3P0.Data(record0['pTime']+bSec0,record0['pTime']+eSec0)
+            pWave1=T3P1.Data(record1['pTime']+bSec1,record1['pTime']+eSec1)
+            if len(pWave0)*len(pWave1)==0:
+                continue
+            c=xcorr(pWave1,pWave0).max(axis=1)#########
             maxC=c.max()
             if maxC>minC:
                 maxIndex=c.argmax()
-                dt=timeL1[maxIndex]-timeL0[0]
+                dt=bSec1+maxIndex*T3P0.delta-bSec0
                 dT.append([dt,maxC,staIndex,1])
-        if sTime0[staIndex]!=0 and sTime1[staIndex]!=0:
-            index0=np.where(waveform0['staIndexL'][0]==staIndex)[0]
-            sWave0=waveform0['sWaveform'][index0,indexL0,0]
-            index1=np.where(waveform1['staIndexL'][0]==staIndex)[0]
-            sWave1=waveform1['sWaveform'][index1,indexL1,0]
-            c=xcorr(sWave1,sWave0)##########
-            maxC0=c.max()
-            if maxC0>minC:
+        if record0['sTime']>0 and record1['sTime']>0:
+            sWave0=T3S0.Data(record0['sTime']+bSec0,record0['sTime']+eSec0)
+            sWave1=T3S1.Data(record1['sTime']+bSec1,record1['sTime']+eSec1)
+            if len(sWave0)*len(sWave1)==0:
+                continue
+            c=xcorr(sWave1,sWave0).max(axis=1)#########
+            maxC=c.max()
+            if maxC>minC:
                 maxIndex=c.argmax()
-                dt=timeL1[maxIndex]-timeL0[0]
-                dT.append([dt,maxC0,staIndex,2])
-            index0=np.where(waveform0['staIndexL'][0]==staIndex)[0]
-            sWave0=waveform0['sWaveform'][index0,indexL0,1]
-            index1=np.where(waveform1['staIndexL'][0]==staIndex)[0]
-            sWave1=waveform1['sWaveform'][index1,indexL1,1]
-            c=xcorr(sWave1,sWave0)##########
-            maxC1=c.max()
-            if maxC1>minC and maxC1>maxC0:
-                maxIndex=c.argmax()
-                dt=timeL1[maxIndex]-timeL0[0]
-                dT.append([dt,maxC1,staIndex,2])
+                dt=bSec1+maxIndex*T3S0.delta-bSec0
+                dT.append([dt,maxC,staIndex,2])
     return dT
 
-def calDTM(quakeL,waveformL,staInfos,maxD=0.3,minC=0.6,minSameSta=5,\
+def calDTM(quakeL,T3PSLL,staInfos,maxD=0.3,minC=0.6,minSameSta=5,\
     isFloat=False,bSec0=-2,eSec0=3,bSec1=-3,eSec1=4):
     '''
     dTM is 2-D list contianing the dT infos between each two quakes
     dTM[i][j] : dT in between quakeL[i] and quakeL[j]
     quakeL's waveform is contained by waveformL
     '''
-    if isFloat:
-        for waveform in waveformL:
-            waveform['pWaveform']=waveform['pWaveform'].astype(np.float32)
-            waveform['sWaveform']=waveform['sWaveform'].astype(np.float32)
     dTM=[[None for quake in quakeL]for quake in quakeL]
     for i in range(len(quakeL)):
         print(i)
         for j in range(i+1,len(quakeL)):
-            dTM[i][j]=calDT(quakeL[i],quakeL[j],waveformL[i],waveformL[j],\
+            dTM[i][j]=calDT(quakeL[i],quakeL[j],T3PSLL[i],T3PSLL[j],\
                 staInfos,maxD=maxD,minC=minC,minSameSta=minSameSta,\
                 bSec0=bSec0,eSec0=eSec0,bSec1=bSec1,eSec1=eSec1)
     return dTM
 
-def plotDT(waveformL,dTM,i,j,staInfos,bSec0=-2,eSec0=3,\
+def plotDT(T3PSLL,dTM,i,j,staInfos,bSec0=-2,eSec0=3,\
     bSec1=-3,eSec1=4,delta=0.02,minSameSta=5):
     plt.close()
-    waveform0=waveformL[i]
-    waveform1=waveformL[j]
+    T3PL0=T3PSLL[i][0]
+    T3PL1=T3PSLL[j][0]
+    T3SL0=T3PSLL[i][1]
+    T3SL1=T3PSLL[j][1]
+    
     timeL0=np.arange(bSec0,eSec0,delta)
-    indexL0=(timeL0/delta).astype(np.int64)-waveform0['indexL'][0][0]
     timeL1=np.arange(bSec1,eSec1,delta)
-    indexL1=(timeL1/delta).astype(np.int64)-waveform1['indexL'][0][0]
     count=0
-    staIndexL0=waveform0['staIndexL'][0].astype(np.int64)
-    staIndexL1=waveform1['staIndexL'][0].astype(np.int64)
+    indexL0 = quake0.staIndexs()
+    indexL1 = quake1.staIndexs()
     for dT in dTM[i][j]:
         staIndex=dT[2]
-        tmpIndex0=np.where(staIndexL0==staIndex)[0][0]
-        tmpIndex1=np.where(staIndexL1==staIndex)[0][0]
-        print(tmpIndex0,tmpIndex1)
+        index0 = indexL0.index(staIndex)
+        index1 = indexL0.index(staIndex)
+        record0 = quake0.records[index0]
+        record1 = quake1.records[index1]
+        T3P0,T3S0=  [T3PSL0[0][index0],T3PSL0[1][index0]]
+        T3P1,T3S1=  [T3PSL1[0][index1],T3PSL1[1][index1]]
         if dT[3]==1:
-            w0=waveform0['pWaveform'][int(tmpIndex0),indexL0,2]
-            w1=waveform1['pWaveform'][int(tmpIndex1),indexL1,2]
+            w0=T3P0.getPTimeL(timeL0)
+            w1=T3P1.getPTimeL(timeL1)
         else:
-            continue
-            w0=waveform0['sWaveform'][int(tmpIndex0),indexL0,0]
-            w1=waveform1['sWaveform'][int(tmpIndex1),indexL1,0]
-        plt.plot(timeL0+dT[0],w0/(w0.max())*0.5+count,'r')
+            w0=T3P0.getPTimeL(timeL0)
+            w1=T3P1.getPTimeL(timeL1)
+        if len(w0)*len(w1)==0:
+                continue
+        plt.plot(timeL0+dT[0],w0[:,2]/(w0[:,2].max())*0.5+count,'r')
         print(xcorr(w1,w0).max())
-        plt.plot(timeL1,w1/(w1.max())*0.5+count,'b')
-        plt.plot(timeL0-dT[0],w0/(w0.max())*0.5+count+2,'r')
+        plt.plot(timeL1,w1[:,2]/(w1[:,2].max())*0.5+count,'b')
+        plt.plot(timeL0-dT[0],w0[:,2]/(w0[:,2].max())*0.5+count+2,'r')
         #print(w0.max())
-        plt.plot(timeL1,w1/(w1.max())*0.5+count+2,'b')
+        plt.plot(timeL1,w1[:,2]/(w1[:,2].max())*0.5+count+2,'b')
         #plt.plot(+count,'g')
         #print((w1/w1.max()).shape)
         plt.text(timeL1[0],count+0.5,'cc=%.2f dt=%.2f '%(dT[1],dT[0]))
