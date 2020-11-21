@@ -150,18 +150,30 @@ class Dist:
         dis = self.distaz(loc)
         return dis.getBaz()
     def __gt__(self,self1):
-        return self['time']>self1['time']
+        if 'time' in self.keys:
+            return self['time']>self1['time']
+        else:
+            return self['pTime']>self1['pTime']
     def __ge__(self,self1):
-        return self['time']>=self1['time']
+        if 'time' in self.keys:
+            return self['time']>=self1['time']
+        else:
+            return self['pTime']>=self1['pTime']
 
     #def __eq__(self,self1):
     #    return self['time']==self1['time']
 
     def __lt__(self,self1):
-        return self['time']<self1['time']
+        if 'time' in self.keys:
+            return self['time']<self1['time']
+        else:
+            return self['pTime']<self1['pTime']
 
     def __le__(self,self1):
-        return self['time']<=self1['time']
+        if 'time' in self.keys:
+            return self['time']<=self1['time']
+        else:
+            return self['pTime']<=self1['pTime']
 
 defaultStats = {'network':'00','station':'00000','channel':'000'}
 class Station(Dist):
@@ -552,7 +564,7 @@ class Quake(Dist):
             pTime = record['pTime']
             sTime = record['sTime']
             bTime = self['time']+bSec
-            eTime = max(pTime,sTime)+eSec
+            eTime = max(self['time']+(pTime-self['time'])*1.7,sTime)+eSec
             bTime,eTime=staL[staIndex].data.getTimeLim(bTime,eTime)
             filenames=staL[staIndex].sta.baseSacName(resDir=eventDir)
             T3 = staL[staIndex].data.slice(bTime,eTime,nearest_sample=True)
@@ -669,26 +681,32 @@ class Quake(Dist):
     def calML(self, staInfos=[],minSACount=3,T3L=None):
         def getSA(data):
             data=data-data.mean()
-            return data.cumsum(axis=0).max()
+            return np.abs(data.cumsum(axis=0)).max()
         ml = 0
         sACount=0
         for i in range(len(self.records)):
             record = self.records[i]
             T3 =  T3L[i]
-            if T3.bTime <0 or record['sTime']<0:
+            if T3.bTime <=0 or  record['pTime']<=0 :
                 continue
-            data = T3.Data(record['sTime']-3,record['sTime']+10)
+            if record['sTime']<=0:
+                sTime = (record['pTime']-self['time'])*1.7+self['time']
+            else:
+                sTime = record['sTime']
+            data = T3.Data(sTime-5,sTime+20)
             if len(data)==0:
                 continue
+            if T3.delta<0:
+                continue
             sA  = getSA(data)*T3.delta
-            #print(staInfos,record['staIndex'])
             dk = self.dist(staInfos[record['staIndex']]) 
             ml+=np.log10(sA)+1.1*np.log10(dk)+0.00189*dk-2.09-0.23
             sACount+=1
-            if sACount<minSACount:
-                ml=-999
-            else:
-                ml/=sACount
+
+        if sACount<minSACount:
+            ml=-999
+        else:
+            ml/=sACount
         return ml
     def __len__(self):
         return len(self.records)

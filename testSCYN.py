@@ -24,10 +24,10 @@ detecQuake.maxA=1e15#这个是否有道理
 #os.environ["CUDA_VISIBLE_DEVICES"] = cudaI
 inputDir = '/home/jiangyr/Surface-Wave-Dispersion/accuratePickerV4/'
 
-argL=[['SCYN1121','SCYN1121V0','0',UTCDateTime(2014,1,1).timestamp,UTCDateTime(2015,7,1).timestamp],\
-      ['SCYN1121','SCYN1121V1','0',UTCDateTime(2015,7,1).timestamp,UTCDateTime(2017,1,1).timestamp],\
-      ['SCYN1121','SCYN1121V2','1',UTCDateTime(2017,1,1).timestamp,UTCDateTime(2018,7,1).timestamp],\
-      ['SCYN1121','SCYN1121V3','1',UTCDateTime(2018,7,1).timestamp,UTCDateTime(2020,1,1).timestamp],]
+argL=[['SCYN1122','SCYN1122V0','0',UTCDateTime(2014,1,1).timestamp,UTCDateTime(2015,7,1).timestamp],\
+      ['SCYN1122','SCYN1122V1','0',UTCDateTime(2015,7,1).timestamp,UTCDateTime(2017,1,1).timestamp],\
+      ['SCYN1122','SCYN1122V2','1',UTCDateTime(2017,1,1).timestamp,UTCDateTime(2018,7,1).timestamp],\
+      ['SCYN1122','SCYN1122V3','1',UTCDateTime(2018,7,1).timestamp,UTCDateTime(2020,1,1).timestamp],]
 l=argL[int(sys.argv[1])]
 print(l)
 v_i,p_i,cudaI,bSec,eSec =l 

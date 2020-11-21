@@ -43,7 +43,8 @@ def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
     #tmpRefTime=waveform['indexL'][0][0]*delta
     #tmpIndexL=((tmpTimeL-tmpRefTime)/delta).astype(np.int64)
     aM=torch.zeros(n,device=deviceL[0],dtype=dtype)
-    indexL=[]
+    rIndexL=[]
+    index=0
     staIndexL=[]
     phaseTypeL=[]
     mL=[]
@@ -53,7 +54,7 @@ def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
         oTime=quakeRef.time
     rIndex=0
     pCount=0
-    for rIndex in staSortL.size:
+    for rIndex in staSortL:
         staIndex=quakeRef.records[rIndex]['staIndex']
         record = quakeRef.records[rIndex]
         if staIndex>=len(staL):
@@ -91,8 +92,8 @@ def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
                 -secL[0])
             mL.append(m)
             sL.append(s)
-            wM[index]=torch.zeros(n+50*100,device=c.device)
-            wM[index][0:c.shape[0]-dIndex]=c[dIndex:]
+            wM[rIndex]=torch.zeros(n+50*100,device=c.device)
+            wM[rIndex][0:c.shape[0]-dIndex]=c[dIndex:]
             threshold=m+minMul*s
             if threshold>mincc:
                 threshold=mincc
