@@ -17,7 +17,7 @@ from ..io.sacTool import staTimeMat
 from ..mapTool.mapTool import readFault
 import mpl_toolkits.basemap as basemap
 maxA=2e19
-os.environ["MKL_NUM_THREADS"] = "32"
+os.environ["MKL_NUM_THREADS"] = "8"
 faultL = readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
 @jit
 def isZeros(a):

@@ -905,10 +905,6 @@ class QuakeL(list):
         self.inQuake = {}
         self.inRecord= {}
         self.keys = ['#','*','q-','d-',' ',' ']
-        if 'mode' in kwargs:
-            if kwargs['mode']=='CC':
-                self.Quake= QuakeCC
-                self.Record=RecordCC
         if 'Quake' in kwargs:
             self.Quake = kwargs['Quake']
         else:
@@ -917,6 +913,10 @@ class QuakeL(list):
             self.Record = kwargs['Record']
         else:
             self.Record = Record
+        if 'mode' in kwargs:
+            if kwargs['mode']=='CC':
+                self.Quake= QuakeCC
+                self.Record=RecordCC
         if 'quakeKeysIn' in kwargs:
             self.inQuake['keysIn'] = kwargs['quakeKeysIn']
         if 'recordKeysIn' in kwargs:
@@ -1151,7 +1151,9 @@ def mergeSacByName(sacFileNames, **kwargs):
     para.update(kwargs)
     for sacFileName in sacFileNames:
         try:
+            #print(ctime(),'read sac')
             tmpSacs=obspy.read(sacFileName, debug_headers=True,dtype=np.float32)
+            #print(ctime(),'read sac done')
             if para['freq'][0] > 0:
                 tmpSacs.detrend('demean').detrend('linear').filter(para['filterName'],\
                         freqmin=para['freq'][0], freqmax=para['freq'][1], \

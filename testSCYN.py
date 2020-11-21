@@ -87,17 +87,16 @@ for date in range(int(bSec),int(eSec), 86400):
     result's waveform in  workDir+'output/outputVv_i/'
     result's plot picture in  workDir+'output/outputVv_i/'
     '''
-    quakeL+=tmpQuakeL
-    quakeL.write(workDir+'phaseDir/phaseLstV%s'%p_i)
     if len(tmpQuakeL)>0:
         seism.saveSacs(staL, tmpQuakeL, staInfos,\
             matDir=workDir+'output/outputV%s/'%v_i,\
-                index0=-1500,index1=1500)
+                bSec=-10,eSec=40)
         detecQuake.plotResS(staL,tmpQuakeL,outDir\
             =workDir+'output/outputV%s/'%v_i)
         detecQuake.plotQuakeL(staL,tmpQuakeL,laL,loL,outDir\
             =workDir+'output/outputV%s/'%v_i)
-    
+    quakeL+=tmpQuakeL
+    quakeL.write(workDir+'phaseDir/phaseLstV%s'%p_i)
     staL=[]# clear data  to save memory
 '''
 detecQuake.plotQuakeL(staL,tql,laL,loL,outDir\
