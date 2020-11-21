@@ -2,9 +2,11 @@ from ..io.seism import QuakeCC,RecordCC
 from ..io.tool import quickTaupModel
 import numpy as np
 from ..mathTool.distaz import DistAz
+import os
+from numba import jit
 
 class locator:
-    def __init__(self,staInfos,modelFile='include/iaspTaupMat'):
+    def __init__(self,staInfos,modelFile=os.path.dirname(__file__)+'/../data/iaspTaupMat'):
         self.staInfos=staInfos
         self.timeM=quickTaupModel(modelFile)
         self.maxErr=-1
@@ -98,6 +100,7 @@ class locator:
         quake['dep']=float(max(-4,quake['dep']+float(dd[2,0])*ad))
         quake['time']+=float(dd[3,0])
         return quake,dTime.std()
+    @jit
     def __timeG__(self,quake,phaseL,staIndexL):
         gM=np.zeros((len(phaseL),5))
         loc=quake.loc()

@@ -6,6 +6,7 @@ import os
 import random
 from matplotlib import pyplot as plt
 import time
+from time import ctime
 from glob import glob
 from numba import jit
 from ..mathTool.distaz import DistAz
@@ -438,7 +439,7 @@ class Quake(Dist):
         self.keysIn   = 'type   la       lo          time          para0 num para1 index para2 randID para3 filename ml   dep'.split()
         self.keys     = 'type   la       lo          time          para0 num para1 index para2 randID para3 filename ml   dep stationList strTime no YMD HMS'.split()
         self.keysType = 'S      f        f           f             S     F   S     f     S     f      S     S        f    f   l  S S S S'.split()
-        self.keys0    = [None,  None,     None,      None,         None, None,None,None, None, None,  None,  None,   None,0 ,'','']
+        self.keys0    = ['quake',  None,     None,      None,         None, None,None,None, None, None,  None,  None,   None,0 ,'','']
         self.keysName = ['time','la','lo']
     def Append(self,tmp):
         if isinstance(tmp,Record):
@@ -538,9 +539,7 @@ class Quake(Dist):
     #    else:
     #        return self.record[key]
     def saveSacs(self,staL, staInfos, matDir='output/'\
-    ,index0=-500,index1=500,dtype=np.float32):
-        indexL = np.arange(index0, index1)
-        iNum=indexL.size
+    ,bSec=-10,eSec=40,dtype=np.float32):
         eventDir = matDir+'/'+self['filename'].split('.mat')[0]+'/'
         loc=self.loc
         if not os.path.exists(eventDir):
@@ -552,8 +551,8 @@ class Quake(Dist):
             staIndex = record['staIndex']
             pTime = record['pTime']
             sTime = record['sTime']
-            bTime = self['time']-20
-            eTime = max(pTime,sTime)+40
+            bTime = self['time']+bSec
+            eTime = max(pTime,sTime)+eSec
             bTime,eTime=staL[staIndex].data.getTimeLim(bTime,eTime)
             filenames=staL[staIndex].sta.baseSacName(resDir=eventDir)
             T3 = staL[staIndex].data.slice(bTime,eTime,nearest_sample=True)
@@ -1124,10 +1123,11 @@ def adjust(data,stloc=None,kzTime=None,tmpFile='test.sac',decMul=-1,\
         #tmp=sac.SACTrace.from_obspy_trace(data)
         #data=tmp.to_obspy_trace()
     if pTime !=None:
-        if pTime>0:
+        if pTime>data.stats.starttime.timestamp and pTime <data.stats.endtime.timestamp:
             data.stats['sac']['t0']=data.stats['sac']['b']+pTime-data.stats.starttime.timestamp
+            #print(data.stats['sac']['t0'])
     if sTime !=None:
-        if sTime>0:
+        if sTime>data.stats.starttime.timestamp and sTime <data.stats.endtime.timestamp:
             data.stats['sac']['t1']=data.stats['sac']['b']+sTime-data.stats.starttime.timestamp
         #data.write(tmpFile)
         #data=obspy.read(tmpFile)[0]
@@ -1310,12 +1310,14 @@ class Trace3(obspy.Stream):
             self.data=np.zeros([0,3])
             return
         if delta>0 and delta!=self.delta:
-            for i in range(len(self)):
-                self[i].interpolate(1/self.delta, method='nearest',\
-                 starttime=self.bTime,\
-                 npts=int((self.eTime-self.bTime)/self.delta))
+            #for i in range(len(self)):
+            #    self[i].interpolate(1/self.delta, method='nearest',\
+            #     starttime=self.bTime,\
+            #     npts=int((self.eTime-self.bTime)/self.delta))
             decMul= round(delta/self.delta)
+            print(ctime(),'start dec')
             self.decimate(decMul,no_filter=True)
+            print(ctime(),'end dec')
         if isData:
             self.data = self.Data()
     def getPSTime(self):
@@ -1421,8 +1423,8 @@ class Trace3(obspy.Stream):
         if decMul>0:
             self.decimate(decMul,no_filter=True)
     def adjust(self,*argv,**kwargs):
-        for tmp in self:
-            adjust(tmp,*argv,**kwargs)
+        for i in range(len(self)):
+            self[i]=adjust(self[i],*argv,**kwargs)
 
 
 def checkSacFile(sacFileNamesL):
@@ -1447,24 +1449,29 @@ def getTrace3ByFileName(sacFileNamesL, delta0=0.02, freq=[-1, -1], \
         return Trace3([])
     sacs = []
     #time0=time.time()
+    print(ctime(),'start merge')
     for sacFileNames in sacFileNamesL:
         tmp=mergeSacByName(sacFileNames, delta0=delta0,freq=freq,\
             filterName=filterName,corners=corners,zerophase=zerophase,maxA=maxA)
         sacs.append(tmp)
+    print(ctime(),'end merge')
+    print(ctime(),'start T3')
     if None not in sacs:
         return Trace3(sacs,delta=delta0,bTime=bTime,eTime=eTime,isData=isData,pTime=-1,sTime=-1)
+        print(ctime(),'end T3')
     else:
-        print('not good')
+        print(ctime(),'not good')
         return Trace3([])
+   
     #print('read',time1-time0,'dec',time2-time1)
     #return Data(dataL[0], dataL[1], dataL[2], dataL[3], freq,dataL[4],dataL[5],dataL[6])
 def saveSacs(staL, quakeL, staInfos,matDir='output/',\
-    index0=-500,index1=500,dtype=np.float32):
+    bSec=-10,eSec=40,dtype=np.float32):
     if not os.path.exists(matDir):
         os.mkdir(matDir)
     for i in range(len(quakeL)):
-         quakeL[i].ml=quakeL[i].saveSacs(staL, staInfos,\
-          matDir=matDir,index0=index0,index1=index1,dtype=dtype)
+         quakeL[i]['ml']=quakeL[i].saveSacs(staL, staInfos,\
+          matDir=matDir,bSec=bSec,eSec=eSec,dtype=dtype)
 #用一个文件存相关信息，然后根据文件载入,实验一下，小台阵
 #明天看有无问题
 #降采和对齐的先后顺序可能有影响

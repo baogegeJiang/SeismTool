@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from multiprocessing import Process, Manager
 import threading
 import time
+from time import ctime
 import math
 from numba import jit
 from ..mathTool.mathFunc_bak import getDetec, prob2color
@@ -142,7 +143,7 @@ class sta(object):
                 tmpL = getDetec(predictLongData(modelL[i], self.data.Data(),\
                  indexL=indexLL[i]), minValue=minValueL[i], minDelta =\
                   minDeltaL[i])
-                print('find',len(tmpL[0]))
+                print(ctime(),'find',len(tmpL[0]))
                 self.timeL.append(tmpL[0])
                 self.vL.append(tmpL[1])
             self.pairD = self.getPSPair(maxD=maxD)
@@ -243,7 +244,6 @@ def argMax2D(M):
     maxIndex = np.where(M==maxValue)
     return maxIndex[0][0], maxIndex[1][0]
 
-
 def associateSta(staL, aMat, staTimeML, timeR=30, minSta=3, maxDTime=3, N=1, \
     isClearData=False, locator=None, maxD=80,taupM=tool.quickTaupModel()):
     timeN = int(timeR)*2
@@ -295,13 +295,16 @@ def associateSta(staL, aMat, staTimeML, timeR=30, minSta=3, maxDTime=3, N=1, \
 def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
     timeR=30, minSta=3, maxDTime=3, locator=None,maxD=80,\
     taupM=tool.quickTaupModel()):
+    typeO = np.int16#in maxD determined Range, if the max station cound is small than 125,use np.int8 else
+    #,Using np.int16
+
     print('start', startSec, endSec)
     laN = aMat.laN
     loN = aMat.loN
     staN = len(staL)
-    timeN = int(timeR)*30
-    stackM = np.zeros((timeN*3, laN, loN))
-    tmpStackM=np.zeros((timeN*3+3*maxDTime, laN, loN))
+    timeN = int(timeR)*90
+    stackM = np.zeros((timeN*3, laN, loN),typeO)
+    tmpStackM=np.zeros((timeN*3+3*maxDTime, laN, loN),typeO)
     stackL = np.zeros(timeN*3)
     staMinTimeL=np.ones(staN)*0
     quakeCount=0
@@ -313,7 +316,7 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
         for sec0 in range(startSec, endSec, timeN):
             count=count+1
             if count%10==0:
-                print('process:',(sec0-startSec)/(endSec-startSec)*100,'%  find:',len(quakeL))
+                print(ctime(),'process:',(sec0-startSec)/(endSec-startSec)*100,'%  find:',len(quakeL))
             stackM[0:2*timeN, :, :] = stackM[timeN:, :, :]
             stackM[2*timeN:, :, :] = stackM[0:timeN, :, :]*0
             tmpStackM=tmpStackM*0
@@ -418,8 +421,6 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                                     if np.abs(taupM.get_orign_times(pTime,sTime)-time)>=maxDTime:
                                         continue
                                 if pTime > 1:
-                                    if sTime <1  and staL[staIndex].vL[0][pIndex]<0.3:
-                                        continue
                                     staL[staIndex].timeL[0][pIndex]=0
                                     if sTime >1:
                                         staL[staIndex].timeL[1][sIndex]=0
@@ -472,7 +473,7 @@ def getStaL(staInfos, aMat=[], staTimeML=[], modelL=[],\
             staTimeM=staTimeML[i]
         else:
             staTimeM=None
-        print('process on sta: ',i)
+        print(ctime(),'process on sta: ',i)
         getSta(staL, i, staInfo, date, modelL, staTimeM, loc, \
             f, getFileName, taupM, mode,isPre=isPre,R=R,\
             comp=comp,maxD=maxD,delta0=delta0,bTime=bTime,\
@@ -572,7 +573,7 @@ def plotRes(staL, quake, filename=None):
             pD = ((sTime-quake['time'])/1.73)%1000
         if staL[staIndex].data.bTime<0:
             continue
-        print(st, et, staL[staIndex].data.delta)
+        #print(st, et, staL[staIndex].data.delta)
         timeL=np.arange(st, et, staL[staIndex].data.delta)
         #data = staL[staIndex].data.getDataByTimeL(timeL)
         data=staL[staIndex].data.getDataByTimeLQuick(timeL)

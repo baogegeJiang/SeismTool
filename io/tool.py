@@ -16,6 +16,7 @@ import os
 from ..mathTool.mathFunc import matTime2UTC,rad2deg, getDetec
 from ..mathTool.distaz import DistAz
 from .seism import mergeSacByName,adjust, getTrace3ByFileName as getDataByFileName
+from numba import jit
 
 
 plt.rcParams['font.sans-serif']=['Arial']
@@ -150,14 +151,14 @@ class quickTaupModel:
         dL = np.argsort(dTime)
         self.interpO = interp.interp1d(dTime[dL], pTime0[dL], \
             fill_value='extrapolate')
-
+    @jit
     def get_travel_times(self,dep, deg, phase_list='p'):
         if phase_list[0]=='p':
             a = arrival(self.interpP(dep, deg)[0])
         else:
             a = arrival(self.interpS(dep, deg)[0])
         return [a]
-
+    @jit
     def get_orign_times(self, pIndex, sIndex, delta=1):
         return pIndex-self.interpO((sIndex-pIndex)*delta)/delta
 
