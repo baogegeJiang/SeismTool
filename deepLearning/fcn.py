@@ -19,6 +19,7 @@ from ..mathTool.mathFunc import findPos
 import os
 from tensorflow.keras.utils import plot_model
 import tensorflow as tf
+from numba import jit
 def defProcess():
     config = tf.ConfigProto()
     config.gpu_options.per_process_gpu_memory_fraction = 0.4
@@ -557,7 +558,10 @@ class model(Model):
         #print('inx')
         x = self.inx(x)
         #print('inx done')
-        return super().predict(x).astype(np.float16)
+        if self.config.mode=='surf':
+            return super().predict(x).astype(np.float16)
+        else:
+            return super().predict(x)
     def fit(self,x,y,batchSize=None):
         x=self.inx(x)
         if np.isnan(x).sum()>0 or np.isinf(x).sum()>0:
@@ -575,7 +579,7 @@ class model(Model):
             timeN *= 1+0.2*(np.random.rand(*timeN.shape).astype(np.float32)-0.5)
             x/=(x.std(axis=(1,2),keepdims=True))*(timeN0/timeN)**0.5
         else:
-            x/=x.std(axis=(1,2,3),keepdims=True)
+            x/=x.std(axis=(1,2,3),keepdims=True)+np.finfo(x.dtype).eps
         return x
     def __call__(self,x):
         return super(Model, self).__call__(K.tensor(self.inx(x)))

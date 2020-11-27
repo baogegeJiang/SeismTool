@@ -92,13 +92,12 @@ def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
                 -secL[0])
             mL.append(m)
             sL.append(s)
-            wM[rIndex]=torch.zeros(n+50*100,device=c.device)
-            wM[rIndex][0:c.shape[0]-dIndex]=c[dIndex:]
+            wM[index]=torch.zeros(n+50*100,device=c.device)
+            wM[index][0:c.shape[0]-dIndex]=c[dIndex:]
             threshold=m+minMul*s
             if threshold>mincc:
                 threshold=mincc
             cudaFunc.torchMax(c[dIndex:],threshold,winL, aM)
-
             index+=1
             pCount+=1
             if pCount>=maxStaN:
@@ -296,7 +295,7 @@ def uniqueQuake(quakeL,minDelta=5, minD=0.2):
         PS[i,2:4]=quakeL[i].loc()[0:2]
         PS[i,4]=quakeL[i].getMul(isNum)
         PS[i,5]=quakeL[i]['cc']
-        PS[i,6]=quakeL[i].M
+        PS[i,6]=quakeL[i]['M']
     L=np.argsort(PS[:,1])
     PS=PS[L,:]
     L=uniquePS(PS,minDelta=minDelta,minD=minD)

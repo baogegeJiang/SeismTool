@@ -189,10 +189,10 @@ class Station(Dist):
         super().defaultSet()
         self.keysIn   = 'net sta compBase lo la erroLo erroLa dep erroDep '.split()
         self.keys     = 'net sta compBase lo la erroLo erroLa dep erroDep nickName \
-        comp index nameFunc sensorName dasName sensorNum nameMode netSta doFilt oRemove baseSacName starttime endtime'.split()
-        self.keysType ='S S S f f f f f f S l f F S S S S S b b S u u'.split()
+        comp index nameFunc sensorName dasName sensorNum nameMode netSta doFilt oRemove baseSacName starttime endtime sensitivity'.split()
+        self.keysType ='S S S f f f f f f S l f F S S S S S b b S u u f'.split()
         self.keys0 =    [None,None,'BH',None,None,0    ,   0, 0   ,0,  None,     \
-        None,None, fileP,'','','','','',True,False,'net.sta.info.compBase',UTCDateTime(1970,1,1),UTCDateTime(2099,1,1)]
+        None,None, fileP,'','','','','',True,False,'net.sta.info.compBase',UTCDateTime(1970,1,1),UTCDateTime(2099,1,1),1.239000e+09]
         self.keysName = ['net','sta']
     def getNickName(self, index):
         nickName = ''
@@ -448,10 +448,10 @@ class Quake(Dist):
     def defaultSet(self):
         #               quake: 34.718277 105.928949 1388535219.080064 num: 7 index: 0    randID: 1    filename: 16071/1388535216_1.mat -0.300000
         super().defaultSet()
-        self.keysIn   = 'type   la       lo          time          para0 num para1 index para2 randID para3 filename ml   dep'.split()
-        self.keys     = 'type   la       lo          time          para0 num para1 index para2 randID para3 filename ml   dep stationList strTime no YMD HMS'.split()
-        self.keysType = 'S      f        f           f             S     F   S     f     S     f      S     S        f    f   l  S S S S'.split()
-        self.keys0    = ['quake',  None,     None,      None,         None, None,None,None, None, None,  None,  None,   None,0 ,'','']
+        self.keysIn   = 'type     la       lo          time          para0  num  para1 index   para2    randID para3   filename ml   dep'.split()
+        self.keys     = 'type     la       lo          time          para0  num  para1 index   para2    randID para3   filename ml   dep stationList strTime no YMD HMS'.split()
+        self.keysType = 'S        f        f           f             S      F       S  f        S       f      S        S        f    f   l  S S S S'.split()
+        self.keys0    = ['quake',  None,     None,      None,       'num', None,'index',None, 'randID', None,'filename',  None,   None,0 ,'','']
         self.keysName = ['time','la','lo']
     def Append(self,tmp):
         if isinstance(tmp,Record):
@@ -471,7 +471,7 @@ class Quake(Dist):
             if maxDT!=None:
                 if record['pTime']-self['time']>maxDT:
                     continue
-            staIndex= int(record['index'])
+            staIndex= int(record['staIndex'])
             la      = stationList[staIndex]['la']
             lo      = stationList[staIndex]['lo']
             dep     = stationList[staIndex]['dep']/1e3
@@ -535,6 +535,15 @@ class Quake(Dist):
             if 'minDist' in req:
                 if dist < req['minDist']:
                     return False
+        if 'minCover' in req and 'staInfos' in req:
+            if self.calCover(req['staInfos'])<req['minCover']:
+                return False
+        if 'minMl' in req:
+            if self['ml']<req['minMl']:
+                return False
+        if 'minN' in req:
+            if len(self.records)<req['minN']:
+                return False
         for record in self.records:
             if not record.select(req):
                 self.records.pop(self.records.index(record))
@@ -579,13 +588,13 @@ class Quake(Dist):
         f=[-1,-1],filtOrder=2):
         T3L=[]
         eventDir = matDir+'/'+self['filename'].split('.mat')[0]+'/'
-        for record in self:
+        for record in self.records:
             staIndex = record['staIndex']
             sacsFile = staInfos[staIndex].baseSacName(resDir=eventDir)
             sacFilesL = [[tmp] for tmp in sacsFile]
-            T3L.append(getTrace3ByFileName(sacFilesL,pTime=record.pTime(),\
-                sTime=record.sTime()))
-            T3L.filt(f,filtOrder)
+            T3L.append(getTrace3ByFileName(sacFilesL,pTime=record['pTime'],\
+                sTime=record['sTime']))
+            T3L[-1].filt(f,filtOrder)
         return T3L
     def loadPSSacs(self,staInfos,matDir='output',\
         isCut=False,index0=-250,index1=250,\
@@ -599,10 +608,8 @@ class Quake(Dist):
             T3SL.append(T3.slice(T3.sTime+index0*T3.delta,\
                 T3.sTime+index1*T3.delta))
         return T3PL,T3SL
+    '''
     def calCover(self,staInfos,maxDT=None):
-        '''
-        calculate the radiation coverage
-        '''
         coverL=np.zeros(360)
         for record in self.records:
             if record['pTime']==0 and record['sTime']==0:
@@ -622,6 +629,7 @@ class Quake(Dist):
         coverL=np.sign(coverL)*np.sign(coverL[L])*(coverL+coverL[L])
         coverRate=np.sign(coverL).sum()/360
         return coverRate
+    '''
     def cutSac(self, stations,bTime=-100,eTime=3000,resDir = 'eventSac/',para={},byRecord=True,isSkip=False):
         time0  = self['time'] + bTime
         time1  = self['time'] + eTime
@@ -678,29 +686,33 @@ class Quake(Dist):
                     data.write(resSacNames[i],format='SAC')
         print(tmpDir,len(glob(tmpDir+'/*Z')))
         return None
-    def calML(self, staInfos=[],minSACount=3,T3L=None):
+    def calML(self, staInfos=[],minSACount=3,T3L=None,minCover=0.2):
         def getSA(data):
             data=data-data.mean()
-            return np.abs(data.cumsum(axis=0)).max()
+            return np.abs(data.cumsum(axis=0)).max(axis=0)[:2].mean()
         ml = 0
         sACount=0
+        if self.calCover(staInfos)<minCover:
+            return -999
         for i in range(len(self.records)):
             record = self.records[i]
             T3 =  T3L[i]
             if T3.bTime <=0 or  record['pTime']<=0 :
                 continue
-            if record['sTime']<=0:
-                sTime = (record['pTime']-self['time'])*1.7+self['time']
-            else:
-                sTime = record['sTime']
-            data = T3.Data(sTime-5,sTime+20)
+            mTime = record['pTime']
+            data = T3.Data(mTime-5,mTime+30)
             if len(data)==0:
                 continue
             if T3.delta<0:
                 continue
-            sA  = getSA(data)*T3.delta
-            dk = self.dist(staInfos[record['staIndex']]) 
-            ml+=np.log10(sA)+1.1*np.log10(dk)+0.00189*dk-2.09-0.23
+            sA  = getSA(data)*T3.delta#/staInfos[record['staIndex']]['sensitivity']\
+            #*1e3#1/sensitivity m/s*1000mm/m delta_s
+            dk = self.dist(staInfos[record['staIndex']])
+            if dk<20:
+                continue
+            if dk>330:
+                continue
+            ml+=np.log10(sA)+1.1*np.log10(dk)+0.00189*dk-2.09#-0.23#np.log10(sA)+2.76*np.log10(dk)-2.48
             sACount+=1
 
         if sACount<minSACount:
@@ -980,6 +992,10 @@ class QuakeL(list):
             self.inQuake['splitKey'] = kwargs['quakeSplitKey']
         if 'recordSplitKeys' in kwargs:
             self.inRecord['splitKey'] = kwargs['recordSplitKey']
+        if '*' in file or '?' in file:
+            for tmpFile in glob(file):
+                self.read(tmpFile,**kwargs)
+            return
         with open(file,'r') as f:
             lines = f.readlines()
         for line in lines:
@@ -1070,6 +1086,15 @@ class QuakeL(list):
         for quake in self:
             sacsL+=quake.getSacFiles(*argv,**kwargs)
         return sacsL
+    def paraL(self,keyL=['time','la','lo','dep','ml'],req=None):
+        pL = {key: []for key in keyL}
+        for quake in self:
+            if not isinstance(req,NoneType):
+                if not quake.select(req):
+                    continue
+            for key in keyL:
+                pL[key].append(quake[key])
+        return pL
 
 
 
@@ -1167,6 +1192,7 @@ def mergeSacByName(sacFileNames, **kwargs):
     sacM        = None
     tmpSacL     =None
     para.update(kwargs)
+    print(ctime(),'reading')
     for sacFileName in sacFileNames:
         try:
             #print(ctime(),'read sac')
@@ -1186,6 +1212,7 @@ def mergeSacByName(sacFileNames, **kwargs):
                 tmpSacL=tmpSacs
             else:
                 tmpSacL+=tmpSacs
+    print(ctime(),'read done')
     if tmpSacL!=None and len(tmpSacL)>0:
         ID=tmpSacL[0].id
         for tmp in tmpSacL:
@@ -1495,5 +1522,57 @@ def saveSacs(staL, quakeL, staInfos,matDir='output/',\
 #用一个文件存相关信息，然后根据文件载入,实验一下，小台阵
 #明天看有无问题
 #降采和对齐的先后顺序可能有影响
+
+def getQuakeNoise(qL,staInfos,workDir,resFile='noise_lst'):
+    
+    with open(resFile,'w') as f:
+        for q in qL:
+            name = q['filename']
+            T3L = q.loadSacs(staInfos,workDir)
+            for i in range(len(q.records)):
+                record = q.records[i]
+                T3     = T3L[i]
+                if T3.bTime<=0 or T3.pTime<=0:
+                    continue
+                Data = T3.Data(T3.bTime+5,T3.pTime-3)
+                if len(Data)<=0:
+                    continue
+                nStd =Data.std(axis=0)
+                f.write('%d %.2f %.5f %.5f %.5f\n'%(record['staIndex'],T3.pTime,\
+                    nStd[0],nStd[1],nStd[2]))
+
+def loadNoiseRes(resFile='noise_lst'):
+    data = np.loadtxt(resFile)
+    staIndexL=data[:,0].astype(np.int32)
+    timeL =data[:,1]
+    noiseL=data[:,2:]
+    return staIndexL,timeL,noiseL
+
+def plotStaNoiseDay(staIndexL,timeL,noiseL,resDir):
+    if not os.path.exists(resDir):
+        os.makedirs(resDir)
+    timeL = timeL-UTCDateTime(2014,1,1).timestamp
+    for staIndex in np.unique(staIndexL):
+        plt.close()
+        color='rbk'
+        for i in range(3):
+            plt.subplot(4,1,i+1)
+            plt.subplot
+            #plt.plot(((timeL[staIndexL==staIndex]+8*3600)%86400)/3600,\
+            #    noiseL[staIndexL==staIndex][:,i],'.'+color[i],markersize=1)
+            plt.hist2d(((timeL[staIndexL==staIndex]+8*3600)%86400)/3600,\
+                np.log(np.abs(noiseL[staIndexL==staIndex][:,i])+1),bins=[8,15],cmap='cool')
+        #plt.ylim([0,noiseL[staIndexL==staIndex].std()*5])
+        plt.subplot(4,1,4)
+        plt.hist(((timeL[staIndexL==staIndex]+8*3600)%86400)/3600,bins=8)
+        plt.xlim([0,24])
+        plt.savefig(resDir+'/%d_noise.jpg'%staIndex,dpi=300)
+        plt.close()
+
+
+
+
+            
+
 
         

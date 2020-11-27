@@ -27,7 +27,7 @@ def isZeros(a):
     return False
 
 
-indexL0=range(275, 1500)
+'''
 @jit
 def predictLongData(model, x, N=2000, indexL=range(750, 1250)):
     if len(x) == 0:
@@ -64,6 +64,32 @@ def predictLongData(model, x, N=2000, indexL=range(750, 1250)):
         print('zeros: %d'%zeroCount)
                 
     return Y
+'''
+indexL0=range(275, 1500)
+@jit
+def predictLongData(model, x, N=2000, indexL=range(750, 1250),dIndex=2000):
+    L = x.shape[0]
+    if L <=dIndex*3:
+        return np.zeros(L)
+    validD = len(indexL)
+    loop = math.ceil(dIndex/validD)
+    zerosCount=0
+    out = np.zeros([loop,L],np.float32)
+    for i in range(loop):
+        i0=validD*i
+        i1=int((L-i0)/dIndex)*dIndex+i0
+        X = x[i0:i1].reshape([-1,dIndex,1,3])
+        XSTD = X.reshape([X.shape[0],-1,10,3]).std(axis=2,keepdims=True)
+        sum0 = (XSTD==0).sum(axis=(1,2,3))
+        Y = model.predict(X)
+        zerosCount+=(sum0>5).sum()
+        Y[sum0>5]*=0
+        Y[:, :indexL0[ 0] ]*=0
+        Y[:,  indexL0[-1]:]*=0
+        out[i,i0:i1]=Y.reshape([-1])
+    if zerosCount>0:
+        print('zeros: %d'%zerosCount)          
+    return out.max(axis=0) 
 '''
 @jit
 def processX(X, rmean=True, normlize=True, reshape=True):
@@ -102,55 +128,54 @@ def originFileName(net, station, comp, YmdHMSJ, dirL=['data/']):
     return sacFileNames
 
 class sta(object):
-    def __init__(self, station, day, modelL=None, staTimeM=None,\
-     loc=None, comp=['BHE','BHN','BHZ'], getFileName=originFileName, \
-     freq=[-1, -1], mode='mid', isClearData=False,\
-     taupM=tool.quickTaupModel(),isPre=True,delta0=0.02,R=[-91,91,\
-    -181,181],maxD=80,bTime=None,eTime=None):
+    def __init__(self, station, day,freq=[-1, -1], \
+        taupM=tool.quickTaupModel(),delta0=0.02,\
+        R=[-91,91,-181,181]):
         self.net = station['net']
         self.loc = station.loc()
         self.station = station['sta']
         self.sta = station
         self.day = day
-        self.comp = comp
         self.taupM=taupM
-        if loc[0]<R[0] or loc[0]>R[1] or loc[1]<R[2] or loc[1]>R[3]:
+        if self.loc[0]<R[0] or self.loc[0]>R[1] \
+        or self.loc[1]<R[2] or self.loc[1]>R[3]:
             self.data=getTrace3ByFileName([[],[],[]], freq=freq,delta0=delta0,\
-                maxA=maxA,bTime=bTime,eTime=eTime,isData=False)
+                maxA=maxA,isData=False)
             print('skip')
         else:
-            self.data = getTrace3ByFileName(station.getFileNames(self.day), freq=freq,delta0=delta0,\
-                maxA=maxA,bTime=bTime,eTime=eTime,isData=False)
-        #print(len(sta.data.data))
+            self.data = getTrace3ByFileName(station.getFileNames(self.day),\
+             freq=freq,delta0=delta0,\
+                maxA=maxA,isData=False)
         print(self.station,self.data.bTime,self.data.eTime)
+    def predict(self,modelL=None, staTimeM=None,\
+     mode='mid', isClearData=False,maxD=80):
         self.timeL = list()
         self.vL = list()
         self.mode = mode
-        if isPre==True:
-            indexLL = [range(275, 775), range(275, 775)]
-            if mode=='norm':
-                minValueL=[0.5,0.5]
-            if mode=='high':
-                minValueL=[0.4, 0.4]
-            if mode=='mid':
-                minValueL=[0.25, 0.25]
-            if mode=='low':
-                minValueL=[0.2, 0.2]
-            if mode=='higher':
-                minValueL=[0.6, 0.6]
-            minDeltaL=[500, 750]
-            for i in range(len(modelL)):
-                tmpL = getDetec(predictLongData(modelL[i], self.data.Data(),\
-                 indexL=indexLL[i]), minValue=minValueL[i], minDelta =\
-                  minDeltaL[i])
-                print(ctime(),'find',len(tmpL[0]))
-                self.timeL.append(tmpL[0])
-                self.vL.append(tmpL[1])
-            self.pairD = self.getPSPair(maxD=maxD)
-            self.isPick = np.zeros(len(self.pairD))
-            self.orignM = self.convertPS2orignM(staTimeM,maxD=maxD)
-            if isClearData:
-                self.clearData()
+        indexLL = [range(275, 775), range(275, 775)]
+        if mode=='norm':
+            minValueL=[0.5,0.5]
+        if mode=='high':
+            minValueL=[0.4, 0.4]
+        if mode=='mid':
+            minValueL=[0.25, 0.25]
+        if mode=='low':
+            minValueL=[0.2, 0.2]
+        if mode=='higher':
+            minValueL=[0.6, 0.6]
+        minDeltaL=[500, 750]
+        for i in range(len(modelL)):
+            tmpL = getDetec(predictLongData(modelL[i], self.data.Data(),\
+             indexL=indexLL[i]), minValue=minValueL[i], minDelta =\
+              minDeltaL[i])
+            print(ctime(),'find',len(tmpL[0]))
+            self.timeL.append(tmpL[0])
+            self.vL.append(tmpL[1])
+        self.pairD = self.getPSPair(maxD=maxD)
+        self.isPick = np.zeros(len(self.pairD))
+        self.orignM = self.convertPS2orignM(staTimeM,maxD=maxD)
+        if isClearData:
+            self.clearData()
 
     def __repr__(self):
         reprStr=self.net + ' '+self.station+\
@@ -313,7 +338,7 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
         staOrignMIndex = np.zeros((staN, laN, loN), dtype=int)
         staMinTimeL=np.ones(staN)*0
         count=0
-        for sec0 in range(startSec, endSec, timeN):
+        for sec0 in range(startSec-3*timeN, endSec+3*timeN, timeN):
             count=count+1
             if count%10==0:
                 print(ctime(),'process:',(sec0-startSec)/(endSec-startSec)*100,'%  find:',len(quakeL))
@@ -453,49 +478,49 @@ def getSta(staL,i, staInfo, date, modelL, staTimeM, loc, \
             freq=freq, getFileName=getFileName, taupM=taupM, \
             mode=mode,isPre=isPre,R=R,comp=comp,maxD=maxD,\
             delta0=delta0,bTime=bTime,eTime=eTime)
+def preSta(staL,i, staInfo, date, modelL, staTimeM, loc, \
+        freq,getFileName,taupM, mode,isPre=True,R=[-90,90,\
+    -180,180],comp=['BHE','BHN','BHZ'],maxD=80,delta0=0.02,\
+    bTime=None,eTime=None):
+    staL[i].predict(staInfo, date, modelL, staTimeM, loc, \
+            freq=freq, getFileName=getFileName, taupM=taupM, \
+            mode=mode,isPre=isPre,R=R,comp=comp,maxD=maxD,\
+            delta0=delta0,bTime=bTime,eTime=eTime)
 
 
-def getStaL(staInfos, aMat=[], staTimeML=[], modelL=[],\
-    date=obspy.UTCDateTime(0), getFileName=originFileName,\
-    taupM=tool.quickTaupModel(), mode='mid', N=5,\
-    isPre=True,f=[2, 15],R=[-90,90,\
-    -180,180],maxD=80,f_new=[-1,-1],delta0=0.02,resampleN=-1\
-    ,bTime=None,eTime=None):
+'''
+self, station, day,freq=[-1, -1], \
+        taupM=tool.quickTaupModel(),delta0=0.02,\
+        R=[-91,91,-181,181],bTime=None,eTime=None
+self,modelL=None, staTimeM=None,\
+     mode='mid', isClearData=False,maxD=80
+     '''
+def getStaL(staInfos, staTimeML=[], modelL=[],\
+    date=obspy.UTCDateTime(0),taupM=tool.quickTaupModel(),\
+     mode='mid',isPre=True,f=[2, 15],R=[-90,90,\
+    -180,180],maxD=80,f_new=[-1,-1],delta0=0.02,resampleN=-1,\
+    isClearData=False):
     staL=[None for i in range(len(staInfos))]
     threads = list()
+    for i in range(len(staInfos)):  
+        print(ctime(),'process on sta: ',date,i)
+        staL[i]=sta(staInfos[i], date,
+            f, taupM,R=R,delta0=delta0)
+        staL[i].filt(f_new)
+        staL[i].resample(resampleN)
+    if not isPre:
+        return staL
     for i in range(len(staInfos)):
-        staInfo=staInfos[i]
-        nt = staInfo['net']
-        st = staInfo['sta']
-        loc = [staInfo['la'],staInfo['lo']]
-        comp=staInfo['comp']
         if len(staTimeML)>0:
             staTimeM=staTimeML[i]
         else:
             staTimeM=None
-        print(ctime(),'process on sta: ',i)
-        getSta(staL, i, staInfo, date, modelL, staTimeM, loc, \
-            f, getFileName, taupM, mode,isPre=isPre,R=R,\
-            comp=comp,maxD=maxD,delta0=delta0,bTime=bTime,\
-            eTime=eTime)
-        staL[i].filt(f_new)
-        staL[i].resample(resampleN)
+        print(ctime(),'predict on sta: ',date,i)
+        staL[i].predict(modelL, staTimeM, mode,\
+            maxD=maxD,isClearData=isClearData)
     return staL
-    for i in range(len(threads)):
-        print('process on sta: ',i)
-        thread = threads[i]
-        while threading.activeCount()>N:
-            time.sleep(0.1)
-        thread.start()
 
-    for i in range(len(threads)):
-        threads[i].join()
-        print('sta: ',i,' completed')
-         
-    return staL
-'''
 
-'''
 def showExample(filenameL,modelL,delta=0.02,t=[]):
     data=getTrace3ByFileName(filenameL,freq=[2,15])
     data=data.Data()[:2000*50]
@@ -563,14 +588,14 @@ def plotRes(staL, quake, filename=None):
         staIndex=record['staIndex']
         if staIndex>100:
             color=1
-        print(staIndex,pTime,sTime)
+        #print(staIndex,pTime,sTime)
         st=quake['time']-10
         et=sTime+10
         if sTime==0:
             et=pTime+30
-        pD=(pTime-quake['time'])%1000
+        pD=(pTime-quake['time'])
         if pTime ==0:
-            pD = ((sTime-quake['time'])/1.73)%1000
+            pD = ((sTime-quake['time'])/1.73)
         if staL[staIndex].data.bTime<0:
             continue
         #print(st, et, staL[staIndex].data.delta)
@@ -597,26 +622,26 @@ def plotRes(staL, quake, filename=None):
         plt.text(timeL[0],pD+0.5,'%s %.2f %.2f'%(staL[staIndex].station,record['pProb'],\
             record['sProb']))
         if pTime>0:
-            plt.plot([pTime, pTime], [pD+2, pD-2], 'g')
+            plt.plot([pTime, pTime], [pD+2, pD-2], 'g',linewidth=0.5)
             if isinstance(quake,QuakeCC):
                 plt.text(pTime+1,pD+0.5,'%.2f'%record['PCC'])
         if sTime >0:
-            plt.plot([sTime, sTime], [pD+2, pD-2], 'k')
+            plt.plot([sTime, sTime], [pD+2, pD-2], 'r',linewidth=0.5)
             if isinstance(quake,QuakeCC):
                 plt.text(sTime+1,pD+0.5,'%.2f'%record['SCC'])
     if isinstance(quake,QuakeCC):
-        plt.title('%s %.3f %.3f %.3f cc:%.3f' % (obspy.UTCDateTime(quake['time']).\
-            ctime(), quake['la'], quake['lo'],quake['dep'],quake['cc']))
+        plt.title('%s %.3f %.3f %.3f %.3f cc:%.3f' % (obspy.UTCDateTime(quake['time']).\
+            ctime(), quake['la'], quake['lo'],quake['dep'],quake['ml'],quake['cc']))
     else:
-        plt.title('%s %.3f %.3f %.3f' % (obspy.UTCDateTime(quake['time']).\
-            ctime(), quake['la'], quake['lo'],quake['dep']))
+        plt.title('%s %.3f %.3f %.3f %.3f' % (obspy.UTCDateTime(quake['time']).\
+            ctime(), quake['la'], quake['lo'],quake['dep'],quake['ml']))
     if filename==None:
         plt.show()
     if filename!=None:
         dayDir=os.path.dirname(filename)
         if not os.path.exists(dayDir):
             os.mkdir(dayDir)
-        plt.savefig(filename,dpi=300)
+        plt.savefig(filename,dpi=200)
         plt.close()
 
 def plotResS(staL,quakeL, outDir='output/'):
@@ -630,10 +655,11 @@ def plotResS(staL,quakeL, outDir='output/'):
         #else:
         #    pass
 
-def plotQuakeL(staL,quakeL,laL,loL,outDir='output/'):
+def plotQuakeL(staL,quakeL,laL,loL,outDir='output/',filename=''):
     dayIndex = int(quakeL[-1]['time']/86400)
     Ymd = obspy.UTCDateTime(dayIndex*86400).strftime('%Y%m%d')
-    filename = '%s/%s_quake_loc.jpg'%(outDir,Ymd)
+    if len(filename)==0:
+        filename = '%s/%s_quake_loc.jpg'%(outDir,Ymd)
     dayDir=os.path.dirname(filename)
     if not os.path.exists(dayDir):
         os.mkdir(dayDir)
@@ -668,6 +694,78 @@ def plotQuakeL(staL,quakeL,laL,loL,outDir='output/'):
     plt.savefig(filename,dpi=300)
     plt.close()
 
+def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename=''):
+    dayIndex = int(quakeL[-1]['time']/86400)
+    Ymd = obspy.UTCDateTime(dayIndex*86400).strftime('%Y%m%d')
+    if len(filename)==0:
+        filename = '%s/%s_quake_loc.jpg'%(outDir,Ymd)
+    dayDir=os.path.dirname(filename)
+    if not os.path.exists(dayDir):
+        os.mkdir(dayDir)
+    plt.figure(figsize=[12,8])
+    m = basemap.Basemap(llcrnrlat=laL[0],urcrnrlat=laL[1],llcrnrlon=loL[0],\
+        urcrnrlon=loL[1])
+    staLa= []
+    staLo=[]
+    for sta in staInfos:
+        staLa.append(sta.loc()[0])
+        staLo.append(sta.loc()[1])
+    #staLa,staLo = staL.loc()
+    staX,staY=m(np.array(staLo),np.array(staLa))
+    m.plot(staX,staY,'b^',markersize=4,alpha=0.2)
+    req={'staInfos':staInfos,'minCover':0.5,'minMl':-5}
+    pL=quakeL.paraL(req=req)
+    eX,eY,=m(np.array(pL['lo']),np.array(pL['la']))
+    #m.etopo()
+    ml,dep=[np.array(pL['ml']),np.array(pL['dep'])]
+    for fault in faultL:
+        if fault.inR(laL+loL):
+            fault.plot(m,markersize=0.3)
+    #m.plot(eX,eY,'ro',markersize=2)
+    #m.etopo()
+    m.scatter(eX,eY,c=dep,s=((ml+1)**2)*0.3,vmin=-5,vmax=30,cmap='Reds')
+    #m.arcgisimage()
+    #m.colorbar()
+    #plt.scatter()
+    parallels = np.arange(0.,90,3)
+    m.drawparallels(parallels,labels=[False,True,True,False])
+    meridians = np.arange(10.,360.,3)
+    plt.gca().yaxis.set_ticks_position('right')
+    m.drawmeridians(meridians,labels=[True,False,False,True])
+    plt.title(Ymd)
+    plt.savefig(filename,dpi=300)
+
+    plt.close()
+
+def showStaCover(aMat,staTimeML,filename='cover.jpg'):
+    aM = np.zeros([aMat.laN,aMat.loN])
+    for staTimeM in staTimeML:
+        aM[staTimeM.minTimeD<=21]+=1
+    laL=[]
+    loL=[]
+    for a in aMat.subareas[0]:
+        loL.append(a.midLo)
+    for a in aMat.subareas:
+        laL.append(a[0].midLa)
+    m = basemap.Basemap(llcrnrlat=laL[0],urcrnrlat=laL[-1],llcrnrlon=loL[0],\
+        urcrnrlon=loL[-1])
+    aX,aY=m(np.array(loL),np.array(laL))
+    setMap(m)
+    #m.pcolor(aX,aY,(aM.transpose()>2)*np.log(aM.transpose()+1),cmap='jet')
+    m.pcolor(aX,aY,(aM>2)*np.log(aM+1),cmap='jet')
+    for fault in faultL:
+        if fault.inR(laL+loL):
+            fault.plot(m,markersize=0.3)
+    plt.savefig(filename,dpi=300)
+
+def setMap(m):
+    
+    parallels = np.arange(0.,90,3)
+    m.drawparallels(parallels,labels=[False,True,True,False])
+    meridians = np.arange(10.,360.,3)
+    m.drawmeridians(meridians,labels=[True,False,False,True])
+    
+    plt.gca().yaxis.set_ticks_position('right')
 
 
 '''

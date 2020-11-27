@@ -5,6 +5,7 @@ this module is designed to calculate correlation and weak-max by torch
 '''
 #5.96×10^-8~6.55×10^4
 tentype=torch.cuda.HalfTensor
+torch.set_grad_enabled(False)#*******
 dtype=torch.float16
 nptype=np.float16
 nptypeO=np.float32

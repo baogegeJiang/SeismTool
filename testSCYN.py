@@ -13,21 +13,22 @@ from SeismTool.locate import locate
 
 detecQuake.maxA=1e15#这个是否有道理
 
-
+#大小地震权重异
+#不同地区分别看
 #2019-06-17
 #250~1750衡量
 #bSec=UTCDateTime(2018,7,1).timestamp#begain date#
 #eSec=UTCDateTime(2020,1,1).timestamp# end date
 #p_i='SCYN_allV4'
 #v_i='SCYN_all'#phaseSaveFile
-
 #os.environ["CUDA_VISIBLE_DEVICES"] = cudaI
 inputDir = '/home/jiangyr/Surface-Wave-Dispersion/accuratePickerV4/'
-
-argL=[['SCYN1122','SCYN1122V0','0',UTCDateTime(2014,1,1).timestamp,UTCDateTime(2015,7,1).timestamp],\
-      ['SCYN1122','SCYN1122V1','0',UTCDateTime(2015,7,1).timestamp,UTCDateTime(2017,1,1).timestamp],\
-      ['SCYN1122','SCYN1122V2','1',UTCDateTime(2017,1,1).timestamp,UTCDateTime(2018,7,1).timestamp],\
-      ['SCYN1122','SCYN1122V3','1',UTCDateTime(2018,7,1).timestamp,UTCDateTime(2020,1,1).timestamp],]
+#'SCYNdoV1','SCYNdoV1V0','0',UTCDateTime(2014,1,3).timestamp,UTCDateTime(2015,7,1).timestamp
+#SCYNdoV1V[0,01,1,2,3,]
+argL=[['SCYNdoV40', 'SCYNdoV40V4', '0', UTCDateTime(2014,1,1).timestamp, UTCDateTime(2015,7,1).timestamp],\
+      ['SCYNdoV40', 'SCYNdoV40V5', '0', UTCDateTime(2015,7,1).timestamp, UTCDateTime(2017,1,1).timestamp],\
+      ['SCYNdoV40', 'SCYNdoV40V6', '1', UTCDateTime(2017,1,1).timestamp, UTCDateTime(2018,7,1).timestamp],\
+      ['SCYNdoV40', 'SCYNdoV40V7', '1', UTCDateTime(2018,7,1).timestamp, UTCDateTime(2020,1,1).timestamp],]
 l=argL[int(sys.argv[1])]
 print(l)
 v_i,p_i,cudaI,bSec,eSec =l 
@@ -47,8 +48,8 @@ fcn.defProcess()
 
 laL=[21,35]#area: [min latitude, max latitude]
 loL=[97,109]#area: [min longitude, max longitude]
-laN=40 #subareas in latitude
-loN=40 #subareas in longitude
+laN=30 #subareas in latitude
+loN=30 #subareas in longitude
 maxD=21#max ts-tp
 f=[0.5,20]
 
@@ -63,7 +64,7 @@ modelL[0].load_weights(inputDir+'model/norm_p_400000_80000')
 modelL[1].load_weights(inputDir+'model/norm_s_400000_80000')
 staInfos=StationList(staLstFileL[0])+StationList(staLstFileL[1])
 aMat=sacTool.areaMat(laL,loL,laN,loN)
-staTimeML= detecQuake.getStaTimeL(staInfos, aMat, taupM=taupM)
+staTimeML= detecQuake.getStaTimeL(staInfos, aMat)
 quakeL=QuakeL()
 #############################
 
@@ -76,7 +77,7 @@ for date in range(int(bSec),int(eSec), 86400):
         continue
     date=UTCDateTime(float(date))
     print('pick on ',date)
-    staL = detecQuake.getStaL(staInfos, aMat, staTimeML,\
+    staL = detecQuake.getStaL(staInfos,staTimeML,\
      modelL, date, mode='norm',f=f,maxD=maxD)
     tmpQuakeL=detecQuake.associateSta(staL, aMat, \
         staTimeML, timeR=30, maxDTime=2, N=1,locator=\
@@ -120,5 +121,9 @@ detecQuake.plotQuakeDis(quakeLs[:1],R=R,staInfos=staInfos,topo=None,minCover=0)
 plt.savefig('quakeLsDis.png',dpi=500)
 '''
 
-
-
+#from glob import glob
+#fileL = glob('RESP.SC*')+glob('RESP.YN*')
+#with open('sensity_log','w+') as f:
+#    for file in fileL:
+#        with open(file) as F :
+#            f.write('%s %s\n'%(file,F.readlines()[-4])) 

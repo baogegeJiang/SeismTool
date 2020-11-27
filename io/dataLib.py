@@ -120,8 +120,10 @@ class filePath:
         if nameMode =='YNSC':
             if net =='YN':
                 staDirL = ['/net/CEA/CEA0/net_yn/']
+                staDirL = ['/media/commonMount/CEA0/net_yn/']
             elif net == 'SC':
                 staDirL = ['/net/CEA/CEA1/net_sc/']
+                staDirL = ['/media/commonMount/CEA1/net_sc/']
 
         if nameMode =='XU':
             staDirL = ['/HOME/jiangyr/YNSCMOVE/']
