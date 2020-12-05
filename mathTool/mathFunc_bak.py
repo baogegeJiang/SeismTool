@@ -9,13 +9,14 @@ rad2deg=1/np.pi*180
 def xcorr(a,b):
     la=a.shape[0]
     lb=b.shape[0]
-    c=np.zeros(la-lb+1)
+    if len(b.shape)>1:
+        c=np.zeros([la-lb+1,b.shape[-1]])
+    else:
+        c=np.zeros([la-lb+1])
     tb=b[0]*b[0]*0
     for i in range(lb):
         tb+=b[i]*b[i]
     for i in range(la-lb+1):
-        ta=tb*0
-        tc=tb*0
         ta= (a[i:(i+lb)]*a[i:(i+lb)]).sum(axis=0)
         tc= (a[i:(i+lb)]*b[0:(0+lb)]).sum(axis=0)
         c[i]=tc/np.sqrt(ta*tb+1e-20)
@@ -47,15 +48,15 @@ def xcorrEqual(a,b):
             tb=(b[0:ii1]*b[0:ii1]).sum()
         c[i]=tc/np.sqrt(tb)
     return c
-
+@jit
 def corrNP(a,b):
     a=a.astype(nptype)
     b=b.astype(nptype)
     if len(b)==0:
         return a*0+1
-    c=signal.correlate(a,b,'valid')
-    tb=(b**2).sum()**0.5
-    taL=(a**2).cumsum()
+    c=np.array([signal.correlate(a[:,i],b[:,i],'valid')for i in range(3)]).transpose()
+    tb=(b**2).sum(axis=0)**0.5
+    taL=(a**2).cumsum(axis=0)
     ta0=taL[len(b)-1]**0.5
     taL=(taL[len(b):]-taL[:-len(b)])**0.5
     c[1:]=c[1:]/tb/taL

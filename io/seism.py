@@ -1,6 +1,6 @@
 import obspy 
 import numpy as np
-from obspy import UTCDateTime,read
+from obspy import UTCDateTime,read,Trace,Stream
 from obspy.io import sac
 import os 
 import random
@@ -11,6 +11,14 @@ from glob import glob
 from numba import jit
 from ..mathTool.distaz import DistAz
 from .dataLib import filePath
+from ..mathTool.mathFunc import rotate
+comp3='RTZ'
+comp33=[]
+cI33=[]
+for i in range(3):
+    for j in range(3):
+        cI33.append([i,j])
+        comp33.append(comp3[i]+comp3[j])
 plt.switch_backend('agg')
 fileP = filePath()
 def tolist(s,d='/'):
@@ -200,7 +208,7 @@ class Station(Dist):
         for i in range(4):
             tmp    = index%N
             nickName += nickStrL[tmp]
-            count  = int(index/N)
+            index = int(index/N)
         return nickName
     def getFileNames(self, time0,time1=None):
         if isinstance(time1, NoneType):
@@ -535,6 +543,9 @@ class Quake(Dist):
             if 'minDist' in req:
                 if dist < req['minDist']:
                     return False
+        if 'maxDep' in req:
+            if self['dep']>req['maxDep']:
+                return False
         if 'minCover' in req and 'staInfos' in req:
             if self.calCover(req['staInfos'])<req['minCover']:
                 return False
@@ -547,6 +558,11 @@ class Quake(Dist):
         for record in self.records:
             if not record.select(req):
                 self.records.pop(self.records.index(record))
+        if 'maxRes' in req:
+            if 'locator' in req:
+                q,res=req['locator'].locate(self)
+                if res>req['maxRes'] and self['dep']>50:
+                    return False
         return True
     def __setitem__(self,key,value):
         super().__setitem__(key,value)
@@ -1327,16 +1343,17 @@ class taup:
         np.savetxt(quickFile,M)
     def __call__(self,dep,dist):
         return self.interpolate(dep,dist)
-
+t0=UTCDateTime(1900,1,1)
+t1=UTCDateTime(2099,1,1)
 class Trace3(obspy.Stream):
-    def __init__(self,traces=[],pTime=-1,sTime=-1,delta=-1,bTime=UTCDateTime(1970,1,1),\
-        eTime=UTCDateTime(2099,1,1),compStr = 'ENZ',isData=False):
+    def __init__(self,traces=[],pTime=-1,sTime=-1,delta=-1,bTime=t0,\
+        eTime=t1,compStr = 'ENZ',isData=False):
         super().__init__(traces)
         if len(self)==0:
             self.dis=180*110
             self.pTime=pTime
             self.sTime=sTime
-            self.bTime,self.eTime=[-1,-1]
+            self.bTime,self.eTime=[t0,t0]
             self.delta=-1
             self.data=np.zeros([0,3])
             return
@@ -1346,13 +1363,13 @@ class Trace3(obspy.Stream):
         self.sTime=sTime
         self.pTime,self.sTime=self.getPSTime()
         self.delta=self.Delta()
-        self.bTime,self.eTime=self.getTimeLim(bTime=UTCDateTime(1970,1,1),\
-            eTime=UTCDateTime(2099,1,1),delta=delta)
+        self.bTime,self.eTime=self.getTimeLim(bTime=t0,\
+            eTime=t1,delta=delta)
         if self.bTime>=self.eTime:
             self.dis=180*110
             self.pTime=pTime
             self.sTime=sTime
-            self.bTime,self.eTime=[-1,-1]
+            self.bTime,self.eTime=[t0,t0]
             self.delta=-1
             self.data=np.zeros([0,3])
             return
@@ -1380,7 +1397,7 @@ class Trace3(obspy.Stream):
             if pTime>0 and sTime>0 and self.dis==180*110:
                 self.dis=(sTime.timestamp-pTime.timestamp)*6/0.7
         return pTime,sTime
-    def getTimeLim(self,bTime=UTCDateTime(1970,1,1),eTime=UTCDateTime(2099,1,1),delta=-1):
+    def getTimeLim(self,bTime=t0,eTime=t1,delta=-1):
         bTime = UTCDateTime(bTime)
         eTime = UTCDateTime(eTime)
         if delta<0:
@@ -1414,9 +1431,9 @@ class Trace3(obspy.Stream):
                 print(self)
         self.delta=self.Delta()
         self.bTime,self.eTime=self.getTimeLim()
-    def Data(self,bTime=UTCDateTime(1970,1,1),eTime=UTCDateTime(2099,1,1)):
+    def Data(self,bTime=t0,eTime=t1):
         bTime,eTime = self.getTimeLim(bTime,eTime)
-        if self.bTime<0 or self.eTime<0:
+        if self.bTime<=t0 or self.eTime<=t0:
             return np.zeros([0,3])
         #print(bTime,eTime)
         new = self.slice(bTime,eTime,nearest_sample=True)
@@ -1441,7 +1458,7 @@ class Trace3(obspy.Stream):
         new.sTime=self.sTime
         return new
     def slice(self,bTime,eTime,nearest_sample=True):
-        if self.bTime<=0:
+        if self.bTime<=t0:
             return T0
         if bTime<self.bTime or eTime>self.eTime:
             return T0
@@ -1457,6 +1474,8 @@ class Trace3(obspy.Stream):
         return new
     def write(self,filenames):
         for i in range(len(self)):
+            if self[i].stats['starttime']<=t0 or len(self[i].data)==0:
+                continue
             self[i].write(filenames[i],format='SAC')
     def Delta(self):
         return 1/self[0].stats['sampling_rate']
@@ -1472,6 +1491,25 @@ class Trace3(obspy.Stream):
     def adjust(self,*argv,**kwargs):
         for i in range(len(self)):
             self[i]=adjust(self[i],*argv,**kwargs)
+    def rotate(self,theta=0):
+        rad = theta/180*np.pi
+        bTime,eTime=self.getTimeLim()
+        Data = rotate(rad,self.Data())
+        T3New=[Trace(Data[:,i])for i in range(3)]
+        for t3 in T3New:
+            t3.stats.starttime = bTime
+            t3.stats.sampling_rate = self[0].stats.sampling_rate
+        return Trace3(T3New)
+    def average(self):
+        bTime,eTime=self.getTimeLim()
+        Data = self.Data()
+        t=Trace(Data.mean(axis=1))
+        t.stats['_format']='average'
+        t.stats.bTime = bTime
+        t.stats.sampling_rate=self[0].stats.sampling_rate
+        return t
+
+
 
 
 def checkSacFile(sacFileNamesL):
@@ -1488,7 +1526,7 @@ def checkSacFile(sacFileNamesL):
 T0=Trace3([])
 def getTrace3ByFileName(sacFileNamesL, delta0=0.02, freq=[-1, -1], \
     filterName='bandpass', corners=2, zerophase=True,maxA=1e5,\
-    bTime=UTCDateTime(1970,1,1),eTime=UTCDateTime(2099,1,1),isPrint=False,mode='norm',
+    bTime=UTCDateTime(1900,1,1),eTime=UTCDateTime(2099,1,1),isPrint=False,mode='norm',
     pTime=-1,sTime=-1,isData=True):
     if not checkSacFile(sacFileNamesL):
         if isPrint:
@@ -1496,18 +1534,18 @@ def getTrace3ByFileName(sacFileNamesL, delta0=0.02, freq=[-1, -1], \
         return Trace3([])
     sacs = []
     #time0=time.time()
-    print(ctime(),'start merge')
+    #print(ctime(),'start merge')
     for sacFileNames in sacFileNamesL:
         tmp=mergeSacByName(sacFileNames, delta0=delta0,freq=freq,\
             filterName=filterName,corners=corners,zerophase=zerophase,maxA=maxA)
         sacs.append(tmp)
-    print(ctime(),'end merge')
-    print(ctime(),'start T3')
+    #print(ctime(),'end merge')
+    #print(ctime(),'start T3')
     if None not in sacs:
         return Trace3(sacs,delta=delta0,bTime=bTime,eTime=eTime,isData=isData,pTime=-1,sTime=-1)
-        print(ctime(),'end T3')
+        #print(ctime(),'end T3')
     else:
-        print(ctime(),'not good')
+        #print(ctime(),'not good')
         return Trace3([])
    
     #print('read',time1-time0,'dec',time2-time1)
@@ -1569,8 +1607,81 @@ def plotStaNoiseDay(staIndexL,timeL,noiseL,resDir):
         plt.savefig(resDir+'/%d_noise.jpg'%staIndex,dpi=300)
         plt.close()
 
+def corrTrace(Trace0,Trace1):
+    data = np.correlate(Trace0.data,Trace1.data,'full')
+    bTime = Trace0.stats.starttime.timestamp-Trace1.stats.starttime.timestamp
+    Trace01 = obspy.Trace(data)
+    Trace01.stats.starttime=bTime
+    Trace01.stats.sampling_rate=Trace0.stats.sampling_rate
+    Trace01.stats['_format']='cross'
+    Trace01=adjust(Trace01,kzTime=UTCDateTime(0))
+    return Trace01
 
+RTV='RTZ'
+class StationPair:
+    def __init__(self,sta0,sta1):
+        self.pair=[sta0,sta1]
+        self.az=sta0.az(sta1)
+        self.dist=sta0.dist(sta1)
+    def resDir(self,parentDir=''):
+        return parentDir+'/'+self.pair[0].name('.')+'/'+self.pair[1].name('.')+'/'
+    def loadTraces(self,parentDir=''):
+        tracesL=[]
+        resDir =self.resDir(parentDir=parentDir)
+        for comp in comp33:
+            tracesL.append([]) 
+            for file in glob(resDir+'*'+comp):
+                tracesL[-1].append(read(file)[0])
+            tracesL[-1] = Trace3(tracesL[-1])
+        return tracesL
+    def getNum(self,parentDir=''):
+        resDir =self.resDir(parentDir=parentDir)
+        for comp in comp33:
+            return(len(glob(resDir+'*.'+comp)))
+    def average(self,tracesL):
+        averageTraces=[]
+        for traces in tracesL:
+            averageTraces.append(traces.average())
+        return averageTraces
+    def getAverage(self,parentDir=''):
+        resDir =self.resDir(parentDir=parentDir)
+        tracesL = self.loadTraces(parentDir)
+        averageTraces=self.average(tracesL)
+        for i in range(9):
+            adjust(averageTraces[i],kzTime=UTCDateTime(0))
+            averageTraces[i].write(resDir+comp33[i]+'.average',format='SAC')
+            print(resDir+comp33[i]+'.average')
+    def loadAverage(self,parentDir=''):
+        resDir =self.resDir(parentDir=parentDir)
+        for comp in comp33:
+            if not os.path.exists(resDir+comp+'.average'):
+                return Trace3([])
+        return Trace3([read(resDir+comp+'.average')[0] for comp in comp33])
+def StationPairM(staInfos):
+    return [[StationPair(sta0,sta1) for sta1 in staInfos]for sta0 in staInfos]
 
+def plotStationPairL(StationPairL,resDir='./',parentDir='',mul=3):
+    if not os.path.exists(resDir):
+        os.makedirs(resDir)
+    plt.close()
+    count=0
+    for StationPair in StationPairL:
+        T3 = StationPair.loadAverage(parentDir)
+        if len(T3)>0:
+            data=T3.Data()
+            data/=data.max(axis=0)
+            timeL=np.arange(data.shape[0])*T3.delta+T3.getTimeLim()[0].timestamp
+            dist = StationPair.dist
+            plt.plot(timeL,data[:,0]*mul+dist,'k',linewidth=0.3)
+            count+=1
+    if count<=5:
+        plt.close()
+        return
+    plt.xlabel('t/s')
+    plt.ylabel('distance/km')
+    plt.title(StationPair.pair[0])
+    plt.savefig(resDir+StationPair.pair[0].name('_')+'.jpg',dpi=300)
+    plt.close()
 
             
 

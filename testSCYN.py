@@ -25,10 +25,10 @@ detecQuake.maxA=1e15#这个是否有道理
 inputDir = '/home/jiangyr/Surface-Wave-Dispersion/accuratePickerV4/'
 #'SCYNdoV1','SCYNdoV1V0','0',UTCDateTime(2014,1,3).timestamp,UTCDateTime(2015,7,1).timestamp
 #SCYNdoV1V[0,01,1,2,3,]
-argL=[['SCYNdoV40', 'SCYNdoV40V4', '0', UTCDateTime(2014,1,1).timestamp, UTCDateTime(2015,7,1).timestamp],\
-      ['SCYNdoV40', 'SCYNdoV40V5', '0', UTCDateTime(2015,7,1).timestamp, UTCDateTime(2017,1,1).timestamp],\
-      ['SCYNdoV40', 'SCYNdoV40V6', '1', UTCDateTime(2017,1,1).timestamp, UTCDateTime(2018,7,1).timestamp],\
-      ['SCYNdoV40', 'SCYNdoV40V7', '1', UTCDateTime(2018,7,1).timestamp, UTCDateTime(2020,1,1).timestamp],]
+argL=[['SCYNdoV40', 'SCYNdoV40V12', '0', UTCDateTime(2014,1,1).timestamp, UTCDateTime(2015,7,1).timestamp],\
+      ['SCYNdoV40', 'SCYNdoV40V13', '0', UTCDateTime(2015,7,1).timestamp, UTCDateTime(2017,1,1).timestamp],\
+      ['SCYNdoV40', 'SCYNdoV40V14', '1', UTCDateTime(2017,1,1).timestamp, UTCDateTime(2018,7,1).timestamp],\
+      ['SCYNdoV40', 'SCYNdoV40V15', '1', UTCDateTime(2018,7,1).timestamp, UTCDateTime(2020,1,1).timestamp],]
 l=argL[int(sys.argv[1])]
 print(l)
 v_i,p_i,cudaI,bSec,eSec =l 

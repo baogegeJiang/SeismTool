@@ -6,6 +6,7 @@ from scipy.optimize import curve_fit
 from scipy import stats
 nptype=np.float32
 rad2deg=1/np.pi*180
+
 @jit
 def xcorr(a,b):
     la=a.size
@@ -352,3 +353,10 @@ def QC(data,threshold=2.5,it=20):
         return data[d<Threshold].mean(),data[d<Threshold].std(),len(data)
     else:
         return QC(data[d<Threshold],threshold,it-1)
+
+def rotate(rad,data):
+    rM = np.mat([[np.sin(rad),np.cos(rad),0],\
+                 [np.cos(rad),-np.sin(rad),0],\
+                 [0,0,1]\
+                ])
+    return np.array(np.mat(data)*rM)

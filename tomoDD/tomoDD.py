@@ -1,9 +1,26 @@
 import numpy as np
 from obspy import UTCDateTime
 import matplotlib.pyplot as plt
-from ..mathTool.mathFunc_bak import xcorr
+from ..mathTool.mathFunc_bak import corrNP as xcorr
 from ..io.tool import getYmdHMSj
 from ..mathTool.distaz import DistAz
+from ..mapTool import mapTool as mt
+import mpl_toolkits.basemap as basemap
+import pycpt
+import os
+from scipy import interpolate,stats
+
+cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
+faultL = mt.readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
+def setMap(m):
+    
+    parallels = np.arange(0.,90,3)
+    m.drawparallels(parallels,labels=[False,True,True,False])
+    meridians = np.arange(10.,360.,3)
+    m.drawmeridians(meridians,labels=[True,False,False,True])
+    
+    plt.gca().yaxis.set_ticks_position('left')
+
 #from cudaFunc import  torchcorrnn as xcorr
 SPRatio=0.5
 wkdir='TOMODD'
@@ -46,7 +63,7 @@ def preABS(quakeL,staInfos,filename='abc',isNick=True,notTomo=False):
                     staName=staInfo['sta']
                 else:
                     staName=staInfo['nickName']
-                if record.['pTime']>0:
+                if record['pTime']>0:
                     if not isNick:
                         f.write('%8s    %7.2f   %5.3f   P\n'%\
                             (staName,record['pTime']-quake['time'],1.0))
@@ -74,7 +91,7 @@ def preSta(staInfos,filename='abc',isNick=True):
                 %(staName,staInfo['la'],staInfo['lo'],staInfo['dep']))
 
 def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
-    perCount=500,filename='abc'):
+    perCount=500,filename='abc',isNick=True,minDP=3/0.7):
     if filename=='abc':
         filename='%s/input/dt.cc'%wkdir
     N=len(quakeL)
@@ -98,7 +115,7 @@ def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
                 if quake0.distaz(quake1).getDelta()>maxD:
                     continue
                 indexL1=quake1.staIndexs()
-                time1=quakeL[j].time
+                time1=quakeL[j]['time']
                 sameIndexL =[]
                 for I in indexL0:
                     if I in indexL1:
@@ -109,16 +126,28 @@ def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
                     dt,maxC,staIndex,phaseType=dtD
                     index0 = indexL0.index(staIndex)
                     index1 = indexL1.index(staIndex)
+                    if isNick:
+                        staName=staInfos[staIndex]['nickName']
+                    else:
+                        staName=staInfos[staIndex]['sta']
                     if phaseType==1 and maxC>minPCC:
+                        if np.abs(quake0.records[index0]['pTime']-time0)<minDP:
+                            continue
+                        if np.abs(quake1.records[index1]['pTime']-time1)<minDP:
+                            continue
                         dt=quake0.records[index0]['pTime']-time0-(quake1.records[index1]['pTime']-time1+dt)
                         f.write("% 9d % 9d %s %8.3f %6.4f %s\n"%(i,j,\
-                            staInfos[staIndex]['nickName'],dt,maxC*maxC,'P'))
+                            staName,dt,maxC*maxC,'P'))
                         countL[i]+=1
                         countL[j]+=1
                     if phaseType==2 and maxC>minSCC:
+                        if np.abs(quake0.records[index0]['sTime']-time0)<minDP*1.7:
+                            continue
+                        if np.abs(quake1.records[index1]['sTime']-time1)<minDP*1.7:
+                            continue
                         dt=quake0.records[index0]['sTime']-time0-(quake1.records[index1]['sTime']-time1+dt)
                         f.write("% 9d % 9d %s %8.3f %6.4f %s\n"%(i,j,\
-                            staInfos[staIndex]['nickName'],dt,maxC*maxC*SPRatio,'S'))
+                            staName,dt,maxC*maxC*SPRatio,'S'))
                         countL[i]+=1
                         countL[j]+=1
 
@@ -129,11 +158,13 @@ def preMod(R,nx=8,ny=8,nz=12,filename='abc'):
     with open(filename,'w+') as f:
         vp=np.array([4   ,5.0,5.5,5.8, 5.91, 6.1,  6.3, 6.50, 6.7,  8.0, 8.6, 9.0])
         #vs=[2.4,2.67, 3.01,  4.10, 4.24, 4.50, 5.00, 5.15, 6.00,6.1]
-        z =[-150, -2,  0,  5,   10,  15,   25,   35,  50,   60,  80, 500]
+        z =[-150, -2,  0,  5,   10,  15,   20,   30,  40,   50,  60, 200]
         vs=vp/1.71
         x=np.zeros(nx)
         y=np.zeros(ny)
         #z=[-150,-2, 0, 5,10, 15,25, 35, 50, 60,80, 500]
+        #x lo nx loN
+        #y la ny laN
         f.write('0.1 %d %d %d\n'%(nx,ny,nz))
         x[0]=R[2]-5
         x[-1]=R[3]+5
@@ -172,7 +203,7 @@ def sameSta(timeL1,timeL2):
     return np.where(np.sign(timeL1*timeL2)>0)[0]
 
 def calDT(quake0,quake1,T3PSL0,T3PSL1,staInfos,bSec0=-2,eSec0=3,\
-    bSec1=-3,eSec1=4,delta=0.02,minC=0.6,maxD=0.3,minSameSta=5):
+    bSec1=-3,eSec1=4,delta=0.02,minC=0.6,maxD=0.2,minSameSta=4):
     '''
     dT=[[dt,maxCC,staIndex,phaseType],....]
     dT is a list containing the dt times between quake0 and quake1
@@ -189,12 +220,12 @@ def calDT(quake0,quake1,T3PSL0,T3PSL1,staInfos,bSec0=-2,eSec0=3,\
             sameIndex.append(I)
     if len(sameIndex)<minSameSta:
         return None
-    if quake0.dist(quake1)>maxD:
+    if quake0.dist(quake1)/110>maxD:
         return None
     dT=[];
     for staIndex in sameIndex:
         index0 = indexL0.index(staIndex)
-        index1 = indexL0.index(staIndex)
+        index1 = indexL1.index(staIndex)
         record0 = quake0.records[index0]
         record1 = quake1.records[index1]
         T3P0,T3S0=  [T3PSL0[0][index0],T3PSL0[1][index0]]
@@ -204,7 +235,10 @@ def calDT(quake0,quake1,T3PSL0,T3PSL1,staInfos,bSec0=-2,eSec0=3,\
             pWave1=T3P1.Data(record1['pTime']+bSec1,record1['pTime']+eSec1)
             if len(pWave0)*len(pWave1)==0:
                 continue
-            c=xcorr(pWave1,pWave0).max(axis=1)#########
+            #print(pWave0.shape,pWave1.shape)
+            c=xcorr(pWave1,pWave0)
+            #print(c)
+            c=xcorr(pWave1,pWave0)[0].max(axis=1)#########
             maxC=c.max()
             if maxC>minC:
                 maxIndex=c.argmax()
@@ -215,7 +249,7 @@ def calDT(quake0,quake1,T3PSL0,T3PSL1,staInfos,bSec0=-2,eSec0=3,\
             sWave1=T3S1.Data(record1['sTime']+bSec1,record1['sTime']+eSec1)
             if len(sWave0)*len(sWave1)==0:
                 continue
-            c=xcorr(sWave1,sWave0).max(axis=1)#########
+            c=xcorr(sWave1,sWave0)[0].max(axis=1)#########
             maxC=c.max()
             if maxC>minC:
                 maxIndex=c.argmax()
@@ -223,7 +257,7 @@ def calDT(quake0,quake1,T3PSL0,T3PSL1,staInfos,bSec0=-2,eSec0=3,\
                 dT.append([dt,maxC,staIndex,2])
     return dT
 
-def calDTM(quakeL,T3PSLL,staInfos,maxD=0.3,minC=0.6,minSameSta=5,\
+def calDTM(quakeL,T3PSLL,staInfos,maxD=0.3,minC=0.6,minSameSta=3,\
     isFloat=False,bSec0=-2,eSec0=3,bSec1=-3,eSec1=4):
     '''
     dTM is 2-D list contianing the dT infos between each two quakes
@@ -232,14 +266,16 @@ def calDTM(quakeL,T3PSLL,staInfos,maxD=0.3,minC=0.6,minSameSta=5,\
     '''
     dTM=[[None for quake in quakeL]for quake in quakeL]
     for i in range(len(quakeL)):
-        print(i)
+        #print(i)
         for j in range(i+1,len(quakeL)):
+            if j%50==0:
+                print(i,j)
             dTM[i][j]=calDT(quakeL[i],quakeL[j],T3PSLL[i],T3PSLL[j],\
                 staInfos,maxD=maxD,minC=minC,minSameSta=minSameSta,\
                 bSec0=bSec0,eSec0=eSec0,bSec1=bSec1,eSec1=eSec1)
     return dTM
 
-def plotDT(T3PSLL,dTM,i,j,staInfos,bSec0=-2,eSec0=3,\
+def plotDT(T3PSLL,dTM,i,j,quake0,quake1,staInfos,bSec0=-2,eSec0=3,\
     bSec1=-3,eSec1=4,delta=0.02,minSameSta=5):
     plt.close()
     T3PL0=T3PSLL[i][0]
@@ -258,8 +294,8 @@ def plotDT(T3PSLL,dTM,i,j,staInfos,bSec0=-2,eSec0=3,\
         index1 = indexL0.index(staIndex)
         record0 = quake0.records[index0]
         record1 = quake1.records[index1]
-        T3P0,T3S0=  [T3PSL0[0][index0],T3PSL0[1][index0]]
-        T3P1,T3S1=  [T3PSL1[0][index1],T3PSL1[1][index1]]
+        T3P0,T3S0=  [T3PL0[index0],T3SL0[index0]]
+        T3P1,T3S1=  [T3PL1[index1],T3SL1[index1]]
         if dT[3]==1:
             w0=T3P0.getPTimeL(timeL0)
             w1=T3P1.getPTimeL(timeL1)
@@ -350,6 +386,83 @@ def getReloc(quakeL,filename='abc'):
             quakeRelocL.append(quakeL[index])
             quakeRelocL[-1].getReloc(line)
     return quakeRelocL
+
+def getReloc(qL,filename):
+    qLNew=[]
+    with open(filename) as f:
+        for line in f.readlines():
+            tmp = line.split()
+            index=int(tmp[0])
+            quake = qL[index]#.copy()
+            quake['la'] = float(tmp[1])
+            quake['lo'] = float(tmp[2])
+            quake['dep'] = float(tmp[3])
+            timeL = [int(float(t)) for t in tmp[10:16]]
+            if timeL[-1]>=60:
+                timeL[-1]%=60
+                timeL[-2]+=1
+            quake['time'] = (UTCDateTime(*timeL)+float(tmp[15])%1).timestamp
+            qLNew.append(quake)
+    return qLNew
+
+class Model:
+    def __init__(self,laN,loN,zN,laL,loL,zL,v,mode='v'):
+        self.laN =laN
+        self.loN =loN
+        self.zN  =zN
+        self.laL =laL
+        self.loL =loL
+        self.zL  =zL
+        self.v=v
+        self.mode=mode
+    def plot(self,resDir):
+        if not os.path.exists(resDir):
+            os.makedirs(resDir)
+        for i in range(self.zN):
+            plt.close()
+            z= self.zL[i]
+            m = basemap.Basemap(llcrnrlat=self.laL[2],urcrnrlat=self.laL[-3],llcrnrlon=self.loL[2],\
+            urcrnrlon=self.loL[-3])
+            la,lo,v=denseLaLo(self.laL[2:-2],self.loL[2:-2],self.v[2:-2,2:-2,i])
+            x,y=m(lo,la)
+            m.pcolor(x,y,v,cmap=cmap)
+            R =[x[0],x[-1],y[0],y[-1]]
+            for fault in faultL:
+                if fault.inR(R):
+                    fault.plot(m,markersize=0.3)
+            plt.title('%s %d'%(self.mode,z))
+            setMap(m)
+            plt.colorbar()
+            plt.savefig('%s/%s_%d.jpg'%(resDir,self.mode,z),dpi=300)
+
+class modeL:
+    def __init__(self,workDir):
+        initFile=workDir+'/../inversion/MOD'
+        with open(initFile) as f:
+            loN,laN,zN=[int(tmp)for tmp in f.readline().split()[1:]]
+            laL,loL,zL=[np.array([float(tmp)for tmp in f.readline().split()])for i in range(3)]
+            vp0=np.array([[float(tmp)for tmp in f.readline().split()]for i in range(laN*zN)]\
+                ).reshape(zN,laN,loN).transpose([1,2,0])
+            vs0=np.array([[float(tmp)for tmp in f.readline().split()]for i in range(laN*zN)]\
+                ).reshape(zN,laN,loN).transpose([1,2,0])
+        vp = np.loadtxt(workDir+'/../inversion/Vp_model.dat').reshape(zN,laN,loN).transpose([1,2,0])
+        vs = np.loadtxt(workDir+'/../inversion/Vs_model.dat').reshape(zN,laN,loN).transpose([1,2,0])
+        self.vp0=Model(loN,laN,zN,loL,laL,zL,vp0,'vp0')
+        self.vs0=Model(loN,laN,zN,loL,laL,zL,vs0,'vs0')
+        self.vp =Model(loN,laN,zN,loL,laL,zL,vp ,'vp')
+        self.vs =Model(loN,laN,zN,loL,laL,zL,vs ,'vs')
+    def plot(self,resDir):
+        for model in [self.vp0,self.vs0,self.vp,self.vs]:
+            model.plot(resDir)
+
+def denseLaLo(La,Lo,Per,N=200):
+    dLa = (La[-1]-La[0])/N
+    dLo = (Lo[-1]-Lo[0])/N
+    la  = np.arange(La[0],La[-1],dLa)
+    la.sort()
+    lo  = np.arange(Lo[0],Lo[-1],dLo)
+    per = interpolate.interp2d(Lo, La, Per)(lo,la)
+    return la, lo, per
 '''
 def calDT(quake0,quake1,waveform0,waveform1,staInfos,bSec0=-2,eSec0=3,\
     bSec1=-3,eSec1=4,delta=0.02,minC=0.6,maxD=0.3,minSameSta=5):

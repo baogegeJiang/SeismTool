@@ -6,8 +6,10 @@ import pycpt
 from netCDF4 import Dataset
 from ..mapTool import mapTool as mt
 from ..mathTool.distaz import DistAz
+import cmath
 
-cmap = pycpt.load.gmtColormap('cpt/temperatureInv')
+#cmap = pycpt.load.gmtColormap('cpt/temperatureInv')
+cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
 ##程序中又控制的大bug
 ##必须按顺序(period source)
 faultL = mt.readFault('Chinafault_fromcjw.dat')
@@ -239,6 +241,7 @@ class DS:
 			self.modelTrue.plotByZ(self.runPath,head='true')
 		self.modelPeriod.plotByZ(self.runPath,head='period')
 		self.modelRes.plotByZ(self.runPath)
+		self.fast.plotArrByZ(self.runPath,head='fast')
 	def plotTK(self):
 		nxyz,la,lo,z = self.config.output()
 		z0,la0,lo0,vsv0= loadModelTK()
@@ -263,11 +266,13 @@ class DS:
 		#self.GcTrue = Model(self.config,mode='GCO',runPath=self.runPath,file='MODGc.true')
 		#self.modelInit = Model(self.config,mode='DSFile',runPath=self.runPath,file='MOD')
 		self.modelRes = Model(self.config,mode='DS',runPath=self.runPath,file='Gc_Gs_model.inv')
-		#self.GsRes = Model(self.config,mode='GS',runPath=self.runPath,file='Gc_Gs_model.inv')
-		#self.GcRes = Model(self.config,mode='GC',runPath=self.runPath,file='Gc_Gs_model.inv')
+		self.GsRes = Model(self.config,mode='GS',runPath=self.runPath,file='Gc_Gs_model.inv')
+		self.GcRes = Model(self.config,mode='GC',runPath=self.runPath,file='Gc_Gs_model.inv')
+		self.fast  = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.inv',Gs=self.GsRes,\
+			Gc=self.GcRes)
 
 class Model:
-	def __init__(self,config=None,mode='DS',runPath='',file='',la='',lo='',z='',self1=''):
+	def __init__(self,config=None,mode='DS',runPath='',file='',la='',lo='',z='',self1='',Gs='',Gc=''):
 		self.mode = mode
 		self.config=config
 		if mode =='DS':
@@ -344,6 +349,17 @@ class Model:
 			if file!='':
 				v = np.loadtxt(runPath+file)
 				v=v.reshape(nxyz[2],nxyz[1],nxyz[0]).transpose([2,1,0])
+		if mode=='fast':
+			self.config=Gs.config
+			z      = Gs.z
+			la     = Gs.la
+			lo     = Gs.lo
+			A,phi=[Gs.v,Gc.v]
+			for i in range(Gs.v.shape[0]):
+				for j in range(Gs.v.shape[1]):
+					A[i,j],phi[i,j]  = cmath.polar(Gc[i,j]+1j*Gs[i,j])
+			phi   *= 1/2
+			v      = A*np.cos(phi)+1j*A*np.cos(phi)
 		self.nxyz = [len(la),len(lo),len(z)]
 		self.z  =  z#.reshape([-1,1,1])
 		self.la = la#.reshape([1,-1,1])
@@ -406,6 +422,23 @@ class Model:
 			vmin=-np.abs(Per[midLaN:-midLaN,midLoN:-midLoN]).max()
 			vmax=np.abs(Per[midLaN:-midLaN,midLoN:-midLoN]).max()
 			plotPlane(m,x,y,per,R,z[i],mean,vmin,vmax,isFault=True,head=head)
+			plt.savefig('%s/%s_%f.jpg'%(resDir,head,self.z[i]),dpi=500)
+			plt.close()
+	def plotArrByZ(self,runPath='DS',head='res',maxA=0.05):
+		resDir = runPath+'/'+'plot/'
+		if not os.path.exists(resDir):
+			os.mkdir(resDir)
+		nxyz,la,lo,z = self.config.output()
+		for i in range(self.nxyz[-1]):
+			plt.close()
+			plt.figure(figsize=[12,8])
+			R = [la.min(),la.max(),lo.min(),lo.max()]
+			m = mt.genBaseMap(R)
+			v = self.v[:,:,i]
+			#print(v[:10,:10])
+			x,y= m(lo,la)
+			dx = (x.max()-x.min())/maxA/nxyz[1]
+			m.arrow(x,y,np.imag(v)*dx,np.real(v)*dx)
 			plt.savefig('%s/%s_%f.jpg'%(resDir,head,self.z[i]),dpi=500)
 			plt.close()
 	def write(self,filename,la,lo,z,isDiff=False,N=[2,2,2],A=0.05):

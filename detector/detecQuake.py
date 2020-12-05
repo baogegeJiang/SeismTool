@@ -11,7 +11,7 @@ import math
 from numba import jit
 from ..mathTool.mathFunc_bak import getDetec, prob2color
 from ..io import tool
-from ..io.seism import getTrace3ByFileName,Quake,QuakeL,Record,QuakeCC,RecordCC
+from ..io.seism import getTrace3ByFileName,Quake,QuakeL,Record,QuakeCC,RecordCC,t0,t1
 from ..io.sacTool import staTimeMat
 
 from ..mapTool.mapTool import readFault
@@ -280,7 +280,7 @@ def associateSta(staL, aMat, staTimeML, timeR=30, minSta=3, maxDTime=3, N=1, \
             staL[staIndex].clearData()
         staL[staIndex].isPick = staL[staIndex].isPick*0
     for staTmp in staL:
-        if staTmp.data.bTime< 0:
+        if staTmp.data.bTime<=t0+10:
             continue
         startTime = min(startTime, staTmp.data.bTime)
         endTime = max(endTime, staTmp.data.eTime)
@@ -702,7 +702,7 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename=''):
     dayDir=os.path.dirname(filename)
     if not os.path.exists(dayDir):
         os.mkdir(dayDir)
-    plt.figure(figsize=[12,8])
+    fig=plt.figure(figsize=[5,5])
     m = basemap.Basemap(llcrnrlat=laL[0],urcrnrlat=laL[1],llcrnrlon=loL[0],\
         urcrnrlon=loL[1])
     staLa= []
@@ -712,7 +712,7 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename=''):
         staLo.append(sta.loc()[1])
     #staLa,staLo = staL.loc()
     staX,staY=m(np.array(staLo),np.array(staLa))
-    m.plot(staX,staY,'b^',markersize=4,alpha=0.2)
+    st=m.plot(staX,staY,'b^',markersize=4,alpha=0.3)
     req={'staInfos':staInfos,'minCover':0.5,'minMl':-5}
     pL=quakeL.paraL(req=req)
     eX,eY,=m(np.array(pL['lo']),np.array(pL['la']))
@@ -720,24 +720,29 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename=''):
     ml,dep=[np.array(pL['ml']),np.array(pL['dep'])]
     for fault in faultL:
         if fault.inR(laL+loL):
-            fault.plot(m,markersize=0.3)
+            f=fault.plot(m,markersize=0.3)
     #m.plot(eX,eY,'ro',markersize=2)
     #m.etopo()
-    m.scatter(eX,eY,c=dep,s=((ml+1)**2)*0.3,vmin=-5,vmax=30,cmap='Reds')
+    sc=m.scatter(eX,eY,c=dep,s=((ml+1)**2)*0.01,vmin=0,vmax=50,cmap='Reds')
+    #plt.legend([st,sc,f],['station','event','fault'])
     #m.arcgisimage()
-    #m.colorbar()
+    
     #plt.scatter()
     parallels = np.arange(0.,90,3)
     m.drawparallels(parallels,labels=[False,True,True,False])
     meridians = np.arange(10.,360.,3)
-    plt.gca().yaxis.set_ticks_position('right')
     m.drawmeridians(meridians,labels=[True,False,False,True])
-    plt.title(Ymd)
-    plt.savefig(filename,dpi=300)
+    plt.gca().yaxis.set_ticks_position('left')
+    #plt.title('Detection Results')
+    cbar=fig.colorbar(sc, orientation="horizontal", fraction=0.046, pad=0.04)
+    cbar.set_label('Depth')
+    #plt.colorbar()
+    plt.savefig(filename,dpi=600)
 
     plt.close()
 
 def showStaCover(aMat,staTimeML,filename='cover.jpg'):
+    fig=plt.figure(figsize=[5,5])
     aM = np.zeros([aMat.laN,aMat.loN])
     for staTimeM in staTimeML:
         aM[staTimeM.minTimeD<=21]+=1
@@ -752,10 +757,12 @@ def showStaCover(aMat,staTimeML,filename='cover.jpg'):
     aX,aY=m(np.array(loL),np.array(laL))
     setMap(m)
     #m.pcolor(aX,aY,(aM.transpose()>2)*np.log(aM.transpose()+1),cmap='jet')
-    m.pcolor(aX,aY,(aM>2)*np.log(aM+1),cmap='jet')
+    pc=m.pcolor(aX,aY,(aM>2)*aM,cmap='jet')
     for fault in faultL:
         if fault.inR(laL+loL):
             fault.plot(m,markersize=0.3)
+    cbar=fig.colorbar(pc, orientation="horizontal",fraction=0.046, pad=0.04)
+    cbar.set_label('Station Coverage')
     plt.savefig(filename,dpi=300)
 
 def setMap(m):
@@ -765,7 +772,8 @@ def setMap(m):
     meridians = np.arange(10.,360.,3)
     m.drawmeridians(meridians,labels=[True,False,False,True])
     
-    plt.gca().yaxis.set_ticks_position('right')
+    plt.gca().yaxis.set_ticks_position('left')
+
 
 
 '''
