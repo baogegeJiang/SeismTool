@@ -43,7 +43,6 @@ class filePath:
     def __call__(self,net,sta,comp,time0,time1,nameMode=''):
         '''
         you should specify the timeL and staDirL by net sta comp and time0/1
-
         '''
         if nameMode == '':
             nameMode = net
@@ -95,6 +94,12 @@ class filePath:
             sta = sta.split('_')[0]
             pattern='%s/%s/%s*%s.sac'\
             %(staDir,sta,time.strftime('%Y/%Y%m%d/%Y%m%d'),comp)
+        elif nameMode =='RDH':
+            sta = sta.split('_')[0]
+            #2000015_220000_090be_1_2.msd
+            pattern='%s/%s/%s%s.msd'\
+            %(staDir,sta,time.strftime('%Y%j_%H0000_*'),filePath.himaComp[comp[-1]])
+            #print(pattern)
 
         #print('##',pattern)
         return glob(pattern)
@@ -127,6 +132,8 @@ class filePath:
 
         if nameMode =='XU':
             staDirL = ['/HOME/jiangyr/YNSCMOVE/']
+        if nameMode =='RDH':
+            staDirL=['/HOME/jiangyr/XA_HSR_DATA/201908DX_BB/MSD/']
         return staDirL
     
     def getSensorDas(self,net,sta,nameMode=''):

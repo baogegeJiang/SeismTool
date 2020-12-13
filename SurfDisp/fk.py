@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import obspy
 import os
 from multiprocessing import Process, Manager
-import mathFunc
+from ..mathTool import mathFunc
 defaultPath='fkRun/'
 orignExe = '/Users/jiangyiran/prog/fk/fk/'
 ###different source different meaning

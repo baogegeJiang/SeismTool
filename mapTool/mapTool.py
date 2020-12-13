@@ -2,12 +2,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import mpl_toolkits.basemap as basemap
 from netCDF4 import Dataset
+import os
 from scipy import interpolate as interp
 from matplotlib import cm
 from lxml import etree
-from pykml.factory import KML_ElementMaker as KML
+#from pykml.factory import KML_ElementMaker as KML
 from pycpt.load import gmtColormap as cpt2cm
 from ..mathTool.distaz import DistAz
+volcano=np.loadtxt(os.path.dirname(__file__)+'/../data/volcano')
 pi=3.1415927
 def genBaseMap(R=[0,90,0,180], topo=None):
     m=basemap.Basemap(llcrnrlat=R[0],urcrnrlat=R[1],llcrnrlon=R[2],\
@@ -374,3 +376,5 @@ def plotQuakeCCDis(quakeCCLs,quakeRefL,output='quakeDis.png',cmd='.r',markersize
     meridians = np.arange(int(R[2]),int(R[3]+1),dD)
     m.drawmeridians(meridians,labels=[True,False,False,True])
     return m
+
+    

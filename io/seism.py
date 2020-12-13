@@ -11,7 +11,7 @@ from glob import glob
 from numba import jit
 from ..mathTool.distaz import DistAz
 from .dataLib import filePath
-from ..mathTool.mathFunc import rotate
+from ..mathTool.mathFunc import rotate,getDetec
 comp3='RTZ'
 comp33=[]
 cI33=[]
@@ -32,7 +32,7 @@ class Dist:
     '''
     class which can be easily extended for different object with 
     accesses to inputing and outputing
-    keys for the 
+    it acts similar with dictionary class but have list structure inside to save memory
     '''
     def __init__(self,*argv,**kwargs):
         self.defaultSet()
@@ -624,28 +624,6 @@ class Quake(Dist):
             T3SL.append(T3.slice(T3.sTime+index0*T3.delta,\
                 T3.sTime+index1*T3.delta))
         return T3PL,T3SL
-    '''
-    def calCover(self,staInfos,maxDT=None):
-        coverL=np.zeros(360)
-        for record in self.records:
-            if record['pTime']==0 and record['sTime']==0:
-                continue
-            if maxDT!=None:
-                if record['pTime']-self.time>maxDT:
-                    continue
-            staIndex= int(record[0])
-            la=staInfos[staIndex]['la']
-            lo=staInfos[staIndex]['lo']
-            dep=staInfos[staIndex]['dep']/1e3
-            delta,dk,Az=self.dist([la,lo,dep])
-            R=int(60/(1+dk/200)+60)
-            N=((int(Az)+np.arange(-R,R))%360).astype(np.int64)
-            coverL[N]=coverL[N]+1
-        L=((np.arange(360)+180)%360).astype(np.int64)
-        coverL=np.sign(coverL)*np.sign(coverL[L])*(coverL+coverL[L])
-        coverRate=np.sign(coverL).sum()/360
-        return coverRate
-    '''
     def cutSac(self, stations,bTime=-100,eTime=3000,resDir = 'eventSac/',para={},byRecord=True,isSkip=False):
         time0  = self['time'] + bTime
         time1  = self['time'] + eTime
@@ -738,7 +716,6 @@ class Quake(Dist):
         return ml
     def __len__(self):
         return len(self.records)
-
     def getSacFiles(self,stations,isRead=False,resDir = 'eventSac/',strL='ENZ',\
         byRecord=True,maxDist=-1,minDist=-1,remove_resp=False,isPlot=False,\
         isSave=False,respStr='_remove_resp',para={},isSkip=False):
@@ -1508,8 +1485,17 @@ class Trace3(obspy.Stream):
         t.stats.bTime = bTime
         t.stats.sampling_rate=self[0].stats.sampling_rate
         return t
-
-
+    def getDetec(self,minValue=2000,minD=60,comp=2):
+        l=[]
+        bTime,eTime=self.getTimeLim()
+        data = self.Data()
+        delta= self.Delta()
+        minDelta=int(minD/delta)
+        indexL,vL=getDetec(data[:,comp], minValue=minValue, minDelta=minDelta)
+        return indexL*delta+bTime.timestamp,vL
+    def getSpec(self,comp=2):
+        data = self.Data()[:,2]
+        return np.fft.fft(data),np.arange(len(data))/(self.Delta()*len(data))
 
 
 def checkSacFile(sacFileNamesL):

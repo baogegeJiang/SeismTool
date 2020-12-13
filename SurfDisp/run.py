@@ -1,14 +1,14 @@
-import dispersion as d
 import os
 from imp import reload
 import random
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
-import mathFunc
+from ..mathTool import mathFunc
 from ..deepLearning import fcn
 from ..io import seism
-import DSur
+from . import DSur
+from . import dispersion as d
 #主要还是需要看如何分批次更新
 #提前分配矩阵可能不影响
 #插值之后绘图，避免不对应
@@ -249,6 +249,9 @@ class run:
 		stations.notInR(self.config.para['nlalo'])
 		self.stations = seism.StationList(stations)
 		self.fvAvGet = para['dConfig'].loadNEFV(stations,fvDir=fvDir,mode=mode)
+		for fv in self.fvAvGet:
+			self.fvAvGet[fv].qc(threshold=para['threshold'])
+		d.qcFvD(self.fvAvGet)
 	def getAv(self):
 		for fv in self.fvDGet:
 			self.fvDGet[fv].qc(threshold=-self.config.para['minP'])
@@ -326,7 +329,7 @@ class run:
 		DS.test(vL,indexL,self.stations)
 	def loadAndPlot(self):
 		self.DS.loadRes()
-		self.DS.plotByZ()
+		self.DS.plotByZ(p2L=self.config.para['p2L'])
 
 	def test(self):
 		self.loadCorr()
@@ -562,7 +565,9 @@ paraNorthLager={ 'quakeFileL'  : ['phaseLPickCEA'],\
 	'laL'         : [40,38,45],\
 	'loL'         : [110,120,125],\
 	'areasLimit'  :  3}
-
+NL=np.array([[40,103],[45,105],[48,110],[55,120],[53,130],\
+	[50,135],[45,135],[40,130],[35,125],[30,125],\
+	[30,115],[30,105],[35,103],[40,103]])
 paraNorthLagerNew={ 'quakeFileL'  : ['phaseLPickCEA'],\
     'stationFileL': ['stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
     'isLoadFvL'   : [False],#False********\
@@ -576,8 +581,8 @@ paraNorthLagerNew={ 'quakeFileL'  : ['phaseLPickCEA'],\
     'surPara'     : { 'nxyz':[52,71,0], 'lalo':[56,102],#[40,60,0][55,108]\
                     'dlalo':[0.5,0.5], 'maxN':350,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 1,\
-					'maxIT':30,'nBatch':30,'smoothDV':20,'smoothG':40},\
-	'runDir'      : 'DS/1026_CEA160_north_lager_new/',#_man/',\
+					'maxIT':30,'nBatch':30,'smoothDV':20,'smoothG':40,'vR':NL},\
+	'runDir'      : '../DS/1026_CEA160_north_lager_new_real/',#_man/',\
 	'gpuIndex'    : 1,\
 	'gpuN'        : 2,\
 	'lalo'        :[32,180,103,180],#[20,34,96,108][]*******,\
@@ -587,4 +592,44 @@ paraNorthLagerNew={ 'quakeFileL'  : ['phaseLPickCEA'],\
 	'minP'        :0.6,\
 	'laL'         : [40,38,45],\
 	'loL'         : [110,120,125],\
-	'areasLimit'  :  3}
+	'areasLimit'  :  3,\
+	'p2L':[\
+	[[45,115],[35,115]],\
+	[[45,110],[35,105]],
+	[[45,115],[35,110]],
+	[[41,105],[41,125]],
+	[[33,105],[50,130]],
+	]}
+
+paraNorthLagerNew2={ 'quakeFileL'  : ['phaseLPickCEA'],\
+    'stationFileL': ['../stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
+    'isLoadFvL'   : [False],#False********\
+    'byRecordL'   : [False],\
+    'trainDir'    : 'predict/1010_0.95_0.05_3.2_randMove/',\
+    'resDir'      : '/fastDir/results/1015_all_V?/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+    'perN'        : 1,\
+    'eventDir'    : '/HOME/jiangyr/eventSac/',\
+    'z'           : [0,5,10,15,20,25,30,35,45,50,55,60,65,70,80,90,100,115,130,160,200,260,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+    'tSur'        : (16**np.arange(0,1.000001,1/49))*10,\
+    'surPara'     : { 'nxyz':[52,71,0], 'lalo':[56,102],#[40,60,0][55,108]\
+                    'dlalo':[0.5,0.5], 'maxN':350,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 1.5,\
+					'maxIT':120,'nBatch':60,'smoothDV':20,'smoothG':40,'vR':NL},\
+	'runDir'      : '../DS/1026_CEA160_north_lager_new_real2/',#_man/',\
+	'gpuIndex'    : 1,\
+	'gpuN'        : 2,\
+	'lalo'        :[32,180,103,180],#[20,34,96,108][]*******,\
+	'nlalo'        :[-1,35,-1,106],\
+	'threshold'   :0.03,\
+	'minProb'     :0.7,\
+	'minP'        :0.7,\
+	'laL'         : [40,38,45],\
+	'loL'         : [110,120,125],\
+	'areasLimit'  :  3,\
+	'p2L':[\
+	[[45,115,0],[35,115,250]],\
+	[[45,110,0],[35,105,250]],
+	[[45,115,0],[35,110,250]],
+	[[41,105,0],[41,125,250]],
+	[[33,105,0],[50,130,250]],
+	]}

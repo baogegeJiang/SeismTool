@@ -20,6 +20,7 @@ import os
 from tensorflow.keras.utils import plot_model
 import tensorflow as tf
 from numba import jit
+# this module is to construct deep learning network
 def defProcess():
     config = tf.ConfigProto()
     config.gpu_options.per_process_gpu_memory_fraction = 0.4

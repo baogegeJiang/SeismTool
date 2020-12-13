@@ -12,7 +12,8 @@ import cmath
 cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
 ##程序中又控制的大bug
 ##必须按顺序(period source)
-faultL = mt.readFault('Chinafault_fromcjw.dat')
+faultL = mt.readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
+#faultL = mt.readFault('Chinafault_fromcjw.dat')
 class config:
 	def __init__(self,para={},name='ds',z=[10,20,40,80,120,160,200,320]):
 		self.name = name
@@ -32,12 +33,12 @@ class config:
 		'kmaxRc':10,'rcPerid':np.arange(1,11).tolist(),'kmaxRg':0,'rgPeriod':[],\
 		'kmaxLc':0,'lcPeriod':[],'kmaxLg':0,'lgPeriod':[],'isSyn':0,'noiselevel':0.02,'threshold':0.05,\
 		'vnn':[0,100,50],'iso':'F','c':'c','smoothDV':10,'smoothG':20,'Damp':0,'perN':[6,6,4],'perA':0.05,\
-		'modelPara': {'config':self,'mode':'prem','runPath':'','file':'models/prem','la':'','lo':'','z':'','self1':'',\
+		'modelPara': {'config':self,'mode':'prem','runPath':'','file':'../models/prem','la':'','lo':'','z':'','self1':'',\
 		},'rayT':'F','noise':0,\
 		'GSPara': {'config':self,'mode':'GS','runPath':'','file':'','la':'','lo':'','z':'','self1':'',\
 		},\
 		'GCPara': {'config':self,'mode':'GC','runPath':'','file':'','la':'','lo':'','z':'','self1':'',\
-		},}
+		},'vR':np.array([[-90,-180],[-90,180],[90,180],[90,-180],[-90,-180]])}
 		self.para.update(para)
 	def output(self):
 		nxyz = self.para['nxyz']
@@ -236,12 +237,16 @@ class DS:
 			with open('%s/dsin_syn'%self.runPath,'w+') as f:
 				for period in periods:
 					f.write(period)
-	def plotByZ(self):
+	def plotByZ(self,p2L=[]):
 		if self.mode == 'syn':
 			self.modelTrue.plotByZ(self.runPath,head='true')
-		self.modelPeriod.plotByZ(self.runPath,head='period')
-		self.modelRes.plotByZ(self.runPath)
+		for p2 in p2L:
+			self.modelRes.plotByP2(self.runPath,head='P2',P2=p2,vR=self.config.para['vR'])
+		self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast)
 		self.fast.plotArrByZ(self.runPath,head='fast')
+		self.modelPeriod.plotByZ(self.runPath,head='period')
+		
+		
 	def plotTK(self):
 		nxyz,la,lo,z = self.config.output()
 		z0,la0,lo0,vsv0= loadModelTK()
@@ -261,6 +266,7 @@ class DS:
 	def loadRes(self):
 		if self.mode == 'syn':
 			self.modelTrue = Model(self.config,mode='DSFile',runPath=self.runPath,file='MODVs.true')
+		self.model0 = Model(self.config,mode='DSFile',runPath=self.runPath,file='MOD')
 		self.modelPeriod = Model(self.config,mode='DSP',runPath=self.runPath,file='period_Azm_tomo.inv')
 		#self.GsTrue = Model(self.config,mode='GSO',runPath=self.runPath,file='MODGs.true')
 		#self.GcTrue = Model(self.config,mode='GCO',runPath=self.runPath,file='MODGc.true')
@@ -268,8 +274,7 @@ class DS:
 		self.modelRes = Model(self.config,mode='DS',runPath=self.runPath,file='Gc_Gs_model.inv')
 		self.GsRes = Model(self.config,mode='GS',runPath=self.runPath,file='Gc_Gs_model.inv')
 		self.GcRes = Model(self.config,mode='GC',runPath=self.runPath,file='Gc_Gs_model.inv')
-		self.fast  = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.inv',Gs=self.GsRes,\
-			Gc=self.GcRes)
+		self.fast = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.inv')
 
 class Model:
 	def __init__(self,config=None,mode='DS',runPath='',file='',la='',lo='',z='',self1='',Gs='',Gc=''):
@@ -279,7 +284,7 @@ class Model:
 			data = np.loadtxt(runPath+file)
 			nxyz,la,lo,z = config.output()
 			z    = np.array(z)
-			v = np.zeros(nxyz)*0-1
+			v = np.zeros(nxyz)*0+np.nan
 			for i in range(data.shape[0]):
 				Lo = data[i,0]
 				La = data[i,1]
@@ -293,7 +298,7 @@ class Model:
 			data = np.loadtxt(runPath+file)
 			nxyz,la,lo,z = config.outputP()
 			z    = np.array(z)
-			v = np.zeros(nxyz)*0-1
+			v = np.zeros(nxyz)*0+np.nan
 			for i in range(data.shape[0]):
 				Lo = data[i,0]
 				La = data[i,1]
@@ -325,15 +330,19 @@ class Model:
 			for i in range(2):
 				for j in range(2):
 					v[i,j] = V
-		if mode=='GC' or mode=='GS':
+		if mode=='GC' or mode=='GS' or mode=='fast':
 			nxyz,la,lo,z = config.output()
-			v = np.zeros(nxyz)*0+0.004
+			v = np.zeros(nxyz)*0
+			if mode =='fast':
+				v = v+1j*v
 			if file!='':
 				data = np.loadtxt(runPath+file)
 				for i in range(data.shape[0]):
 					Lo = data[i,0]
 					La = data[i,1]
 					Z  = data[i,2]
+					Phi= data[i,4] 
+					A  = data[i,5] 
 					gc = data[i,6] 
 					gs = data[i,7] 
 					i0 = np.abs(la-La).argmin()
@@ -341,25 +350,32 @@ class Model:
 					i2 = np.abs(z-Z).argmin()
 					if mode == 'GC':
 						v[i0,i1,i2]=gc/100
-					else:
+					elif mode=='GS':
 						v[i0,i1,i2]=gs/100
+					elif mode=='fast':
+						phi = Phi/180*np.pi
+						v[i0,i1,i2]=A*np.cos(phi)+1j*A*np.sin(phi)
 		if mode=='GCO' or mode=='GSO':
 			nxyz,la,lo,z = config.output()
 			v = np.zeros(nxyz)*0+0.01
 			if file!='':
 				v = np.loadtxt(runPath+file)
 				v=v.reshape(nxyz[2],nxyz[1],nxyz[0]).transpose([2,1,0])
-		if mode=='fast':
+		if mode=='fast_':
 			self.config=Gs.config
 			z      = Gs.z
 			la     = Gs.la
 			lo     = Gs.lo
 			A,phi=[Gs.v,Gc.v]
+			'''
 			for i in range(Gs.v.shape[0]):
 				for j in range(Gs.v.shape[1]):
-					A[i,j],phi[i,j]  = cmath.polar(Gc[i,j]+1j*Gs[i,j])
-			phi   *= 1/2
-			v      = A*np.cos(phi)+1j*A*np.cos(phi)
+					for k in range(Gs.v.shape[2]):
+						A[i,j,k],phi[i,j,k]  = cmath.polar(Gc.v[i,j,k]+1j*Gs.v[i,j,k])
+			'''
+			phi = 1/2*np.arctan(Gs.v/Gc.v)
+			A = 1/2*(Gs.v**2+Gc.v**2)**0.5
+			v      = A*np.cos(phi)+1j*A*np.sin(phi)
 		self.nxyz = [len(la),len(lo),len(z)]
 		self.z  =  z#.reshape([-1,1,1])
 		self.la = la#.reshape([1,-1,1])
@@ -371,15 +387,18 @@ class Model:
 		i2 = np.abs(self.z  - z).argmin()
 		v = self.v[i0,i1,i2]
 		return v 
-	def output(self,la,lo,z):
+	def output(self,la,lo,z,interp=True):
 		nxyz    = [len(la),len(lo),len(z)]
 		nxyzTmp = [len(la),len(lo),len(self.z)]
+		if interp == False:
+			return self.v
 		v       = np.zeros(nxyz)
 		vTmp    = np.zeros(nxyzTmp)
 		#print(z)
-
+		V= self.v
+		V[np.isnan(V)]=-1e9
 		for i in range(nxyzTmp[-1]):
-			vTmp[:,:,i] = interpolate.interp2d(self.lo, self.la, self.v[:,:,i],bounds_error=False,fill_value=1e-8)(lo,la)
+			vTmp[:,:,i] = interpolate.interp2d(self.lo, self.la, V[:,:,i],bounds_error=False,fill_value=1e-8)(lo,la)
 		if la[-1]<la[0]:
 			vTmp = vTmp[::-1]
 		if lo[-1]<lo[0]:
@@ -387,7 +406,39 @@ class Model:
 		for i in range(nxyz[0]):
 			for j in range(nxyz[1]): 
 				v[i,j,:] = interpolate.interp1d(self.z,vTmp[i,j])(z)
-		return v	
+		v[v<0]=np.nan
+		return v
+	def OutputGriddata(self,la,lo,z):
+		Lo,La,Z = np.meshgrid(self.lo,self.la,self.z)
+		V = self.v.reshape([-1])
+		V[np.isnan(V)]=-1e9
+		points = np.concatenate((Lo.reshape([-1,1]),La.reshape([-1,1]),\
+			Z.reshape([-1,1])),axis=1)
+		v=interpolate.griddata(points,V,(lo,la,z),method='linear')
+		v[v<0]=np.nan
+		return v
+	def Output(self,la,lo,z,isPer=False,vR=''):
+		#Lo,La,Z = np.meshgrid(self.lo,self.la,self.z)
+		V = self.v.copy()
+		if vR !='':
+			out  = outR(vR,self.la,self.lo)
+		if isPer:
+			for i in range(V.shape[-1]):
+				v= V[:,:,i]
+				if vR!='':
+					v[out]=np.nan
+				V[:,:,i]/=v[np.isnan(v)==False].mean()
+			V-=1
+		V[np.isnan(V)]=-1e9
+		shape = list(la.shape)
+		shape.append(1)
+		points = np.concatenate((la.reshape(shape),\
+			lo.reshape(shape),z.reshape(shape)),axis=-1)
+		laIndex = self.la.argsort()
+		v=interpolate.interpn((self.la[laIndex],self.lo,self.z),V[laIndex],points,method='linear')
+		v[v<-10]=np.nan
+		return v
+
 	def denseLaLo(self,per,N=500):
 		dLa = (self.la[-1]-self.la[0])/N
 		dLo = (self.lo[-1]-self.lo[0])/N
@@ -395,39 +446,116 @@ class Model:
 		lo  = np.arange(self.lo[0],self.lo[-1]+1e-5*dLa,dLo)
 		per = interpolate.interp2d(self.lo, self.la, per)(lo,la)
 		return la, lo, per
-	def plotByZ(self,runPath='DS',head='res'):
+	def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02):
 		resDir = runPath+'/'+'plot/'
 		if not os.path.exists(resDir):
-			os.mkdir(resDir)
+			os.makedirs(resDir)
 		nxyz,la,lo,z = self.config.output()
 		if self.mode=='DSP':
 			nxyz,la,lo,z = self.config.outputP()
-		V            =  self.output(la,lo,z)
+		Lo,La,Z    =  np.meshgrid(lo,la,z)
+		#V            =  self.output(la,lo,z)
+		V            =  self.Output(La,Lo,Z)
+		if vR !='':
+			out  = outR(vR,la,lo)
+		if self1!='':
+			nxyz1,la1,lo1,z1       =  self1.config.output()
+			V1  = self1.v
+			out1  = outR(vR,la1,lo1)
 		for i in range(self.nxyz[-1]):
 			plt.close()
 			plt.figure(figsize=[12,8])
 			R = [la.min(),la.max(),lo.min(),lo.max()]
 			m = mt.genBaseMap(R)
 			v = V[:,:,i]
+			if vR!='':
+				v[out]=np.nan
+			#print(v)
 			#print(v[:10,:10])
 			laN, loN = v.shape
 			midLaN = int(1.2/4*laN)
 			midLoN = int(1.2/4*loN)
-			mean = v[midLaN:-midLaN,midLoN:-midLoN].mean()
+			if len(v[np.isnan(v)==False])==0:
+				print(z[i],'nan')
+				continue
+			mean = v[np.isnan(v)==False].mean()
 			print(mean)
-			v[v<0]=mean
 			Per   = (v-mean)/mean
 			la,lo,per=denseLaLo(self.la,self.lo,Per)
 			x,y= m(lo,la)
-			vmin=-np.abs(Per[midLaN:-midLaN,midLoN:-midLoN]).max()
-			vmax=np.abs(Per[midLaN:-midLaN,midLoN:-midLoN]).max()
-			plotPlane(m,x,y,per,R,z[i],mean,vmin,vmax,isFault=True,head=head)
+			vmin=-np.abs(Per[np.isnan(v)==False]).max()
+			vmax=np.abs(Per[np.isnan(v)==False]).max()
+			plotPlane(m,x,y,per,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=True)
+			if self1 !='':
+				v1 = V1[:,:,i]
+				x1,y1= m(lo1,la1)
+				dx1 = (x1.max()-x1.min())/maxA/nxyz1[1]
+				plt.arrow(x1.max()-0.01*dx1,y1.min()+0.05*dx1,0.01*dx1,0,color='b')
+				for ii in range(v1.shape[0]):
+					for jj in range(v1.shape[1]):
+						if out1[ii,jj]==np.nan:
+							continue
+						dX,dY=[np.imag(v1[ii,jj])*dx1,np.real(v1[ii,jj])*dx1]
+						plt.arrow(x1[jj]-0.5*dX,y1[ii]-0.5*dY,dX,dY,color='b',)
 			plt.savefig('%s/%s_%f.jpg'%(resDir,head,self.z[i]),dpi=500)
 			plt.close()
-	def plotArrByZ(self,runPath='DS',head='res',maxA=0.05):
+	def plotByP2(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,P2=[],N=300):
+		resDir = runPath+'/'+'plot/'
+		nxyz,la0,lo0,Z = self.config.output()
+		La = P2[0][0]+(P2[1][0]-P2[0][0])/N*np.arange(N)
+		Lo = P2[0][1]+(P2[1][1]-P2[0][1])/N*np.arange(N)
+		dist= DistAz(P2[0][0],P2[0][1],P2[1][0],P2[1][1]).getDelta()* 111.19
+		Dist = np.arange(N)/N*dist
+		Z = P2[0][2]+(P2[1][2]-P2[0][2])/N*np.arange(N)
+		la = La.reshape([1,-1])+Z.reshape([-1,1])*0
+		lo = Lo.reshape([1,-1])+Z.reshape([-1,1])*0
+		z  =  La.reshape([1,-1])*0+Z.reshape([-1,1])
+		print('la',la)
+		print('lo',lo)
+		print('z',z)
+		for TF in [True, False]:
+			V= self.Output(la,lo,z,isPer=TF,vR=vR)
+			if TF:
+				HEAD = head+'RELA'
+			else:
+				HEAD = head+'ABS'
+			plt.close()
+			plt.figure()
+			if np.abs(la.min()-la.max())>np.abs(lo.min()-lo.max()):
+				ax=plt.pcolor(La,Z,V,cmap=cmap,shading='auto')
+				plt.axes().set_aspect(1/111.19)
+				#plt.xlabel('la')
+			else:
+				ax=plt.pcolor(Lo,Z,V,cmap=cmap,shading='auto')
+				plt.axes().set_aspect(1/(111.19*np.cos(La.mean()/180*np.pi)))
+				#plt.xlabel('lag')
+			plt.ylim([Z[-1],Z[0]])
+			plt.colorbar()
+			plt.title('%s %.2f %.2f %.2f %.2f'%(HEAD,P2[0][0],P2[0][1],P2[1][0],P2[1][1]))
+			plt.savefig('%s/%s_ %.2f_%.2f+%.2f_%.2f.jpg'%(resDir,HEAD,\
+				P2[0][0],P2[0][1],P2[1][0],P2[1][1]),dpi=500)
+			plt.close()
+			R = [la0.min(),la0.max(),lo0.min(),lo0.max()]
+			m = mt.genBaseMap(R)
+			m.etopo()
+			for fault in faultL:
+				if fault.inR(R):
+					fault.plot(m,markersize=0.3)
+			vX,vY=m(mt.volcano[:,0],mt.volcano[:,1])
+			m.plot(vX, vY,'^r')
+			pX,pV=m(Lo,La)
+			m.plot(Lo,La,'-b')
+			plotLaLoLine(m,dLa=5,dLo=5)
+			plt.title('%s %.2f %.2f %.2f %.2f'%(HEAD,P2[0][0],P2[0][1],P2[1][0],P2[1][1]))
+			plt.savefig('%s/%s_ %.2f_%.2f+%.2f_%.2f_map.jpg'%(resDir,HEAD,\
+				P2[0][0],P2[0][1],P2[1][0],P2[1][1]),dpi=500)
+			plt.close()
+			
+		plt.close()
+	def plotArrByZ(self,runPath='DS',head='res',maxA=0.02):
 		resDir = runPath+'/'+'plot/'
 		if not os.path.exists(resDir):
-			os.mkdir(resDir)
+			os.makedirs(resDir)
 		nxyz,la,lo,z = self.config.output()
 		for i in range(self.nxyz[-1]):
 			plt.close()
@@ -438,7 +566,13 @@ class Model:
 			#print(v[:10,:10])
 			x,y= m(lo,la)
 			dx = (x.max()-x.min())/maxA/nxyz[1]
-			m.arrow(x,y,np.imag(v)*dx,np.real(v)*dx)
+			for ii in range(v.shape[0]):
+				for jj in range(v.shape[1]):
+					plt.arrow(x[jj],y[ii],np.imag(v[ii,jj])*dx,np.real(v[ii,jj])*dx,color='b',\
+						)
+			for fault in faultL:
+				if fault.inR(R):
+					fault.plot(m,markersize=0.3)
 			plt.savefig('%s/%s_%f.jpg'%(resDir,head,self.z[i]),dpi=500)
 			plt.close()
 	def write(self,filename,la,lo,z,isDiff=False,N=[2,2,2],A=0.05):
@@ -514,12 +648,16 @@ class Model:
 			#plt.ylim([35,55])
 			plt.close()
 
-def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'):
+def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
+	,isVol=False):
 	dLa,dLo=getDlaDlo(R)
 	if isFault:
 		for fault in faultL:
 			if fault.inR(R):
 				fault.plot(m,markersize=0.3)
+	if isVol:
+		vX,vY=m(mt.volcano[:,0],mt.volcano[:,1])
+		m.plot(vX, vY,'^r')
 	m.pcolor(x,y,per,cmap=cmap,shading='auto')
 	m.drawcoastlines(linewidth=0.8, linestyle='dashdot', color='k')
 	plt.clim(vmin=vmin,vmax=vmax)
@@ -576,12 +714,47 @@ def loadModelTK(file = 'models/tk.nc'):
 
 
 def denseLaLo(La,Lo,Per,N=500):
+	Per = Per+0
+	Per[np.isnan(Per)]=-1e9
 	dLa = (La[-1]-La[0])/N
 	dLo = (Lo[-1]-Lo[0])/N
 	la  = np.arange(La[0],La[-1],dLa)[-1::-1]
 	lo  = np.arange(Lo[0],Lo[-1],dLo)
 	per = interpolate.interp2d(Lo, La, Per)(lo,la)
+	per[per<-50]=np.nan
 	return la, lo, per 
+
+
+def nanV(v,v0):
+	v=v+0
+	v0=v0+0
+	v[np.isnan(v)]=-999
+	v0[np.isnan(v)]=-999
+	dv0 = v-v0
+	dv1 = dv0*0
+	dv1[:-2,:] = v[2:,:]-v[:-2,:]
+	dv2 = dv0*0
+	dv2[:,:-2] = v[:,2:]-v[:,:-2]
+	return (dv1**2+dv2**2)**0.5*(np.abs(dv0)+0.01)<1e-5
+
+def outR(vR,la,lo):
+	lo,la=np.meshgrid(lo,la)
+	print(lo,la)
+	#print(np.conca(la,lo).shape)
+	lalo=np.concatenate((la.reshape([1,la.shape[0],la.shape[1]]),\
+			lo.reshape([1,la.shape[0],la.shape[1]])),axis=0).transpose([1,2,0])
+	dlalo = lalo.reshape([lalo.shape[0],lalo.shape[1],1,2])- vR.reshape([1,1,-1,2])
+	dlalo2 = np.concatenate((dlalo[:,:,:-1].reshape([1,dlalo.shape[0],dlalo.shape[1],\
+			dlalo.shape[2]-1,dlalo.shape[3]])\
+			,dlalo[:,:,1:].reshape([1,dlalo.shape[0],dlalo.shape[1],\
+			dlalo.shape[2]-1,dlalo.shape[3]]))\
+		,axis=0).transpose([0,4,1,2,3])
+	print(dlalo2.shape,dlalo.shape)
+	theta = np.arcsin((dlalo2[0,0]*dlalo2[1,1]-dlalo2[0,1]*dlalo2[1,0])\
+	/((dlalo2[0]**2).sum(axis=0)*(dlalo2[1]**2).sum(axis=0))**0.5)
+	sumTheta=theta.sum(axis=2)
+	print(sumTheta)
+	return np.abs(sumTheta)<np.pi/3
 
 
 

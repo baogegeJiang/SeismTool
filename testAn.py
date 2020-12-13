@@ -14,6 +14,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from SeismTool.tomoDD import tomoDD
 from microQuake import microQuake
+import SeimTool.mapTool as mt 
 laN=60 #subareas in latitude
 loN=60
 laL=[21,35]#area: [min latitude, max latitude]
@@ -167,3 +168,52 @@ for i in range(len(staInfos)):
 		stationPair.getAverage(workDir+'/cross10P/')
 for stationPairL in stationPairM:
 	seism.plotStationPairL(stationPairL,resDir=workDir+'/cross10P/',parentDir=workDir+'/cross10P/',mul=5)
+
+import mpl_toolkits.basemap as basemap
+from obspy import UTCDateTime
+import os
+import sys
+sys.path.append('/home/jiangyr/Surface-Wave-Dispersion/')
+from SeismTool.io.seism import StationList,QuakeL
+from SeismTool.locate.locate import locator
+import numpy as np
+from matplotlib import pyplot as plt
+import SeismTool.mapTool.mapTool as mt 
+laN=60 #subareas in latitude
+loN=60
+laL=[21,35]#area: [min latitude, max latitude]
+loL=[97,109]
+#detecQuake.maxA=1e15#这个是否有道理
+inputDir = '/home/jiangyr/Surface-Wave-Dispersion/accuratePickerV4/'
+staLstFileL=[inputDir+'../stations/XU_sel.sta',inputDir+'../stations/SCYN_withComp_ac',]
+staInfos=StationList(staLstFileL[0])+StationList(staLstFileL[1])
+hsr = mt.readFault('data/hsr.shape')
+faults = mt.readFault('data/Chinafault_fromcjw.dat')
+
+staLa= []
+staLo=[]
+for sta in staInfos:
+	staLa.append(sta.loc()[0])
+	staLo.append(sta.loc()[1])
+#staLa,staLo = staL.loc()
+plt.close()
+m = basemap.Basemap(llcrnrlat=laL[0],urcrnrlat=laL[1],llcrnrlon=loL[0],\
+        urcrnrlon=loL[1])
+staX,staY=m(np.array(staLo),np.array(staLa))
+
+R=laL+loL
+st=m.plot(staX,staY,'b^',markersize=4,alpha=0.3)
+for fault in hsr:
+	if fault.inR(laL+loL):
+		f=fault.plot(m,markersize=0.3,cmd='-r')
+
+for fault in faults:
+	if fault.inR(laL+loL):
+		f=fault.plot(m,markersize=0.2,cmd='-k')
+
+dD=max(int((R[1]-R[0])*10)/40,int((R[3]-R[2])*10)/40)
+parallels = np.arange(int(R[0]),int(R[1]+1),dD)
+m.drawparallels(parallels,labels=[False,True,True,False])
+meridians = np.arange(int(R[2]),int(R[3]+1),dD)
+m.drawmeridians(meridians,labels=[True,False,False,True])
+plt.savefig('hsr_sta.jpg',dpi=600)

@@ -5,10 +5,12 @@ from netCDF4 import Dataset
 from scipy import interpolate as interp
 from matplotlib import cm
 from lxml import etree
+import os
 from pykml.factory import KML_ElementMaker as KML
 from pycpt.load import gmtColormap as cpt2cm
 from distaz import DistAz
 pi=3.1415927
+volcano=np.loadtxt(os.path.dirname(__file__)+'/../data/volcano')
 def genBaseMap(R=[0,90,0,180], topo=None):
     m=basemap.Basemap(llcrnrlat=R[0],urcrnrlat=R[1],llcrnrlon=R[2],\
         urcrnrlon=R[3])

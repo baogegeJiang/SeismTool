@@ -13,9 +13,9 @@ from multiprocessing import Process, Manager,Pool
 import random
 from glob import glob
 from obspy.taup import TauPyModel
-from seism import taup
+from ..io.seism import taup
 from ..io import seism
-from fk import FK,getSourceSacName,FKL
+from .fk import FK,getSourceSacName,FKL
 from ..mathTool.mathFunc import getDetec,xcorrSimple,xcorrComplex,flat,validL,randomSource,disDegree,QC,fitexp
 from ..mathTool.distaz import DistAz
 '''
