@@ -1493,8 +1493,10 @@ class Trace3(obspy.Stream):
         minDelta=int(minD/delta)
         indexL,vL=getDetec(data[:,comp], minValue=minValue, minDelta=minDelta)
         return indexL*delta+bTime.timestamp,vL
-    def getSpec(self,comp=2):
+    def getSpec(self,comp=2,isNorm=False):
         data = self.Data()[:,2]
+        if isNorm:
+            data/=data.std()
         return np.fft.fft(data),np.arange(len(data))/(self.Delta()*len(data))
 
 

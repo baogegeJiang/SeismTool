@@ -99,6 +99,11 @@ class filePath:
             #2000015_220000_090be_1_2.msd
             pattern='%s/%s/%s%s.msd'\
             %(staDir,sta,time.strftime('%Y%j_%H0000_*'),filePath.himaComp[comp[-1]])
+        elif nameMode =='RD':
+            sta = sta.split('_')[0]
+            #2000015_220000_090be_1_2.msd
+            pattern='%s/%s/%s.%s.00.DN%s.%s.SAC'\
+            %(staDir,sta,net,sta,comp[-1],time.strftime('%Y%m%d'))
             #print(pattern)
 
         #print('##',pattern)
@@ -129,11 +134,12 @@ class filePath:
             elif net == 'SC':
                 staDirL = ['/net/CEA/CEA1/net_sc/']
                 staDirL = ['/media/commonMount/CEA1/net_sc/']
-
         if nameMode =='XU':
             staDirL = ['/HOME/jiangyr/YNSCMOVE/']
         if nameMode =='RDH':
             staDirL=['/HOME/jiangyr/XA_HSR_DATA/201908DX_BB/MSD/']
+        if nameMode =='RD':
+            staDirL =['/HOME/jiangyr/XA_HSR_DATA/201908DX/sac/']
         return staDirL
     
     def getSensorDas(self,net,sta,nameMode=''):
