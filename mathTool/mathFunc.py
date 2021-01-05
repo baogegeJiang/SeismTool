@@ -355,8 +355,13 @@ def QC(data,threshold=2.5,it=20):
         return QC(data[d<Threshold],threshold,it-1)
 
 def rotate(rad,data):
-    rM = np.mat([[np.sin(rad),np.cos(rad),0],\
+    #RTZ
+    rM = np.array([[np.sin(rad),np.cos(rad),0],\
                  [np.cos(rad),-np.sin(rad),0],\
                  [0,0,1]\
                 ])
-    return np.array(np.mat(data)*rM)
+    dataNew = data*0
+    dataNew[:,0]=np.sin(rad)*data[:,0]+np.cos(rad)*data[:,1]
+    dataNew[:,1]=np.cos(rad)*data[:,0]-np.sin(rad)*data[:,1]
+    dataNew[:,2]= data[:,2]
+    return dataNew

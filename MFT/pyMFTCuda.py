@@ -9,6 +9,10 @@ from mathTool.distaz import DistAz
 from multiprocessing import Process, Manager
 import cudaFunc
 import torch
+'''
+in this part we do WMFT in GPU
+to run fast and reduce the GPU memory, we would like to 
+'''
 defaultSecL=[-2,2]#[-1,3]
 tentype=cudaFunc.tentype
 nptype=cudaFunc.nptype

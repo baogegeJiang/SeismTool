@@ -224,7 +224,6 @@ class Station(Dist):
         self.l[self.index(key)] = value
         if key =='compBase':
             self['comp'] = [self['compBase']+s for s in 'ENZ']
-
         if key =='net' and self['nameMode']=='':
             self['nameMode'] = self['net']
         if key =='netSta' and self[key]!='' and isinstance(self['net'],NoneType)\
@@ -1469,9 +1468,15 @@ class Trace3(obspy.Stream):
         for i in range(len(self)):
             self[i]=adjust(self[i],*argv,**kwargs)
     def rotate(self,theta=0):
+        #RTZ,theta
         rad = theta/180*np.pi
         bTime,eTime=self.getTimeLim()
-        Data = rotate(rad,self.Data())
+        print('data')
+        Data= self.Data()
+        print('data done')
+        print('math rotate')
+        Data = rotate(rad,Data)
+        print('math rotate Done' )
         T3New=[Trace(Data[:,i])for i in range(3)]
         for t3 in T3New:
             t3.stats.starttime = bTime
@@ -1494,10 +1499,10 @@ class Trace3(obspy.Stream):
         indexL,vL=getDetec(data[:,comp], minValue=minValue, minDelta=minDelta)
         return indexL*delta+bTime.timestamp,vL
     def getSpec(self,comp=2,isNorm=False):
-        data = self.Data()[:,2]
+        data = self.Data()
         if isNorm:
             data/=data.std()
-        return np.fft.fft(data),np.arange(len(data))/(self.Delta()*len(data))
+        return np.fft.fft(data[:,comp]),np.arange(len(data[:,comp]))/(self.Delta()*len(data[:,comp]))
 
 
 def checkSacFile(sacFileNamesL):

@@ -169,24 +169,7 @@ for i in range(len(staInfos)):
 for stationPairL in stationPairM:
 	seism.plotStationPairL(stationPairL,resDir=workDir+'/cross10P/',parentDir=workDir+'/cross10P/',mul=5)
 
-import mpl_toolkits.basemap as basemap
-from obspy import UTCDateTime
-import os
-import sys
-sys.path.append('/home/jiangyr/Surface-Wave-Dispersion/')
-from SeismTool.io.seism import StationList,QuakeL
-from SeismTool.locate.locate import locator
-import numpy as np
-from matplotlib import pyplot as plt
-import SeismTool.mapTool.mapTool as mt 
-laN=60 #subareas in latitude
-loN=60
-laL=[21,35]#area: [min latitude, max latitude]
-loL=[97,109]
-#detecQuake.maxA=1e15#这个是否有道理
-inputDir = '/home/jiangyr/Surface-Wave-Dispersion/accuratePickerV4/'
-staLstFileL=[inputDir+'../stations/XU_sel.sta',inputDir+'../stations/SCYN_withComp_ac',]
-staInfos=StationList(staLstFileL[0])+StationList(staLstFileL[1])
+'''
 hsr = mt.readFault('data/hsr.shape')
 faults = mt.readFault('data/Chinafault_fromcjw.dat')
 
@@ -217,3 +200,63 @@ m.drawparallels(parallels,labels=[False,True,True,False])
 meridians = np.arange(int(R[2]),int(R[3]+1),dD)
 m.drawmeridians(meridians,labels=[True,False,False,True])
 plt.savefig('hsr_sta.jpg',dpi=600)
+'''
+
+import mpl_toolkits.basemap as basemap
+from obspy import UTCDateTime
+import os
+import sys
+sys.path.append('/home/jiangyr/Surface-Wave-Dispersion/')
+from SeismTool.io.seism import StationList,QuakeL
+from SeismTool.locate.locate import locator
+import numpy as np
+from matplotlib import pyplot as plt
+import SeismTool.mapTool.mapTool as mt 
+import SeismTool.MFT.cudaFunc
+
+laN=60 #subareas in latitude
+loN=60
+laL=[21,35]#area: [min latitude, max latitude]
+loL=[97,109]
+argL=[['SCYNdoV40', 'SCYNdoV40V0', '0', UTCDateTime(2014,1,1).timestamp, UTCDateTime(2015,7,1).timestamp],\
+      ['SCYNdoV10', 'SCYNdoV10V1', '0', UTCDateTime(2015,7,1).timestamp, UTCDateTime(2017,1,1).timestamp],\
+      ['SCYNdoV10', 'SCYNdoV10V2', '1', UTCDateTime(2017,1,1).timestamp, UTCDateTime(2018,7,1).timestamp],\
+      ['SCYNdoV10', 'SCYNdoV10V3', '1', UTCDateTime(2018,7,1).timestamp, UTCDateTime(2020,1,1).timestamp],]
+
+v_i,p_i=argL[0][:2]
+inputDir = '/home/jiangyr/Surface-Wave-Dispersion/accuratePickerV4/'
+workDir='/HOME/jiangyr/detecQuake/'# workDir: the dir to save the results
+staLstFileL=[inputDir+'../stations/XU_sel.sta',inputDir+'../stations/SCYN_withComp_ac',]
+phaseFile=workDir+'phaseDir/phaseLstV%s'%p_i[:-1]+'*'
+staInfos=StationList(staLstFileL[0])+StationList(staLstFileL[1])
+qLAll = QuakeL(phaseFile)
+qL = QuakeL(phaseFile)
+
+qL.select(req={'minN':10,'minCover':0.8,'locator':locator(staInfos),'maxRes':1.5})
+qL.write('selectSCYN')
+qLAll.write('phaseSCYN')
+qL.select(req={'minN':12,'minCover':0.9,'maxRes':1.5})
+qL.write('selectSCYNTomo')
+qL = QuakeL('selectSCYNTomo')
+T3PSLL = [q.loadPSSacs(staInfos,matDir=workDir+'output/outputV%s/'%v_i,f=[2,8]) for q in qL]
+
+from SeismTool.tomoDD import tomoDD
+dTM = tomoDD.calDTM(qL,T3PSLL,staInfos)
+tomoDD.saveDTM(dTM,workDir+'output/outputV%s/dTM'%v_i)
+tomoDir = workDir+'output/outputV%s/tomoDD/input/'%v_i
+if not os.path.exists(tomoDir):
+	os.makedirs(tomoDir)
+tomoDD.preEvent(qL,staInfos,tomoDir+'event.dat')
+tomoDD.preABS(qL,staInfos,tomoDir+'ABS.dat',isNick=False)
+tomoDD.preSta(staInfos,tomoDir+'station.dat',isNick=False)
+tomoDD.preDTCC(qL,staInfos,dTM,maxD=0.2,minSameSta=2,minPCC=0.7,minSCC=0.6,filename=tomoDir+'dt.cc',isNick=False)
+tomoDD.preMod(laL+loL,nx=16,ny=18,nz=12,filename=tomoDir+'../inversion/MOD')
+qL.write(tomoDir+'../tomoQuake')
+detecQuake.plotQuakeLDis(staInfos,qL,laL,loL,filename\
+          =tomoDir+'../tomoQuake.jpg')
+qLNew = QuakeL(tomoDD.getReloc(qL,tomoDir+'../inversion/tomoDD.reloc'))
+detecQuake.plotQuakeLDis(staInfos,qLNew,laL,loL,filename\
+          =tomoDir+'../tomoQuakeReloc.jpg')
+mL=tomoDD.modeL(tomoDir)
+mL.plot(tomoDir+'../resFig/')
+

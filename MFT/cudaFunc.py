@@ -85,8 +85,6 @@ def torchcorrnn(a,b):
     '''
     directly calculate cross-correlation based on torch.nn.functional.conv1d
     '''
-    la=a.shape[0]
-    lb=b.shape[0]
     if not isinstance(a,torch.Tensor):
         aR=torch.tensor(a,dtype=dtype)
     else:
@@ -108,12 +106,20 @@ def torchcorrnn(a,b):
     aT=aT.pow(2)
     bT[0,0,:]=1
     ac=torch.nn.functional.conv1d(aT,bT)
+    ac=torch.where(ac==0,torch.tensor(1,dtype=dtype),ac)
     ac=torch.rsqrt(ac+minF)
     c*=ac
-    c=torch.where(torch.isnan(c),torch.tensor(-1000.0,dtype=dtype),c)
-    c=torch.where(torch.isinf(c),torch.tensor(-1000.0,dtype=dtype),c)
+    #c=torch.where(torch.isnan(c),torch.tensor(-1000.0,dtype=dtype),c)
+    #c=torch.where(torch.isinf(c),torch.tensor(-1000.0,dtype=dtype),c)
     return c[0,0,:],c[0,0,c[0,0,:]>-2].mean().cpu().numpy(),\
             c[0,0,c[0,0,:]>-2].std().cpu().numpy()
+
+def torchcorrnnNorm(a,b):
+    '''
+    directly calculate cross-correlation based on torch.nn.functional.conv1d
+    '''
+    c=np.array([ torchcorrnn(a[:,i],b[:,i])[0].cpu().numpy() for i in range(3)]).transpose()
+    return c,c.mean(),c.std()
 
 def torchMax(a,tmin,winL,aM):
     if not isinstance(a,torch.Tensor):

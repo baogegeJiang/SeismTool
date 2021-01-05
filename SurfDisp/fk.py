@@ -6,7 +6,7 @@ import os
 from multiprocessing import Process, Manager
 from ..mathTool import mathFunc
 defaultPath='fkRun/'
-orignExe = '/Users/jiangyiran/prog/fk/fk/'
+orignExe = '/home/jiangyr/program/fk/'
 ###different source different meaning
 class FK:
     '''
@@ -52,7 +52,7 @@ class FK:
         os.system(copyModelCmd)
         baseModelName = os.path.basename(modelFile)
         greenCmd = 'cd %s;./fk.pl '%self.exePath
-        greenCmd+=' -M%s/%d%s '%(baseModelName,depth,fok)
+        greenCmd+=' -M%s/%.4f%s '%(baseModelName,depth,fok)
         if isDeg:
             greenCmd+=' -D '
         if f[0]>0:
@@ -81,10 +81,10 @@ class FK:
             greenCmd = greenCmd0
             greenCmd +=' -S%d '%src
             for dis in distance:
-                greenCmd += ' %d'%dis
+                greenCmd += ' %.4f'%dis
             print(greenCmd)
             os.system(greenCmd)
-        self.greenRes = baseModelName + '_%d'%depth
+        self.greenRes = baseModelName + '_%.4f'%depth
         self.depth = depth
         self.distance = distance
         self.rdep     = rdep
@@ -109,7 +109,7 @@ class FK:
                 synCmd+=' -F%.5f/%.5f '%(f[0],f[1])
             for dis in self.distance:
                 #1.0000_0.000.grn.0
-                firstFile = '%s/%d.grn.0'%(self.greenRes,dis)
+                firstFile = '%s/%.4f.grn.0'%(self.greenRes,dis)
                 tmpCmd = synCmd
                 tmpCmd += ' -G%s '%firstFile
                 tmpCmd += ' -O%s'%self.tmpFile[0]
@@ -124,12 +124,12 @@ class FK:
                 os.makedirs(resDir)
             mvCmd = 'mv %s %s'%(self.exePath+self.tmpFile[i],fileName[i])
             os.system(mvCmd)
-    def getFileName(self, dis,depth, azimuth, M):
-        dirName = '%s/%s/%d/'%(self.resDir,os.path.basename(self.modelFile),depth)
-        basename ='%s_%d_%.2f'%(self.source,dis,azimuth)
+    def getFileName(self, dis,depth, azimuth, M,compL='ztr'):
+        dirName = '%s/%s/%.4f/'%(self.resDir,os.path.basename(self.modelFile),depth)
+        basename ='%s_%.4f_%.2f'%(self.source,dis,azimuth)
         for m in M:
             basename+='%.3f_'%m
-        return [(dirName+basename[:-1]+'.%s')%s for s in 'ztr']
+        return [(dirName+basename[:-1]+'.%s')%s for s in compL]
     def readAll(self):
         sacsL=[]
         sacNamesL=[]
@@ -141,6 +141,16 @@ class FK:
                     trace = obspy.read(sacName)[0]
                     trace.stats['sac']['kstnm']=str(dis)[:3]+str(azi)[:3]
                     trace.write(sacName,format="SAC")
+                sacNamesL.append(sacNames)
+                sacsL.append(sacs)
+        return sacsL,sacNamesL
+    def readAllV2(self):
+        sacsL=[]
+        sacNamesL=[]
+        for dis in self.distance:
+            for azi in self.azimuth:
+                sacNames = self.getFileName(dis,self.depth,azi,self.M,'rtz')
+                sacs = [obspy.read(sacName)[0] for sacName in sacNames]
                 sacNamesL.append(sacNames)
                 sacsL.append(sacs)
         return sacsL,sacNamesL

@@ -49,6 +49,7 @@ def getZInR(la0,lo0,z0,R,laN=500,loN=500):
 def plotTopo(m,R,topo='Ordos.grd',laN=800,loN=800,cptfile='wiki-2.0.cpt'):#'cpt17.txt'):
     la0,lo0,z0=readnetcdf(topo)
     la,lo,z=getZInR(la0,lo0,z0,R,laN=laN,loN=loN)
+    loM,laM=plt.meshgrid(lo,la)
     x,y=m(lo,la)
     #print(la[0,0],lo[0,0])
     m.pcolor(x,y,z,cmap=cpt2cm(cptfile),vmin=0, vmax=5000)

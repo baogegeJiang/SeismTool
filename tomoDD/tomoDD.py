@@ -2,6 +2,7 @@ import numpy as np
 from obspy import UTCDateTime
 import matplotlib.pyplot as plt
 from ..mathTool.mathFunc_bak import corrNP as xcorr
+#from ..MFT.cudaFunc import torchcorrnnNorm as xcorr
 from ..io.tool import getYmdHMSj
 from ..mathTool.distaz import DistAz
 from ..mapTool import mapTool as mt
@@ -231,8 +232,10 @@ def calDT(quake0,quake1,T3PSL0,T3PSL1,staInfos,bSec0=-2,eSec0=3,\
         T3P0,T3S0=  [T3PSL0[0][index0],T3PSL0[1][index0]]
         T3P1,T3S1=  [T3PSL1[0][index1],T3PSL1[1][index1]]
         if record0['pTime']>0 and record1['pTime']>0:
-            pWave0=T3P0.Data(record0['pTime']+bSec0,record0['pTime']+eSec0)
-            pWave1=T3P1.Data(record1['pTime']+bSec1,record1['pTime']+eSec1)
+            #pWave0=T3P0.Data(record0['pTime']+bSec0,record0['pTime']+eSec0)
+            #pWave1=T3P1.Data(record1['pTime']+bSec1,record1['pTime']+eSec1)
+            pWave0=T3P0.Data0#(record0['pTime']+bSec0,record0['pTime']+eSec0)
+            pWave1=T3P1.Data1#(record1['pTime']+bSec1,record1['pTime']+eSec1)
             if len(pWave0)*len(pWave1)==0:
                 continue
             #print(pWave0.shape,pWave1.shape)
@@ -245,8 +248,10 @@ def calDT(quake0,quake1,T3PSL0,T3PSL1,staInfos,bSec0=-2,eSec0=3,\
                 dt=bSec1+maxIndex*T3P0.delta-bSec0
                 dT.append([dt,maxC,staIndex,1])
         if record0['sTime']>0 and record1['sTime']>0:
-            sWave0=T3S0.Data(record0['sTime']+bSec0,record0['sTime']+eSec0)
-            sWave1=T3S1.Data(record1['sTime']+bSec1,record1['sTime']+eSec1)
+            #sWave0=T3S0.Data(record0['sTime']+bSec0,record0['sTime']+eSec0)
+            #sWave1=T3S1.Data(record1['sTime']+bSec1,record1['sTime']+eSec1)
+            sWave0=T3S0.Data0#(record0['sTime']+bSec0,record0['sTime']+eSec0)
+            sWave1=T3S1.Data1#(record1['sTime']+bSec1,record1['sTime']+eSec1)
             if len(sWave0)*len(sWave1)==0:
                 continue
             c=xcorr(sWave1,sWave0)[0].max(axis=1)#########
@@ -265,6 +270,20 @@ def calDTM(quakeL,T3PSLL,staInfos,maxD=0.3,minC=0.6,minSameSta=3,\
     quakeL's waveform is contained by waveformL
     '''
     dTM=[[None for quake in quakeL]for quake in quakeL]
+    #indexL0 = quake0.staIndexs()
+    for i in range(len(quakeL)):
+        print('cut waveform: ',i)
+        quake = quakeL[i]
+        T3PSL = T3PSLL[i]
+        for index in range(len(quake.records)):
+            record = quake.records[index]
+            T3P,T3S=  [T3PSL[0][index],T3PSL[1][index]]
+            #record0 = quake0.records[index0]
+            #T3P0,T3S0=  [T3PSL0[0][index0],T3PSL0[1][index0]]
+            T3P.Data0=T3P.Data(record['pTime']+bSec0,record['pTime']+eSec0)
+            T3P.Data1=T3P.Data(record['pTime']+bSec1,record['pTime']+eSec1)
+            T3S.Data0=T3S.Data(record['sTime']+bSec0,record['sTime']+eSec0)
+            T3S.Data1=T3S.Data(record['sTime']+bSec1,record['sTime']+eSec1)
     for i in range(len(quakeL)):
         #print(i)
         for j in range(i+1,len(quakeL)):
@@ -435,7 +454,7 @@ class Model:
             plt.colorbar()
             plt.savefig('%s/%s_%d.jpg'%(resDir,self.mode,z),dpi=300)
 
-class modeL:
+class model:
     def __init__(self,workDir):
         initFile=workDir+'/../inversion/MOD'
         with open(initFile) as f:

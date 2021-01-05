@@ -54,6 +54,87 @@ class MINEOS:
         if os.path.exists(self.runPath+file):
             mode = Mode(file,runPath=self.runPath)
             mode.plotFun(n,l,sphtor)
+    def calU(self):
+        data=np.loadtxt(self.runPath+'21.out',skiprows=1)
+        Rs = 6359000
+        Rr = 6370000
+        dnorm = 5515e-6
+        g     = 6.6723e-11
+        w = 0.2538264e-2
+        r0 = 6371000
+        r = data[:,0]
+        iS=np.abs(r-Rs).argmin()
+        iR=np.abs(r-Rr).argmin()
+        mul0=1/(5510*6371000**3)**0.5
+        mul1=1/(5510*6371000**3)**0.5/6371000
+        U = data[:,1]*mul0
+        dU = data[:,2]*mul1
+        V = data[:,3]*mul0
+        dV = data[:,4]*mul1
+        UR = U[iR]
+        US = U[iS]
+        VR = V[iR]
+        VS = V[iS]
+        dUR = dU[iR]
+        dUS = dU[iS]
+        A=np.array([UR*(-0.5*dUS+1/(2*Rs)*US-2**0.5/4/Rs*VS),\
+            0,\
+            VR*(6**0.5/4*dUS-6**0.5/4/Rs*US+3**0.5/4/Rs*VS)]).reshape([1,3])
+        M0=3.548e19
+        time=np.arange(30000)
+        s = (1-np.cos(w*time.reshape([-1,1])))/w**2*3/(4*np.pi)*M0*A
+        print(1/w**2*3/(4*np.pi)*M0*A,w)
+        print(s.max(axis=0))
+        plt.close()
+        plt.figure(figsize=(6,14))
+        plt.subplot(3,1,1)
+        plt.title('up(r)')
+        plt.plot(time,s[:,0],'k')
+        plt.xlabel('t/s')
+        plt.ylabel('disp /m')
+        plt.subplot(3,1,2)
+        plt.title('south(theta)')
+        plt.plot(time,s[:,1],'k')
+        plt.xlabel('t/s')
+        plt.ylabel('disp/m')
+        plt.subplot(3,1,3)
+        plt.title('east(phi)')
+        plt.plot(time,s[:,2],'k')
+        plt.xlabel('t/s')
+        plt.ylabel('disp/m')
+        plt.savefig(self.runPath+'21.pdf',dpi=300)
+    def plotU(self):
+        staL = ['ABNY','BRS','DESK','MAJO']
+        for sta in staL:
+            file=self.runPath+'20080512_062801.%s.ASC'%sta
+            data = np.loadtxt(file,skiprows=6)
+            t = data[:,0]
+            Z = data[:,1]
+            R = data[:,2]
+            T = data[:,3]
+            comp='ZRT'
+            plt.figure(figsize=[6,10])
+            plt.subplot(3,1,1)
+            plt.plot(t,Z,'k')
+            plt.xlim([t[0],t[-1]])
+            #plt.xlabel('t/s')
+            plt.ylabel('Z/m')
+            plt.title(sta)
+            plt.subplot(3,1,2)
+            plt.plot(t,R,'k')
+            plt.xlim([t[0],t[-1]])
+            #plt.xlabel('t/s')
+            plt.ylabel('R/m')
+            plt.title(sta)
+            plt.subplot(3,1,3)
+            plt.plot(t,T,'k')
+            plt.xlabel('t/s')
+            plt.ylabel('T/m')
+            plt.xlim([t[0],t[-1]])
+            plt.title(sta)
+            plt.savefig(self.runPath+sta+'.pdf')
+            plt.close()
+            
 
 class Mode:
     def __init__(self,file='',checkfile='',runPath='.'):
