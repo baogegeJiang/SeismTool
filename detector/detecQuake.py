@@ -520,6 +520,38 @@ def getStaL(staInfos, staTimeML=[], modelL=[],\
             maxD=maxD,isClearData=isClearData)
     return staL
 
+def getStaQuick(staInfos,date,f,taupM,R,delta0,f_new,resampleN):
+    for i in range(len(staInfos)):  
+        print(ctime(),'process on sta: ',date,i)
+        sta=sta(staInfos[i], date,
+            f, taupM,R=R,delta0=delta0)
+        sta.filt(f_new)
+        sta.resample(resampleN)
+
+from ..io.parRead import StaReader,DataLoader,collate_function
+def getStaLQuick(staInfos, staTimeML=[], modelL=[],\
+    date=obspy.UTCDateTime(0),taupM=tool.quickTaupModel(),\
+     mode='mid',isPre=True,f=[2, 15],R=[-90,90,\
+    -180,180],maxD=80,f_new=[-1,-1],delta0=0.02,resampleN=-1,\
+    isClearData=False,num_workers=5):
+    staReader = StaReader(staInfos,getStaLQuick,date,f,taupM,R,delta0,f_new,resampleN)
+    parReader = DataLoader(staReader,batch_size=1,collate_fn=collate_function,num_workers=num_workers)
+    staL=[]
+    for tmp in parReader:
+        for t in tmp:
+            staL.append(t)
+    if not isPre:
+        return staL
+    for i in range(len(staInfos)):
+        if len(staTimeML)>0:
+            staTimeM=staTimeML[i]
+        else:
+            staTimeM=None
+        print(ctime(),'predict on sta: ',date,i)
+        staL[i].predict(modelL, staTimeM, mode,\
+            maxD=maxD,isClearData=isClearData)
+    return staL
+
 
 def showExample(filenameL,modelL,delta=0.02,t=[]):
     data=getTrace3ByFileName(filenameL,freq=[2,15])
@@ -617,18 +649,22 @@ def plotRes(staL, quake, filename=None):
         #    plt.plot(timeL, data[:, 2]/data[indexL,2].max()+pD,colorStr[color],linewidth=0.3)
         #else:
         if True:
-            color = prob2color(record['pProb'])
+            #color = prob2color(record['pProb'])
+            if isinstance(quake,QuakeCC):
+                color = prob2color(record['pCC'])
+                pValue = record['pCC']
+                sValue = record['sCC']
+            else:
+                color = prob2color(record['pProb'])
+                pValue = record['pProb']
+                sValue = record['sProb']
             plt.plot(timeL, data[:, 2]/data[indexL,2].max()+pD,color=color,linewidth=0.3)
-        plt.text(timeL[0],pD+0.5,'%s %.2f %.2f'%(staL[staIndex].station,record['pProb'],\
-            record['sProb']))
+        plt.text(timeL[0],pD+0.5,'%s %.2f %.2f'%(staL[staIndex].station,pValue,\
+            sValue))
         if pTime>0:
             plt.plot([pTime, pTime], [pD+2, pD-2], 'g',linewidth=0.5)
-            if isinstance(quake,QuakeCC):
-                plt.text(pTime+1,pD+0.5,'%.2f'%record['PCC'])
         if sTime >0:
             plt.plot([sTime, sTime], [pD+2, pD-2], 'r',linewidth=0.5)
-            if isinstance(quake,QuakeCC):
-                plt.text(sTime+1,pD+0.5,'%.2f'%record['SCC'])
     if isinstance(quake,QuakeCC):
         plt.title('%s %.3f %.3f %.3f %.3f cc:%.3f' % (obspy.UTCDateTime(quake['time']).\
             ctime(), quake['la'], quake['lo'],quake['dep'],quake['ml'],quake['cc']))

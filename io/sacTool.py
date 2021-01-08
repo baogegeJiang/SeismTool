@@ -16,7 +16,7 @@ from multiprocessing import Process, Manager,Pool
 from glob import glob
 import random
 from obspy.io import sac
-from .seism import mergeSacByName,adjust, getTrace3ByFileName as getDataByFileName
+from .seism import mergeSacByName,adjust,QuakeL, getTrace3ByFileName as getDataByFileName
 
 
 class subarea:
@@ -28,9 +28,12 @@ class subarea:
         self.midLa=midLa
         self.midLo=midLo
         self.R = self.getR()
+        self.quakeL=QuakeL()
     def getR(self):
         res=DistAz(self.minLa, self.minLo, self.maxLa, self.maxLo)
         return res.delta/2
+    def returnR(self):
+        return [self.minLa, self.maxLa, self.minLo, self.maxLo]
 
 class areaMat:
     def __init__(self, laL, loL, laN, loN):
@@ -42,7 +45,35 @@ class areaMat:
             subLaL['maxL'][i], subLoL['maxL'][j],\
             subLaL['midL'][i], subLoL['midL'][j]\
             ) for j in range(loN)] for i in range(laN)]
-
+    def insert(self,quakeL):
+        for quake in quakeL:
+            for subareaL in self.subareas:
+                for subarea in subareaL:
+                    if quake.inR(subarea.returnR()):
+                        subarea.quakeL.append(quake)
+                        print('in ',subarea)
+        for subareaL in self.subareas:
+            for subarea in subareaL:
+                subarea.quakeL.set('sort','num')
+                subarea.quakeL.sort()
+    def select(self,maxN=100,reqLess={},reqMore={}):
+        quakeL=QuakeL()
+        #qL.select(req={'minN':10,'minCover':0.8,'locator':locator(staInfos),'maxRes':1.5})
+        for subareaL in self.subareas:
+            for subarea in subareaL:
+                N = len(subarea.quakeL)
+                if N >maxN:
+                    subarea.quakeL=QuakeL(subarea.quakeL[-min(maxN*2,N):])
+                    subarea.quakeL.select(reqMore)
+                else:
+                    subarea.quakeL.select(reqLess)
+                count=0
+                for q in subarea.quakeL[-1::-1]:
+                    count+=1
+                    quakeL.append(q)
+                    if count>=maxN:
+                        break   
+        return quakeL
     def __iter__(self):
         return list(self.subareas).__iter__()
 

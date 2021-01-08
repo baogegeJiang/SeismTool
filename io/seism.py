@@ -32,7 +32,7 @@ class Dist:
     '''
     class which can be easily extended for different object with 
     accesses to inputing and outputing
-    it acts similar with dictionary class but have list structure inside to save memory
+    it acts similar with dictionary class but have list structure inside to reduce usage of memory
     '''
     def __init__(self,*argv,**kwargs):
         self.defaultSet()
@@ -182,6 +182,10 @@ class Dist:
             return self['time']<=self1['time']
         else:
             return self['pTime']<=self1['pTime']
+    def inR(self,lalo):
+        if self['la']<lalo[0] or self['la']>lalo[1] or self['lo']<lalo[2] or self['lo']>lalo[3]:
+            return False
+        return True
 
 defaultStats = {'network':'00','station':'00000','channel':'000'}
 class Station(Dist):
@@ -250,10 +254,6 @@ class Station(Dist):
                 fileStr += infoStr+'.'
             fileL.append(resDir+'/'+fileStr[:-1])
         return fileL
-        if infoStr=='':
-            return [ resDir+'/'+self['net']+'.'+self['sta']+'.'+self['compBase']+comp for comp in strL]
-        else:
-            return [ resDir+'/'+self['net']+'.'+self['sta']+'.'+infoStr+'.'+self['compBase']+comp for comp in strL]
     def set(self,key,value):
         for tmp in self:
             tmp[key] = value
@@ -456,9 +456,9 @@ class Quake(Dist):
         #               quake: 34.718277 105.928949 1388535219.080064 num: 7 index: 0    randID: 1    filename: 16071/1388535216_1.mat -0.300000
         super().defaultSet()
         self.keysIn   = 'type     la       lo          time          para0  num  para1 index   para2    randID para3   filename ml   dep'.split()
-        self.keys     = 'type     la       lo          time          para0  num  para1 index   para2    randID para3   filename ml   dep stationList strTime no YMD HMS'.split()
-        self.keysType = 'S        f        f           f             S      F       S  f        S       f      S        S        f    f   l  S S S S'.split()
-        self.keys0    = ['quake',  None,     None,      None,       'num', None,'index',None, 'randID', None,'filename',  None,   None,0 ,'','']
+        self.keys     = 'type     la       lo          time          para0  num  para1 index   para2    randID para3   filename ml   dep stationList strTime no YMD HMS sort'.split()
+        self.keysType = 'S        f        f           f             S      F       S  f        S       f      S        S        f    f   l  S S S S S'.split()
+        self.keys0    = ['quake',  None,     None,      None,       'num', None,'index',None, 'randID', None,'filename',  None,   None,0 ,'','','time']
         self.keysName = ['time','la','lo']
     def Append(self,tmp):
         if isinstance(tmp,Record):
@@ -509,9 +509,9 @@ class Quake(Dist):
         self['num'] = self.num()
         return super().__str__(*argv )
     def __lt__(self,self1):
-        return self['time']<self1['time']
+        return self[self['sort']]<self1[self1['sort']]
     def __eq__(self,self1):
-        return self['time']==self1['time']
+        return self[self['sort']]==self1[self1['sort']]
     def staIndexs(self):
         return [record['staIndex'] for record in self.records]
     def getReloc(self,line):
@@ -569,11 +569,11 @@ class Quake(Dist):
             self['strTime'] = UTCDateTime(self['time']).strftime('%Y:%m:%d %H:%M:%S.%f')
         if key =='HMS' and self['YMD']!='' and self['HMS']!='':
             self['time'] = UTCDateTime(self['YMD'] + ' ' + self['HMS'])
-    #def __getitem__(self,key):
-    #    if isinstance(key,str):
-    #        super().__getitem__(key)
-    #    else:
-    #        return self.record[key]
+    def __getitem__(self,key):
+        if key=='num':
+            return len(self.records)
+        return super().__getitem__(key)
+        
     def saveSacs(self,staL, staInfos, matDir='output/'\
     ,bSec=-10,eSec=40,dtype=np.float32):
         eventDir = matDir+'/'+self['filename'].split('.mat')[0]+'/'
@@ -614,6 +614,7 @@ class Quake(Dist):
     def loadPSSacs(self,staInfos,matDir='output',\
         isCut=False,index0=-250,index1=250,\
         f=[-1,-1],filtOrder=2):
+        print(self)
         T3L = self.loadSacs(staInfos,f=f,filtOrder=filtOrder,matDir=matDir)
         T3PL=[]
         T3SL=[]
@@ -621,6 +622,26 @@ class Quake(Dist):
             T3PL.append(T3.slice(T3.pTime+index0*T3.delta,\
                 T3.pTime+index1*T3.delta))
             T3SL.append(T3.slice(T3.sTime+index0*T3.delta,\
+                T3.sTime+index1*T3.delta))
+        return T3PL,T3SL
+    def loadPSSacsQuick(self,staInfos,matDir='output',\
+        isCut=False,index0=-250,index1=250,\
+        f=[-1,-1],filtOrder=2):
+        print(self)
+        #  not faster
+        T3L = self.loadSacs(staInfos,filtOrder=filtOrder,matDir=matDir)
+        T3PL=[]
+        T3SL=[]
+        for T3 in T3L:
+            T3P=T3.slice(T3.pTime+index0*T3.delta-3,\
+                T3.pTime+index1*T3.delta+3)
+            T3P.filt(f,filtOrder)
+            T3PL.append(T3P.slice(T3.pTime+index0*T3.delta,\
+                T3.pTime+index1*T3.delta))
+            T3S=T3.slice(T3.sTime+index0*T3.delta-3,\
+                T3.sTime+index1*T3.delta+3)
+            T3S.filt(f,filtOrder)
+            T3SL.append(T3S.slice(T3.sTime+index0*T3.delta,\
                 T3.sTime+index1*T3.delta))
         return T3PL,T3SL
     def cutSac(self, stations,bTime=-100,eTime=3000,resDir = 'eventSac/',para={},byRecord=True,isSkip=False):
@@ -727,7 +748,7 @@ class Quake(Dist):
         'filterName':'bandpass',\
         'corners'   :2,\
         'zerophase' :True,\
-        'maxA'      :1e5,\
+        'maxA'      :1e18,\
         'output': 'VEL',\
         'toDisp': False
         }
@@ -914,9 +935,9 @@ class QuakeCC(Quake):
         super().defaultSet()
         self.keysIn   = 'type   la       lo          time          para0 num para1 index para2 randID para3 filename cc M S ml   dep tmpName'.split()
         self.keys     = 'type   la       lo          time          para0 num \
-        para1 index para2 randID para3 filename tmpName ml   dep stationList strTime no YMD HMS cc M S '.split()
-        self.keysType = 'S      f        f           f             S     F   S     f     S     f      S     S        f    f   l  S S S S f f f S'.split()
-        self.keys0    = [None,  None,     None,      None,         None, None,None,None, None, None,  None,  None,   None,0 ,'','',10,1,0.1,'UN']
+        para1 index para2 randID para3 filename tmpName ml   dep stationList strTime no YMD HMS cc M S sort'.split()
+        self.keysType = 'S      f        f           f             S     F   S     f     S     f      S     S        f    f   l  S S S S f f f S S'.split()
+        self.keys0    = [None,  None,     None,      None,         None, None,None,None, None, None,  None,  None,   None,0 ,'','',10,1,0.1,'UN','time']
         self.keysName = ['time','la','lo']
     def getMul(self):
         return (self['cc']-self['M'])/self['S']
@@ -961,6 +982,9 @@ class QuakeL(list):
         for quake in self1:
             self.append(quake)
         return self
+    def set(self,key,value):
+        for tmp in self:
+            tmp[key] = value
     def __getitem__(self,index):
         quakesNew = super().__getitem__(index)
         if isinstance(index,slice):
@@ -977,6 +1001,11 @@ class QuakeL(list):
             if dTime<10 and dLa<0.5 and dLo<0.5:
                 return i
         return -1
+    def Find(self,value,key='filename'):
+        for q in self:
+            if q[key]==value:
+                return q
+        return None
     def read(self,file,**kwargs):
         if 'keys' in kwargs:
             self.keys = kwargs['keys']
@@ -1178,13 +1207,13 @@ def mergeSacByName(sacFileNames, **kwargs):
     'filterName':'bandpass',\
     'corners'   :2,\
     'zerophase' :True,\
-    'maxA'      :1e5,\
+    'maxA'      :1e18,\
     }
     count       =0
     sacM        = None
     tmpSacL     =None
     para.update(kwargs)
-    print(ctime(),'reading')
+    #print(ctime(),'reading')
     for sacFileName in sacFileNames:
         try:
             #print(ctime(),'read sac')
@@ -1204,7 +1233,7 @@ def mergeSacByName(sacFileNames, **kwargs):
                 tmpSacL=tmpSacs
             else:
                 tmpSacL+=tmpSacs
-    print(ctime(),'read done')
+    #print(ctime(),'read done')
     if tmpSacL!=None and len(tmpSacL)>0:
         ID=tmpSacL[0].id
         for tmp in tmpSacL:
@@ -1518,7 +1547,7 @@ def checkSacFile(sacFileNamesL):
     return True
 T0=Trace3([])
 def getTrace3ByFileName(sacFileNamesL, delta0=0.02, freq=[-1, -1], \
-    filterName='bandpass', corners=2, zerophase=True,maxA=1e5,\
+    filterName='bandpass', corners=2, zerophase=True,maxA=1e18,\
     bTime=UTCDateTime(1900,1,1),eTime=UTCDateTime(2099,1,1),isPrint=False,mode='norm',
     pTime=-1,sTime=-1,isData=True):
     if not checkSacFile(sacFileNamesL):

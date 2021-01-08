@@ -216,14 +216,15 @@ def calDT(quake0,quake1,T3PSL0,T3PSL1,staInfos,bSec0=-2,eSec0=3,\
     indexL0 = quake0.staIndexs()
     indexL1 = quake1.staIndexs()
     sameIndex=[]
+    if quake0.dist(quake1)/110>maxD:
+        return None
     for I in indexL0:
         if I in indexL1:
             sameIndex.append(I)
     if len(sameIndex)<minSameSta:
         return None
-    if quake0.dist(quake1)/110>maxD:
-        return None
     dT=[];
+    #print(sameIndex)
     for staIndex in sameIndex:
         index0 = indexL0.index(staIndex)
         index1 = indexL1.index(staIndex)
@@ -275,7 +276,7 @@ def calDTM(quakeL,T3PSLL,staInfos,maxD=0.3,minC=0.6,minSameSta=3,\
         print('cut waveform: ',i)
         quake = quakeL[i]
         T3PSL = T3PSLL[i]
-        for index in range(len(quake.records)):
+        for index in []:# range(len(quake.records)):
             record = quake.records[index]
             T3P,T3S=  [T3PSL[0][index],T3PSL[1][index]]
             #record0 = quake0.records[index0]
@@ -292,6 +293,44 @@ def calDTM(quakeL,T3PSLL,staInfos,maxD=0.3,minC=0.6,minSameSta=3,\
             dTM[i][j]=calDT(quakeL[i],quakeL[j],T3PSLL[i],T3PSLL[j],\
                 staInfos,maxD=maxD,minC=minC,minSameSta=minSameSta,\
                 bSec0=bSec0,eSec0=eSec0,bSec1=bSec1,eSec1=eSec1)
+    return dTM
+
+from ..io.parRead import TomoCal,DataLoader,collate_function
+
+def calDTMQuick(quakeL,T3PSLL,staInfos,maxD=0.3,minC=0.6,minSameSta=3,\
+    isFloat=False,bSec0=-2,eSec0=3,bSec1=-3,eSec1=4,num_workers=5,doCut=True):
+    '''
+    dTM is 2-D list contianing the dT infos between each two quakes
+    dTM[i][j] : dT in between quakeL[i] and quakeL[j]
+    quakeL's waveform is contained by waveformL
+    '''
+    #dTM=[[None for quake in quakeL]for quake in quakeL]
+    #indexL0 = quake0.staIndexs()
+    if doCut:
+        for i in range(len(quakeL)):
+            print('cut waveform: ',i)
+            quake = quakeL[i]
+            T3PSL = T3PSLL[i]
+            for index in range(len(quake.records)):
+                record = quake.records[index]
+                T3P,T3S=  [T3PSL[0][index],T3PSL[1][index]]
+                #record0 = quake0.records[index0]
+                #T3P0,T3S0=  [T3PSL0[0][index0],T3PSL0[1][index0]]
+                T3P.Data0=T3P.Data(record['pTime']+bSec0,record['pTime']+eSec0)
+                T3P.Data1=T3P.Data(record['pTime']+bSec1,record['pTime']+eSec1)
+                T3S.Data0=T3S.Data(record['sTime']+bSec0,record['sTime']+eSec0)
+                T3S.Data1=T3S.Data(record['sTime']+bSec1,record['sTime']+eSec1)
+    '''
+        staReader = StaReader(staInfos,getStaLQuick,date,f,taupM,R,delta0,f_new,resampleN)
+        parReader = DataLoader(staReader,batch_size=1,collate_fn=collate_function,num_workers=num_workers)
+    '''
+    tomoCal = TomoCal(quakeL,T3PSLL,calDT,staInfos,maxD=maxD,\
+        minC=minC,minSameSta=minSameSta,bSec0=bSec0,eSec0=eSec0,bSec1=bSec1,eSec1=eSec1)
+    parCal = DataLoader(tomoCal,batch_size=10,collate_fn=collate_function,num_workers=num_workers)
+    dTM=[]
+    for tmp in parCal:
+        for t in tmp:
+            dTM.append(t)
     return dTM
 
 def plotDT(T3PSLL,dTM,i,j,quake0,quake1,staInfos,bSec0=-2,eSec0=3,\

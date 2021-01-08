@@ -1,4 +1,3 @@
-import sqlite3
 import os
 import numpy as np
 from obspy import UTCDateTime,read,read_inventory
@@ -6,7 +5,7 @@ from glob import glob
 himaNet = ['hima']
 NECE    = ['YP','AH','BJ','BU','CQ','FJ','GD','HA','HB','HE',\
 'HI','HL','JL','JS','JX','LN','NM','NX','QH','SC','SD','SH','SN',\
-'SX','TJ','XJ','XZ','YN','ZJ',]
+'SX','TJ','XJ','XZ','YN','ZJ']
 def convertFileLst(fileName):
     with open(fileName, 'r') as f:
         lines = f.readlines()
@@ -64,7 +63,7 @@ class filePath:
         if nameMode == '':
             nameMode = net
         if nameMode in self.getFileFunc:
-            return self.getFileFunc['nameMode'](net,sta,comp,time,staDir,nameMode)
+            return self.getFileFunc[nameMode](net,sta,comp,time,staDir)
         if nameMode =='hima':
             pattern = '%s/%s.*.%s.m'%(staDir,time.strftime('R%j.01/%H/%y.%j')\
                 ,filePath.himaComp[comp[-1]])
@@ -104,17 +103,13 @@ class filePath:
             #2000015_220000_090be_1_2.msd
             pattern='%s/%s/%s.%s.00.DN%s.%s.SAC'\
             %(staDir,sta,net,sta,comp[-1],time.strftime('%Y%m%d'))
-            #print(pattern)
-
-        #print('##',pattern)
         return glob(pattern)
     def getStaDirL(self,net,sta,nameMode=''):
         staDirL = []
-
         if nameMode == '':
             nameMode = net
         if nameMode in self.getStaDirLFunc:
-            return self.getStaDirLFunc['nameMode'](net,sta,nameMode)
+            return self.getStaDirLFunc[nameMode](net,sta)
         if nameMode in ['GS','NM']:
             staDirL = ['/media/jiangyr/shanxidata21/nmSacData/'+net+\
             '.'+sta+'/']
@@ -157,7 +152,6 @@ class filePath:
             for staDir in staDirL:
                 print(staDir+'*.log')
                 logFileL += glob(staDir+'*.log')
-            #print(logFileL)
             logFile = logFileL[0]
             sensorName = 'UNKNOWN'
             dasName    = 'UNKNOWN'
@@ -182,8 +176,6 @@ class filePath:
                                     else:
                                         tmp = 'UNKNOWN'
                                 sensorName = tmp
-                                #if len(sensorName)<3:
-                                #    sensorName= line
                                 print(line)
                                 continue
                         if sensorNum == 'UNKNOWN':

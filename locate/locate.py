@@ -211,9 +211,9 @@ class locator:
         timeL=[]
         staIndexL=[]
         wL=[]
-        indexLRef=quakeRef.staIndex()
-        for record in quake:
-            index = record['index']
+        indexLRef=quakeRef.staIndexs()
+        for record in quake.records:
+            index = record['staIndex']
             if index in indexLRef:
                 indexRef = indexLRef.index(index)
             else:
@@ -277,8 +277,8 @@ class locator:
         return quake,dTime.std()
     def __timeGRef__(self,quake,phaseL,staIndexL,quakeRef,minCC=0.5):
         gM=np.zeros((len(phaseL),5))
-        indexLRef=quakeRef.staIndex()
-        indexL=quake.staIndex()
+        indexLRef=quakeRef.staIndexs()
+        indexL=quake.staIndexs()
         loc=quake.loc()
         for i in range(len(phaseL)):
             index=indexL.index(staIndexL[i])
