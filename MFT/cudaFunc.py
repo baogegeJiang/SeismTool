@@ -129,6 +129,7 @@ def torchMax(a,tmin,winL,aM):
     la=aR.shape[0]
     aMax=torch.nn.functional.max_pool1d(aR.reshape(1,1,-1),winL,1)[0,0,:]
     aR[:la-winL+1]=torch.where(aMax>tmin,aMax,aR[:la-winL+1])
+    la=min(aR.shape[0],aM.shape[0])
     if isinstance(aM,torch.Tensor):
         if aM.device==aR.device:
             aM[:la]+=aR[:la]

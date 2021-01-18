@@ -12,7 +12,7 @@ import torch
 in this part we do WMFT in GPU
 to run fast and reduce the GPU memory, we would like to 
 '''
-defaultSecL=[-2,4]#[-1,3]
+defaultSecL=[-3,4]#[-1,3]
 tentype=cudaFunc.tentype
 nptype=cudaFunc.nptype
 dtype=cudaFunc.dtype
@@ -38,7 +38,8 @@ def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
     ,dtype=nptype),delta=0.02,minMul=3,MINMUL=8, winTime=0.4,\
     minDelta=20*50, locator=None,tmpName=None,quakeRef=None,\
     maxCC=1,R=[-90,90,-180,180],staInfos=None,maxDis=200,\
-    deviceL=['cuda:0'],minChannel=8,mincc=0.4,secL=defaultSecL):
+    deviceL=['cuda:0'],minChannel=8,mincc=0.4,secL=defaultSecL,\
+        maxThreshold=0.45):
     time_start = Time.time()
     winLP=int(winTime/delta)
     winLS=int(1.7*winTime/delta)
@@ -82,9 +83,10 @@ def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
             dIndex=int(dTime/delta)
             if dIndex<0:
                 continue
-            if len(T3PSL[0][rIndex].data)==0:
+            if T3PSL[0][rIndex].data.size==0:
                 continue
-            c,m,s=corrTorch(staL[staIndex].data.data[2,:],T3PSL[0][rIndex].data[2])
+            chanelIndex=T3PSL[0][rIndex].data.max(axis=1).argmax()
+            c,m,s=corrTorch(staL[staIndex].data.data[chanelIndex],T3PSL[0][rIndex].data[chanelIndex])
             #print(m,s)
             if torch.isnan(c).sum()>0:
                 print(staIndex,rIndex)
@@ -99,7 +101,7 @@ def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
             sL.append(s)
             wM[index]=torch.zeros(n+50*100,device=c.device)
             wM[index][0:c.shape[0]-dIndex]=c[dIndex:]
-            threshold=m+minMul*s
+            threshold=min(maxThreshold,m+minMul*s)
             if threshold>mincc:
                 threshold=mincc
             cudaFunc.torchMax(c[dIndex:],threshold,winLP, aM)
@@ -114,12 +116,13 @@ def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
             dIndex=int(dTime/delta)
             if dIndex<0:
                 continue
-            chanelIndex=0
-            if len(T3PSL[1][rIndex].data)==0:
+            if T3PSL[1][rIndex].data.size==0:
                 continue
-            if T3PSL[1][rIndex][1].max()>T3PSL[1][rIndex][0].max():
-                chanelIndex=1
-            c,m,s=corrTorch(staL[staIndex].data.data[chanelIndex,:],\
+            chanelIndex=T3PSL[1][rIndex].data.max(axis=1).argmax()
+            #if T3PSL[1][rIndex][1].max()>T3PSL[1][rIndex][0].max():
+            #    chanelIndex=1
+            
+            c,m,s=corrTorch(staL[staIndex].data.data[chanelIndex],\
                 T3PSL[1][rIndex].data[chanelIndex])
             if s==1:
                 continue
@@ -134,7 +137,8 @@ def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
             sL.append(s)
             wM[index]=torch.zeros(n+50*100,device=c.device,dtype=dtype)
             wM[index][0:c.shape[0]-dIndex]=c[dIndex:]
-            threshold=m+minMul*s
+            #threshold=m+minMul*s
+            threshold=min(maxThreshold,m+minMul*s)
             if threshold>mincc:
                 threshold=mincc
             cudaFunc.torchMax(c[dIndex:],threshold,winLP,aM)
@@ -223,7 +227,8 @@ def doMFTAll(staL,T3PSLL,bTime,n=86400*50,delta=0.02\
         locator=None, isParallel=False,\
         NP=2,quakeRefL=None,maxCC=1,R=[-90,90,-180,180],\
         maxDis=200,isUnique=True,isTorch=True,deviceL=['cuda:0'],\
-        minChannel=8,mincc=0.4,secL=defaultSecL,staInfos=None):
+        minChannel=8,mincc=0.4,secL=defaultSecL,staInfos=None,\
+        maxThreshold=0.45):
     if not isParallel:
         quakeL=QuakeL()
         wM=[None for i in range(maxStaN*2)]
@@ -239,7 +244,7 @@ def doMFTAll(staL,T3PSLL,bTime,n=86400*50,delta=0.02\
                 winTime=winTime, minDelta=minDelta,locator=locator,\
                 tmpName=tmpName, quakeRef=quakeRef,\
                 maxCC=maxCC,R=R,maxDis=maxDis,deviceL=deviceL,\
-                minChannel=minChannel,mincc=mincc,staInfos=staInfos)
+                minChannel=minChannel,mincc=mincc,staInfos=staInfos,maxThreshold=maxThreshold)
             if i%20==0 and isUnique:
                 quakeL=uniqueQuake(quakeL)
         if isUnique:
@@ -264,7 +269,7 @@ def preT3PSLL(T3PSLL,quakeRefL,secL=defaultSecL):
                 if False:#len(T3.data)>0:
                     T3.data=torch.tensor(T3.data,\
                             device=deviceL[record['staIndex']%len(deviceL)],dtype=dtype)
-def preStaL(staL,bTime,deviceL=['cuda:0'],delta=0.02,isTorch=True):
+def preStaL(staL,bTime,deviceL=['cuda:0'],delta=0.02,isTorch=True):  
     torch.cuda.empty_cache()
     count=0
     for sta in staL:
@@ -281,6 +286,10 @@ def preStaL(staL,bTime,deviceL=['cuda:0'],delta=0.02,isTorch=True):
         if sta.data.data.shape[-1]>23*3600/delta:
             bTime=max(bTime, sta.data.bTime.timestamp+1)
     return bTime
+def delStaL(staL):
+    for sta in staL:
+        del(sta.data.data)
+    torch.cuda.empty_cache()
 def __doMFTAll(staLP,waveformLP,bTime,quakeLP,n=86400*50,delta=0.02\
         ,minMul=4,MINMUL=8, winTime=0.4,minDelta=20*50, \
         locator=None,tmpNameL=None,NP=2,IP=0):

@@ -12,6 +12,8 @@ from numba import jit
 from ..mathTool.distaz import DistAz
 from .dataLib import filePath
 from ..mathTool.mathFunc import rotate,getDetec
+from ..mathTool.mathFunc_bak import R as mathR
+from . import parRead
 comp3='RTZ'
 comp33=[]
 cI33=[]
@@ -183,6 +185,8 @@ class Dist:
         else:
             return self['pTime']<=self1['pTime']
     def inR(self,lalo):
+        if isinstance(lalo,mathR):
+            return lalo.isIn(self.loc()[:2])
         if self['la']<lalo[0] or self['la']>lalo[1] or self['lo']<lalo[2] or self['lo']>lalo[3]:
             return False
         return True
@@ -528,6 +532,9 @@ class Quake(Dist):
     def resDir(self,resDir):
         return '%s/%s/'%(resDir,self.name(s='_'))
     def select(self,req):
+        if 'R' in req:
+            if not self.inR(req['R']):
+                return False
         if 'time0' in req:
             if self['time']<req['time0']:
                 return False
@@ -544,6 +551,9 @@ class Quake(Dist):
                     return False
         if 'maxDep' in req:
             if self['dep']>req['maxDep']:
+                return False
+        if 'minDep' in req:
+            if self['dep']<req['minDep']:
                 return False
         if 'minCover' in req and 'staInfos' in req:
             if self.calCover(req['staInfos'])<req['minCover']:
@@ -936,7 +946,8 @@ class QuakeCC(Quake):
         self.keysIn   = 'type   la       lo          time          para0 num para1 index para2 randID para3 filename cc M S ml   dep tmpName'.split()
         self.keys     = 'type   la       lo          time          para0 num \
         para1 index para2 randID para3 filename tmpName ml   dep stationList strTime no YMD HMS cc M S sort'.split()
-        self.keysType = 'S      f        f           f             S     F   S     f     S     f      S     S        f    f   l  S S S S f f f S S'.split()
+        self.keysType = 'S      f        f           f             S     F     \
+        S     f     S      f      S     S        S      f    f        l              S     S   S  S  f   f f S'.split()
         self.keys0    = [None,  None,     None,      None,         None, None,None,None, None, None,  None,  None,   None,0 ,'','',10,1,0.1,'UN','time']
         self.keysName = ['time','la','lo']
     def getMul(self):
@@ -1532,6 +1543,15 @@ class Trace3(obspy.Stream):
         if isNorm:
             data/=data.std()
         return np.fft.fft(data[:,comp]),np.arange(len(data[:,comp]))/(self.Delta()*len(data[:,comp]))
+    def __del__(self):
+        try:
+            del(self.data)
+            del(self.Data0)
+            del(self.Data1)
+        except:
+            pass
+        else:
+            pass
 
 
 def checkSacFile(sacFileNamesL):
@@ -1705,7 +1725,13 @@ def plotStationPairL(StationPairL,resDir='./',parentDir='',mul=3):
     plt.savefig(resDir+StationPair.pair[0].name('_')+'.jpg',dpi=300)
     plt.close()
 
-            
 
 
-        
+def getT3LLQuick(qL,staInfos,matDir,f=[-1,-1],batch_size=100,num_workers=6):
+    T3PSLL=[]
+    reader = parRead.Reader(qL,staInfos,matDir=matDir,f=f)
+    parReader = parRead.DataLoader(reader,collate_fn=parRead.collate_function,batch_size=batch_size,num_workers=num_workers)
+    for tmp in parReader:
+        for t in tmp:
+            T3PSLL.append(t)
+    return T3PSLL

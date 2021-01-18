@@ -255,7 +255,7 @@ class DS:
 			os.mkdir(resDir)
 		for i in range(nxyz[-1]):
 			index = np.abs(z[i]-z0).argmin()
-			v = interpolate.interp2d(lo0,la0,vsv0[index])(lo,la) 
+			v = interpolate.interp2d(lo0,la0,vsv0[index],kind='cubic')(lo,la) 
 			plt.close()
 			plt.pcolor(lo,la,-v,cmap=cmap)
 			plt.colorbar()
@@ -398,7 +398,7 @@ class Model:
 		V= self.v
 		V[np.isnan(V)]=-1e9
 		for i in range(nxyzTmp[-1]):
-			vTmp[:,:,i] = interpolate.interp2d(self.lo, self.la, V[:,:,i],bounds_error=False,fill_value=1e-8)(lo,la)
+			vTmp[:,:,i] = interpolate.interp2d(self.lo, self.la, V[:,:,i],bounds_error=False,fill_value=1e-8,kind='cubic')(lo,la)
 		if la[-1]<la[0]:
 			vTmp = vTmp[::-1]
 		if lo[-1]<lo[0]:
@@ -414,7 +414,7 @@ class Model:
 		V[np.isnan(V)]=-1e9
 		points = np.concatenate((Lo.reshape([-1,1]),La.reshape([-1,1]),\
 			Z.reshape([-1,1])),axis=1)
-		v=interpolate.griddata(points,V,(lo,la,z),method='linear')
+		v=interpolate.griddata(points,V,(lo,la,z),method='cubic')
 		v[v<0]=np.nan
 		return v
 	def Output(self,la,lo,z,isPer=False,vR=''):
@@ -444,7 +444,7 @@ class Model:
 		dLo = (self.lo[-1]-self.lo[0])/N
 		la  = np.arange(self.la[0],self.la[-1]+1e-5*dLa,dLa)[-1::-1]
 		lo  = np.arange(self.lo[0],self.lo[-1]+1e-5*dLa,dLo)
-		per = interpolate.interp2d(self.lo, self.la, per)(lo,la)
+		per = interpolate.interp2d(self.lo, self.la, per,kind='cubic')(lo,la)
 		return la, lo, per
 	def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02):
 		resDir = runPath+'/'+'plot/'
@@ -720,7 +720,7 @@ def denseLaLo(La,Lo,Per,N=500):
 	dLo = (Lo[-1]-Lo[0])/N
 	la  = np.arange(La[0],La[-1],dLa)[-1::-1]
 	lo  = np.arange(Lo[0],Lo[-1],dLo)
-	per = interpolate.interp2d(Lo, La, Per)(lo,la)
+	per = interpolate.interp2d(Lo, La, Per,kind='cubic')(lo,la)
 	per[per<-50]=np.nan
 	return la, lo, per 
 

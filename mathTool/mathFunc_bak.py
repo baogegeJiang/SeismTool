@@ -2,6 +2,8 @@ import numpy as np
 from numba import jit,float32, int64
 import scipy.signal  as signal
 from scipy.optimize import curve_fit
+from .distaz import DistAz
+from scipy import interpolate,stats
 nptype=np.float32
 rad2deg=1/np.pi*180
 
@@ -157,8 +159,8 @@ class  R:
             y2=pL[2,1]
             x3=x2+x0-x1
             y3=y2+y0-y1
-            xL=np.array([x0,x1,x2,x3]).reshape(-1,1)
-            yL=np.array([y0,y1,y2,y3]).reshape(-1,1)
+            xL=np.array([x0,x1,x2,x3,x0]).reshape(-1,1)
+            yL=np.array([y0,y1,y2,y3,y0]).reshape(-1,1)
         self.xyL=np.concatenate([xL,yL],axis=1)
     def isIn(self,p):
         x0=p[0]
@@ -174,6 +176,12 @@ class  R:
             return True
         else:
             return False
+    def perKm(self):
+        p0 = self.xyL[0]
+        p1 = self.xyL[1]
+        dLa,dLo= np.abs(p0-p1)
+        dist =  DistAz(p0[0],p0[1],p1[0],p1[1]).getDelta()* 111.19
+        return dLa/dist,dLo/dist
 
 def prob2color(prob,color0=np.array([1,1,1])*0.8):
     # blue for no prob; gray for differetn p(>0.5);red for p(<0.5)
@@ -216,3 +224,205 @@ def findPos(y, moreN = 10):
                     if np.abs(pos-pos0)<0.5:
                         yPos[i,0,j]=pos
     return yPos, yMax
+
+class  Line(R):
+    """docstring for  R"""
+    def __init__(self,pL,H,name=''):
+        if not isinstance(pL,np.ndarray):
+            pL=np.array(pL)
+        self.H=H
+        self.xyL = pL
+        self.mid=pL.mean(axis=0)
+        self.dLa =  DistAz(self.mid[0]-0.5,self.mid[1],self.mid[0]+0.5,self.mid[1]).getDelta()* 111.19
+        self.dLo =  DistAz(self.mid[0],self.mid[1]-0.5,self.mid[0],self.mid[1]+0.5).getDelta()* 111.19
+        self.dLaLo=np.array([self.dLa,self.dLo])
+        self.XYL=self(self.xyL)
+        self.n= self.XYL[1]/(self.XYL[1]**2).sum()**0.5
+        self.v= np.array([-self.n[1],self.n[0]])
+        self.L= self.l(self.xyL[1])
+        self.name =name
+    def __call__(self,p):
+        if not isinstance(p,np.ndarray):
+            p=np.array(p)
+        if len(p.shape)==1:
+            return self.dLaLo*(p-self.xyL[0])
+        else :
+            return self.dLaLo.reshape([1,-1])*(p-self.xyL[0].reshape([1,-1]))
+    def l(self,p):
+        xyL = self(p)
+        if len(xyL.shape)==1:
+            return (xyL*self.n).sum()
+        else :
+            return (self.n.reshape([1,-1])*xyL).sum(axis=1)
+        return
+    def l(self,p):
+        xyL = self(p)
+        if len(xyL.shape)==1:
+            return (xyL*self.n).sum()
+        else :
+            return (self.n.reshape([1,-1])*xyL).sum(axis=1)
+        return
+    def h(self,p):
+        xyL = self(p)
+        if len(xyL.shape)==1:
+            return (xyL*self.v).sum()
+        else :
+            return (self.v.reshape([1,-1])*xyL).sum(axis=1)
+        return 
+    def isIn(self,p):
+        if np.abs(self.h(p))>self.H:
+            return False
+        if self.l(p)<0 or self.l(p)>self.L:
+            return False
+        return True
+    def perKm(self):
+        return 1
+
+class Model:
+    def __init__(self,config,mode,la,lo,z,v):
+        self.mode = mode
+        self.config=config
+        self.nxyz = [len(la),len(lo),len(z)]
+        self.z  =  z#.reshape([-1,1,1])
+        self.la = la#.reshape([1,-1,1])
+        self.lo = lo#.reshape([1,1,-1])
+        self.v  = v
+    def __call__(self,la,lo,z):
+        i0 = np.abs(self.la - la).argmin()
+        i1 = np.abs(self.lo - lo).argmin()
+        i2 = np.abs(self.z  - z).argmin()
+        v = self.v[i0,i1,i2]
+        return v 
+    def output(self,la,lo,z,interp=True):
+        nxyz    = [len(la),len(lo),len(z)]
+        nxyzTmp = [len(la),len(lo),len(self.z)]
+        if interp == False:
+            return self.v
+        v       = np.zeros(nxyz)
+        vTmp    = np.zeros(nxyzTmp)
+        #print(z)
+        V= self.v
+        V[np.isnan(V)]=-1e9
+        for i in range(nxyzTmp[-1]):
+            vTmp[:,:,i] = interpolate.interp2d(self.lo, self.la, V[:,:,i],bounds_error=False,fill_value=1e-8,kind='cubic')(lo,la)
+        if la[-1]<la[0]:
+            vTmp = vTmp[::-1]
+        if lo[-1]<lo[0]:
+            vTmp = vTmp[:,::-1]
+        for i in range(nxyz[0]):
+            for j in range(nxyz[1]): 
+                v[i,j,:] = interpolate.interp1d(self.z,vTmp[i,j])(z)
+        v[v<0]=np.nan
+        return v
+    def OutputGriddata(self,la,lo,z,isPer=False,vR='',P2='',maxH=300):
+        V = self.v.copy()
+        if vR !='':
+            out  = outR(vR,self.la,self.lo)
+        if isPer:
+            for i in range(V.shape[-1]):
+                v= V[:,:,i]
+                if vR!='':
+                    v[out]=np.nan
+                V[:,:,i]/=v[np.isnan(v)==False].mean()
+            V-=1
+        V = V.reshape([-1])
+        Lo,La,Z = np.meshgrid(self.lo,self.la,self.z)
+        vaild = (np.isnan(V)==False)
+        V = V.reshape([-1])[vaild]
+        Lo,La,Z=[Lo.reshape([-1])[vaild],La.reshape([-1])[vaild],Z.reshape([-1])[vaild]]
+        if P2!='':
+            laLo=np.array([La.tolist(),Lo.tolist()]).transpose()
+            h = P2.h(laLo)
+            #print(h)
+            vaild = (np.abs(h)<maxH)
+            #V = V[vaild]
+            V = V[vaild]
+            Lo,La,Z=[Lo[vaild],La[vaild],Z[vaild]]
+            laLo=np.array([La.tolist(),Lo.tolist()]).transpose()
+            l = P2.l(laLo)
+            vaild = (l>-300)*(l<P2.L+300)
+            V = V[vaild]
+            Lo,La,Z=[Lo[vaild],La[vaild],Z[vaild]]
+        points = np.concatenate((Lo.reshape([-1,1]),La.reshape([-1,1]),Z.reshape([-1,1])),axis=1)
+        v=interpolate.griddata(points,V,(lo,la,z),method='linear')
+        #v[v<0]=np.nan
+        return v
+    def Output(self,la,lo,z,isPer=False,vR=''):
+        #Lo,La,Z = np.meshgrid(self.lo,self.la,self.z)
+        V = self.v.copy()
+        if vR !='':
+            out  = outR(vR,self.la,self.lo)
+        if isPer:
+            for i in range(V.shape[-1]):
+                v= V[:,:,i]
+                if vR!='':
+                    v[out]=np.nan
+                V[:,:,i]/=v[np.isnan(v)==False].mean()
+            V-=1
+        V[np.isnan(V)]=-1e20
+        shape = list(la.shape)
+        shape.append(1)
+        points = np.concatenate((la.reshape(shape),lo.reshape(shape),z.reshape(shape)),axis=-1)
+        laIndex = self.la.argsort()
+        v=interpolate.interpn((self.la[laIndex],self.lo,self.z),V[laIndex],points,method='linear')
+        v[v<-10]=np.nan
+        return v
+    def Output2D(self,la,lo,V,isPer=False,vR=''):
+        Lo,La = np.meshgrid(self.lo,self.la)
+        V = V.reshape([-1])
+        #V[np.isnan(V)]=-1e9
+        vaild = (np.isnan(V)==False)
+        points = np.concatenate((Lo.reshape([-1,1])[vaild],La.reshape([-1,1])[vaild]\
+            ),axis=1)
+        if vaild.sum()==0:
+            return None
+        v=interpolate.griddata(points,V[vaild],(lo,la),method='linear')
+        #v[v<0]=np.nan
+        return v
+    def denseLaLo(self,Per,N=300,dIndex=0,doDense=True):
+        #mean=Per[np.isnan(Per)==False].mean()
+        if not doDense:
+            print('no Dense')
+            return self.la[dIndex:-dIndex],self.lo[dIndex:-dIndex],Per[dIndex:-dIndex,dIndex:-dIndex]
+        Per[np.isnan(Per)]=-5e20
+        dLa = (self.la[-dIndex]-self.la[dIndex])/N
+        dLo = (self.lo[-dIndex]-self.lo[dIndex])/N
+        la  = np.arange(self.la[dIndex],self.la[-dIndex],dLa)
+        la.sort()
+        lo  = np.arange(self.lo[dIndex],self.lo[-dIndex],dLo)
+        per = interpolate.interp2d(self.lo, self.la, Per,kind='linear')(lo,la)
+        per[per<-2]=np.nan
+        la,lo=np.meshgrid(la,lo)
+        return la, lo, per
+    def denseLaLoGrid(self,Per,N=300,dIndex=0,doDense=True):
+        if not doDense:
+            print('no Dense')
+            return self.la[dIndex:-dIndex],self.lo[dIndex:-dIndex],Per[dIndex:-dIndex,dIndex:-dIndex]
+        #mean=Per[np.isnan(Per)==False].mean()
+        #Per[np.isnan(Per)]=mean
+        dLa = (self.la[-dIndex]-self.la[dIndex])/N
+        dLo = (self.lo[-dIndex]-self.lo[dIndex])/N
+        la  = np.arange(self.la[dIndex],self.la[-dIndex]+1e-5*dLa,dLa)
+        la.sort()
+        lo  = np.arange(self.lo[dIndex],self.lo[-dIndex]+1e-5*dLo,dLo)
+        la,lo=np.meshgrid(la,lo)
+        return la,lo,self.Output2D(la,lo,Per)
+    def outputP2(self,P2,N=100,isPer=False,line=''):
+        La = P2[0][0]+(P2[1][0]-P2[0][0])/N*np.arange(N+1)
+        Lo = P2[0][1]+(P2[1][1]-P2[0][1])/N*np.arange(N+1)
+        dist= DistAz(P2[0][0],P2[0][1],P2[1][0],P2[1][1]).getDelta()* 111.19
+        Dist = np.arange(N)/N*dist
+        if len(P2[0])==3:
+            Z = P2[0][2]+(P2[1][2]-P2[0][2])/N*np.arange(N+1)
+        else:
+            Z = self.z.min()+(self.z.max()-self.z.min())/N*np.arange(N)
+        la = La.reshape([1,-1])+Z.reshape([-1,1])*0
+        lo = Lo.reshape([1,-1])+Z.reshape([-1,1])*0
+        z  =  La.reshape([1,-1])*0+Z.reshape([-1,1])
+        V= self.OutputGriddata(la,lo,z,isPer=isPer,P2=line)
+        #print(V.shape)
+        if isPer and False:
+            for i in range(z.shape[0]):
+                V[i]/=V[i,np.isnan(V[i])==False].mean()
+            V-=1
+        return la,lo,z,Dist,V

@@ -1,7 +1,7 @@
 import numpy as np
 from obspy import UTCDateTime
 import matplotlib.pyplot as plt
-from ..mathTool.mathFunc_bak import corrNP as xcorr
+from ..mathTool.mathFunc_bak import corrNP as xcorr, Model as Model0
 #from ..MFT.cudaFunc import torchcorrnnNorm as xcorr
 from ..io.tool import getYmdHMSj
 from ..mathTool.distaz import DistAz
@@ -11,7 +11,9 @@ import pycpt
 import os
 from scipy import interpolate,stats
 
+
 cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
+cmapRWB = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/rwb.cpt')
 faultL = mt.readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
 def setMap(m):
     
@@ -25,27 +27,31 @@ def setMap(m):
 #from cudaFunc import  torchcorrnn as xcorr
 SPRatio=0.5
 wkdir='TOMODD'
-def preEvent(quakeL,staInfos,filename='abc'):
+def preEvent(quakeL,staInfos,filename='abc',R=[-90,90,-180,180]):
     if filename=='abc':
         filename='%s/input/event.dat'%wkdir
     with open(filename,'w+') as f:
         for i in range(len(quakeL)):
             quake=quakeL[i]
             ml=0
+            if not quake.inR(R):
+                continue
             if quake['ml']!=None :
                 if quake['ml']>-2:
                     ml=quake['ml']
             Y=getYmdHMSj(UTCDateTime(quake['time']))
             f.write("%s  %s%02d   %.4f   %.4f    % 7.3f % 5.2f   0.15    0.51  % 5.2f   % 8d %1d\n"%\
                 (Y['Y']+Y['m']+Y['d'],Y['H']+Y['M']+Y['S'],int(quake['time']*100)%100,\
-                    quake['la'],quake['lo'],quake['dep'],ml,1,i,0))
+                    quake['la'],quake['lo'],max(0,quake['dep']),ml,1,i,0))
 
-def preABS(quakeL,staInfos,filename='abc',isNick=True,notTomo=False):
+def preABS(quakeL,staInfos,filename='abc',isNick=True,notTomo=False,R=[-90,90,-180,180]):
     if filename=='abc':
         filename='%s/input/ABS.dat'%wkdir
     with open(filename,'w+') as f:
         for i in range(len(quakeL)):
             quake=quakeL[i]
+            if not quake.inR(R):
+                continue
             ml=0
             if quake['ml']!=None :
                 if quake['ml']>-2:
@@ -92,7 +98,7 @@ def preSta(staInfos,filename='abc',isNick=True):
                 %(staName,staInfo['la'],staInfo['lo'],staInfo['dep']))
 
 def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
-    perCount=500,filename='abc',isNick=True,minDP=3/0.7):
+    perCount=500,filename='abc',isNick=True,minDP=3/0.7,R=[-90,90,-180,180]):
     if filename=='abc':
         filename='%s/input/dt.cc'%wkdir
     N=len(quakeL)
@@ -101,6 +107,8 @@ def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
         for i in range(len(quakeL)):
             print(i)
             quake0 = quakeL[i]
+            if not quake0.inR(R):
+                continue
             indexL0=quake0.staIndexs()
             time0=quake0['time']
             if countL[i]>perCount:
@@ -112,6 +120,8 @@ def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
                 if dTM[i][j]==None:
                     continue
                 if countL[j]>perCount:
+                    continue
+                if not quake1.inR(R):
                     continue
                 if quake0.distaz(quake1).getDelta()>maxD:
                     continue
@@ -157,9 +167,18 @@ def preMod(R,nx=8,ny=8,nz=12,filename='abc'):
     if filename=='abc':
         filename='%s/MOD'%wkdir
     with open(filename,'w+') as f:
-        vp=np.array([4   ,5.0,5.5,5.8, 5.91, 6.1,  6.3, 6.50, 6.7,  8.0, 8.6, 9.0])
+        vp=np.array([2   , 3, 4.0, 5,  5.5, 5.6, 5.8,  5.88, 6.1, 6.2,  6.4,  6.45, 7.0,    7.75, 7.76,8.2])
         #vs=[2.4,2.67, 3.01,  4.10, 4.24, 4.50, 5.00, 5.15, 6.00,6.1]
-        z =[-150, -2,  0,  5,   10,  15,   20,   30,  40,   50,  60, 200]
+        z =         [-150, -5,-2.5, 0, 2.5,   5, 7.5,   10, 12.5,  15,   20,     30,  40,      50,  60, 200]
+        vp=np.array([2   , 3,  5,    5.6,5.88,  6.2,    6.4,  6.45, 7.0,    7.75, 7.76,8.2])
+        #vs=[2.4,2.67, 3.01,  4.10, 4.24, 4.50, 5.00, 5.15, 6.00,6.1]
+        z =         [-150, -5, 0,      5,  10,   15,   20,   30,   40,     50,   60,  200]
+        vp=np.array([2   , 4,  5,    5.6,5.88,  6.2,    6.4, 6.42, 6.45, 6.8,7.0,    7.75, 7.76,8.2])
+        #vs=[2.4,2.67, 3.01,  4.10, 4.24, 4.50, 5.00, 5.15, 6.00,6.1]
+        z =         [-150, -5, 0,      5,  10,   15,      20,  25,   30,  35, 40,     50,   60,  200]
+        vp=np.array([2   , 4,  5,    5.88,  6.2,    6.4,  6.45,  7.0,    7.75, 7.76,8.2])
+        #vs=[2.4,2.67, 3.01,  4.10, 4.24, 4.50, 5.00, 5.15, 6.00,6.1]
+        z =         [-150, -5, 2.5,    7.5,    12,      20,   30,   40,     50,   60,  200]
         vs=vp/1.71
         x=np.zeros(nx)
         y=np.zeros(ny)
@@ -167,10 +186,10 @@ def preMod(R,nx=8,ny=8,nz=12,filename='abc'):
         #x lo nx loN
         #y la ny laN
         f.write('0.1 %d %d %d\n'%(nx,ny,nz))
-        x[0]=R[2]-5
-        x[-1]=R[3]+5
-        y[0]=R[0]-5
-        y[-1]=R[1]+5
+        x[0]=R[2]-30
+        x[-1]=R[3]+60
+        y[0]=R[0]-30
+        y[-1]=R[1]+20
         x[1]=(x[0]+R[2])/2
         x[-2]=(x[-1]+R[3])/2
         y[1]=(y[0]+R[0])/2
@@ -276,7 +295,7 @@ def calDTM(quakeL,T3PSLL,staInfos,maxD=0.3,minC=0.6,minSameSta=3,\
         print('cut waveform: ',i)
         quake = quakeL[i]
         T3PSL = T3PSLL[i]
-        for index in []:# range(len(quake.records)):
+        for index in  range(len(quake.records)):
             record = quake.records[index]
             T3P,T3S=  [T3PSL[0][index],T3PSL[1][index]]
             #record0 = quake0.records[index0]
@@ -463,39 +482,72 @@ def getReloc(qL,filename):
             qLNew.append(quake)
     return qLNew
 
-class Model:
-    def __init__(self,laN,loN,zN,laL,loL,zL,v,mode='v'):
+class Model(Model0):
+    def __init__(self,laN,loN,zN,laL,loL,zL,v,mode='v',quakeL=[],quakeL0=[],R=[-90,90,-180,180]):
+        self.nxyz=[laN,loN,zN]
         self.laN =laN
         self.loN =loN
         self.zN  =zN
-        self.laL =laL
-        self.loL =loL
-        self.zL  =zL
+        self.la =laL
+        self.lo =loL
+        self.z  =zL
         self.v=v
         self.mode=mode
-    def plot(self,resDir):
+        self.quakeL=quakeL
+        self.quakeL0=quakeL0
+        self.R = R
+    def plot(self,resDir,doDense='True'):
         if not os.path.exists(resDir):
             os.makedirs(resDir)
         for i in range(self.zN):
+            name0='v/(km/s)'
             plt.close()
-            z= self.zL[i]
-            m = basemap.Basemap(llcrnrlat=self.laL[2],urcrnrlat=self.laL[-3],llcrnrlon=self.loL[2],\
-            urcrnrlon=self.loL[-3])
-            la,lo,v=denseLaLo(self.laL[2:-2],self.loL[2:-2],self.v[2:-2,2:-2,i])
+            z= self.z[i]
+            if i <self.zN-1:
+                z1 = self.z[i+1]
+            else:
+                z1 = self.z[i]+100
+            req = {'minDep':z,'maxDep':z1}
+            fig=plt.figure()
+            m = basemap.Basemap(llcrnrlat=self.la[2],urcrnrlat=self.la[-3],llcrnrlon=self.lo[2],\
+            urcrnrlon=self.lo[-3])
+            la,lo,v=self.denseLaLoGrid(self.v[:,:,i].copy(),dIndex=2,doDense=doDense,N=500)
+            if isinstance(v,type(None)):
+                plt.close()
+                print('no enough data in depth:',z)
+                continue
+            #x,y=m(*np.meshgrid(lo,la))
             x,y=m(lo,la)
-            m.pcolor(x,y,v,cmap=cmap)
-            R =[x[0],x[-1],y[0],y[-1]]
+            if self.mode in ['dVp','dVs','dVpr','dVsr']:
+                m.pcolormesh(x,y,v,vmin=-0.05,vmax=0.05,cmap=cmapRWB,shading='flat')
+                name0='dv/v0'
+            else:
+                m.pcolormesh(x,y,v,cmap=cmap,shading='flat')
+            R =self.R
+            plt.gca().set(facecolor='#A9A9A9')
             for fault in faultL:
                 if fault.inR(R):
                     fault.plot(m,markersize=0.3)
-            plt.title('%s %d'%(self.mode,z))
+            if len(self.quakeL0)>0:
+                pL=self.quakeL0.paraL(req =req)
+                eX,eY,=m(np.array(pL['lo']),np.array(pL['la']))
+                #ml,dep=[np.array(pL['ml']),np.array(pL['dep'])]
+                plt.plot(eX,eY,'.k',markersize=0.3)
+            if len(self.quakeL)>0:
+                pL=self.quakeL.paraL(req =req)
+                eX,eY,=m(np.array(pL['lo']),np.array(pL['la']))
+                #ml,dep=[np.array(pL['ml']),np.array(pL['dep'])]
+                plt.plot(eX,eY,'.r',markersize=0.3)
             setMap(m)
-            plt.colorbar()
-            plt.savefig('%s/%s_%d.jpg'%(resDir,self.mode,z),dpi=300)
+            cbar=plt.colorbar()
+            cbar.set_label(name0)
+            plt.title('%s depth: %.1f km'%(self.mode,z))
+            fig.tight_layout()
+            plt.savefig('%s/%s_%.1f.jpg'%(resDir,self.mode,z),dpi=300)
 
 class model:
-    def __init__(self,workDir):
-        initFile=workDir+'/../inversion/MOD'
+    def __init__(self,workDir,quakeL=[],quakeL0=[],isSyn=False,isDWS=False,minDWS=-1,R=[-90,90,-180,180]):
+        initFile=workDir+'/MOD'
         with open(initFile) as f:
             loN,laN,zN=[int(tmp)for tmp in f.readline().split()[1:]]
             laL,loL,zL=[np.array([float(tmp)for tmp in f.readline().split()])for i in range(3)]
@@ -503,23 +555,71 @@ class model:
                 ).reshape(zN,laN,loN).transpose([1,2,0])
             vs0=np.array([[float(tmp)for tmp in f.readline().split()]for i in range(laN*zN)]\
                 ).reshape(zN,laN,loN).transpose([1,2,0])
-        vp = np.loadtxt(workDir+'/../inversion/Vp_model.dat').reshape(zN,laN,loN).transpose([1,2,0])
-        vs = np.loadtxt(workDir+'/../inversion/Vs_model.dat').reshape(zN,laN,loN).transpose([1,2,0])
-        self.vp0=Model(loN,laN,zN,loL,laL,zL,vp0,'vp0')
-        self.vs0=Model(loN,laN,zN,loL,laL,zL,vs0,'vs0')
-        self.vp =Model(loN,laN,zN,loL,laL,zL,vp ,'vp')
-        self.vs =Model(loN,laN,zN,loL,laL,zL,vs ,'vs')
-    def plot(self,resDir):
-        for model in [self.vp0,self.vs0,self.vp,self.vs]:
-            model.plot(resDir)
+            vs0 = vp0/vs0
+        vp = np.loadtxt(workDir+'/Vp_model.dat').reshape(zN,laN,loN).transpose([1,2,0])
+        vs = np.loadtxt(workDir+'/Vs_model.dat').reshape(zN,laN,loN).transpose([1,2,0])
+        self.vp0=Model(loN,laN,zN,loL,laL,zL,vp0,'vp0',quakeL=quakeL,quakeL0=quakeL0,R=R)
+        self.vs0=Model(loN,laN,zN,loL,laL,zL,vs0,'vs0',quakeL=quakeL,quakeL0=quakeL0,R=R)
+        self.vp =Model(loN,laN,zN,loL,laL,zL,vp ,'vp',quakeL=quakeL,quakeL0=quakeL0,R=R)
+        self.vs =Model(loN,laN,zN,loL,laL,zL,vs ,'vs',quakeL=quakeL,quakeL0=quakeL0,R=R)
+        self.modelL = [self.vp0,self.vs0,self.vp,self.vs]
+        if isDWS:
+            DWSFile = workDir + 'tomoDD.vel'
+            with open(DWSFile) as f:
+                lines = f.readlines()
+            lN = len(lines)
+            #print(lN)
+            for i in range(lN-1,0,-1):
+                if lines[i].split()[-1] == 'P-wave.':
+                    index=i+1
+                    pDWS=np.array([[float(tmp)for tmp in line.split()]for line in lines[index:index+laN*zN]]\
+                    ).reshape(zN,laN,loN).transpose([1,2,0])
+                    break
+            for i in range(lN-1,0,-1):
+                if lines[i].split()[-1] == 'S-wave.':
+                    index=i+1
+                    sDWS=np.array([[float(tmp)for tmp in line.split()]for line in lines[index:index+laN*zN]]\
+                    ).reshape(zN,laN,loN).transpose([1,2,0])
+                    break
+            self.pDWS=Model(loN,laN,zN,loL,laL,zL,pDWS,'pDWS',quakeL=quakeL,quakeL0=quakeL0,R=R)
+            self.sDWS=Model(loN,laN,zN,loL,laL,zL,sDWS,'sDWS',quakeL=quakeL,quakeL0=quakeL0,R=R)
+            self.vp.v[self.pDWS.v<minDWS]=np.nan
+            self.vs.v[self.sDWS.v<minDWS]=np.nan
+            self.modelL+=[self.pDWS,self.sDWS]
+        if isSyn:
+            realFile = workDir + '../Syn/MOD'
+            with open(realFile) as f:
+                loN,laN,zN=[int(tmp)for tmp in f.readline().split()[1:]]
+                laL,loL,zL=[np.array([float(tmp)for tmp in f.readline().split()])for i in range(3)]
+                vpr=np.array([[float(tmp)for tmp in f.readline().split()]for i in range(laN*zN)]\
+                    ).reshape(zN,laN,loN).transpose([1,2,0])
+                vsr=np.array([[float(tmp)for tmp in f.readline().split()]for i in range(laN*zN)]\
+                    ).reshape(zN,laN,loN).transpose([1,2,0])
+                vs0 = vpr/vsr
+            self.vpr=Model(loN,laN,zN,loL,laL,zL,vpr,'vpReal',quakeL=quakeL,quakeL0=quakeL0,R=R)
+            self.vsr=Model(loN,laN,zN,loL,laL,zL,vsr,'vsReal',quakeL=quakeL,quakeL0=quakeL0,R=R)
+            dVp = self.vp.v/self.vp0.v-1
+            dVs = self.vs.v/self.vs0.v-1
+            self.dVp=Model(loN,laN,zN,loL,laL,zL,dVp,'dVp',quakeL=quakeL,quakeL0=quakeL0,R=R)
+            self.dVs=Model(loN,laN,zN,loL,laL,zL,dVs,'dVs',quakeL=quakeL,quakeL0=quakeL0,R=R)
+            dVpr = self.vpr.v/self.vp0.v-1
+            dVsr = self.vsr.v/self.vs0.v-1
+            self.dVpr=Model(loN,laN,zN,loL,laL,zL,dVpr,'dVpr',quakeL=quakeL,quakeL0=quakeL0,R=R)
+            self.dVsr=Model(loN,laN,zN,loL,laL,zL,dVsr,'dVsr',quakeL=quakeL,quakeL0=quakeL0,R=R)
+            self.modelL+=[self.vpr,self.vsr,self.dVp,self.dVs,self.dVpr,self.dVsr]
 
+    def plot(self,resDir,nameL=[],doDense=True):
+        for model in self.modelL:
+            if len(nameL)!=0 and model.mode not in nameL:
+                continue
+            model.plot(resDir,doDense=doDense)
 def denseLaLo(La,Lo,Per,N=200):
     dLa = (La[-1]-La[0])/N
     dLo = (Lo[-1]-Lo[0])/N
     la  = np.arange(La[0],La[-1],dLa)
     la.sort()
     lo  = np.arange(Lo[0],Lo[-1],dLo)
-    per = interpolate.interp2d(Lo, La, Per)(lo,la)
+    per = interpolate.interp2d(Lo, La, Per,kind= 'linear')(lo,la)
     return la, lo, per
 '''
 def calDT(quake0,quake1,waveform0,waveform1,staInfos,bSec0=-2,eSec0=3,\

@@ -14,8 +14,9 @@ from ..io import tool
 from ..io.seism import getTrace3ByFileName,Quake,QuakeL,Record,QuakeCC,RecordCC,t0,t1
 from ..io.sacTool import staTimeMat
 
-from ..mapTool.mapTool import readFault
+from ..mapTool.mapTool import readFault,plotTopo
 import mpl_toolkits.basemap as basemap
+import torch
 maxA=2e19
 os.environ["MKL_NUM_THREADS"] = "8"
 faultL = readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
@@ -147,6 +148,14 @@ class sta(object):
              freq=freq,delta0=delta0,\
                 maxA=maxA,isData=False)
         print(self.station,self.data.bTime,self.data.eTime)
+    def __del__(self):
+        try:
+            del(self.data)
+            torch.cuda.empty_cache()
+        except:
+            pass
+        else:
+            pass
     def predict(self,modelL=None, staTimeM=None,\
      mode='mid', isClearData=False,maxD=80):
         self.timeL = list()
@@ -691,7 +700,7 @@ def plotResS(staL,quakeL, outDir='output/'):
         #else:
         #    pass
 
-def plotQuakeL(staL,quakeL,laL,loL,outDir='output/',filename=''):
+def plotQuakeL(staL,quakeL,laL,loL,outDir='output/',filename='',vModel=None,isPer=False):
     dayIndex = int(quakeL[-1]['time']/86400)
     Ymd = obspy.UTCDateTime(dayIndex*86400).strftime('%Y%m%d')
     if len(filename)==0:
@@ -720,7 +729,7 @@ def plotQuakeL(staL,quakeL,laL,loL,outDir='output/',filename=''):
     for fault in faultL:
         if fault.inR(laL+loL):
             fault.plot(m,markersize=0.3)
-    m.plot(eX,eY,'ro',markersize=2)
+    m.plot(eX,eY,'ro',markersize=0.5)
     parallels = np.arange(0.,90,3)
     m.drawparallels(parallels,labels=[False,True,True,False])
     meridians = np.arange(10.,360.,3)
@@ -730,7 +739,7 @@ def plotQuakeL(staL,quakeL,laL,loL,outDir='output/',filename=''):
     plt.savefig(filename,dpi=300)
     plt.close()
 
-def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename=''):
+def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=False,rL=[]):
     dayIndex = int(quakeL[-1]['time']/86400)
     Ymd = obspy.UTCDateTime(dayIndex*86400).strftime('%Y%m%d')
     if len(filename)==0:
@@ -738,18 +747,14 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename=''):
     dayDir=os.path.dirname(filename)
     if not os.path.exists(dayDir):
         os.mkdir(dayDir)
-    fig=plt.figure(figsize=[5,5])
+    fig=plt.figure(figsize=[6.2,5])
     m = basemap.Basemap(llcrnrlat=laL[0],urcrnrlat=laL[1],llcrnrlon=loL[0],\
         urcrnrlon=loL[1])
-    staLa= []
-    staLo=[]
-    for sta in staInfos:
-        staLa.append(sta.loc()[0])
-        staLo.append(sta.loc()[1])
-    #staLa,staLo = staL.loc()
-    staX,staY=m(np.array(staLo),np.array(staLa))
-    st=m.plot(staX,staY,'b^',markersize=4,alpha=0.3)
-    req={'staInfos':staInfos,'minCover':0.5,'minMl':-5}
+    if len(staInfos)>0:
+        req={'staInfos':staInfos,'minCover':0.5,'minMl':-5}
+    else:
+        req={'minMl':-5}
+    req={}
     pL=quakeL.paraL(req=req)
     eX,eY,=m(np.array(pL['lo']),np.array(pL['la']))
     #m.etopo()
@@ -757,9 +762,25 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename=''):
     for fault in faultL:
         if fault.inR(laL+loL):
             f=fault.plot(m,markersize=0.3)
+    for R in rL:
+        x,y=m(R.xyL[:,1],R.xyL[:,0])
+        plt.arrow(x[0],y[0],x[1]-x[0],y[1]-y[0])
+        plt.text(x-0.01,y+0.01,ha='left',va='bottom')
     #m.plot(eX,eY,'ro',markersize=2)
     #m.etopo()
-    sc=m.scatter(eX,eY,c=dep,s=((ml+1)**2)*0.01,vmin=0,vmax=50,cmap='Reds')
+    if isTopo:
+        plotTopo(m,laL+loL)
+    #sc=m.scatter(eX,eY,c=dep,s=((ml*0+1)**2)*0.3/3,vmin=-5,vmax=50,cmap='gist_rainbow')#Reds
+    #sc=m.scatter(eX,eY,c=dep,s=((ml*0+1)**2)*0.3/3,vmin=-5,vmax=50,cmap='jet')
+    m.plot(eX,eY,'.k',markersize=0.3,alpha=0.5)
+    staLa= []
+    staLo=[]
+    for sta in staInfos:
+        staLa.append(sta.loc()[0])
+        staLo.append(sta.loc()[1])
+    #staLa,staLo = staL.loc()
+    staX,staY=m(np.array(staLo),np.array(staLa))
+    st=m.plot(staX,staY,'b^',markersize=3,alpha=1)
     #plt.legend([st,sc,f],['station','event','fault'])
     #m.arcgisimage()
     
@@ -770,10 +791,11 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename=''):
     m.drawmeridians(meridians,labels=[True,False,False,True])
     plt.gca().yaxis.set_ticks_position('left')
     #plt.title('Detection Results')
-    cbar=fig.colorbar(sc, orientation="horizontal", fraction=0.046, pad=0.04)
-    cbar.set_label('Depth')
+    #cbar=fig.colorbar(sc, orientation="horizontal", fraction=0.046, pad=0.04)
+    #cbar.set_label('Depth')
     #plt.colorbar()
-    plt.savefig(filename,dpi=600)
+    fig.tight_layout()
+    plt.savefig(filename,dpi=300)
 
     plt.close()
 

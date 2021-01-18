@@ -271,7 +271,7 @@ class locator:
         dd=MM*dM
         quake['la']+=float(dd[0,0])*ad
         quake['lo']+=float(dd[1,0])*ad
-        quake['dep']=float(max(-4,quake['dep']+float(dd[2,0])*ad))
+        quake['dep']=float(max(-10,quake['dep']+float(dd[2,0])*ad))
         quake['time']+=float(dd[3,0])
         dTime=dTime.transpose()-gM*dd
         return quake,dTime.std()

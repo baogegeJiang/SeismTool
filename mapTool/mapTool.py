@@ -9,6 +9,9 @@ from lxml import etree
 #from pykml.factory import KML_ElementMaker as KML
 from pycpt.load import gmtColormap as cpt2cm
 from ..mathTool.distaz import DistAz
+from ..mathTool.mathFunc_bak import R as mathR
+cmap = cpt2cm(os.path.dirname(__file__)+'/../data/temperatureInv')
+
 volcano=np.loadtxt(os.path.dirname(__file__)+'/../data/volcano')
 pi=3.1415927
 def genBaseMap(R=[0,90,0,180], topo=None):
@@ -31,12 +34,21 @@ def scatterOnMap(m, lat,lon,s,alpha=1,c=None):
     x,y=m(lon,lat)
     plt.scatter(x,y,s=s,alpha=alpha,c=c)
 
-def readnetcdf(file='Ordos.grd'):
+def readnetcdf(R,file='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd'):
     nc=Dataset(file)
-    la=nc.variables['lat'][:]
-    lo=nc.variables['lon'][:]
+    la=np.array(nc.variables['lat'][:])
+    lo=np.array(nc.variables['lon'][:])
+    R = R.copy()
+    R0 = R[:2]
+    R1 = R[2:]
+    R0.sort()
+    R1.sort()
+    laI0 = np.abs(la-R0[0]).argmin()-1
+    laI1 = np.abs(la-R0[1]).argmin()+1
+    loI0 = np.abs(lo-R1[0]).argmin()-1
+    loI1 = np.abs(lo-R1[1]).argmin()+1
     z=nc.variables['z'][:]
-    return np.array(la),np.array(lo),np.array(z)
+    return np.array(la[laI0:laI1]),np.array(lo[loI0:loI1]),np.array(z[laI0:laI1,loI0:loI1])
 
 def getZInR(la0,lo0,z0,R,laN=500,loN=500):
     la=np.arange(R[0],R[1],(R[1]-R[0])/laN)
@@ -45,15 +57,20 @@ def getZInR(la0,lo0,z0,R,laN=500,loN=500):
     z=Z(lo,la)
     lo,la=np.meshgrid(lo,la)
     return la,lo,z
-
-def plotTopo(m,R,topo='Ordos.grd',laN=800,loN=800,cptfile='wiki-2.0.cpt'):#'cpt17.txt'):
-    la0,lo0,z0=readnetcdf(topo)
+def getZInLine(la0,lo0,z0,line,laN=500,loN=500):
+    la=np.arange(line.xyL[0][0],line.xyL[1][0],(line.xyL[1][0]-line.xyL[0][0])/laN)
+    lo=np.arange(line.xyL[0][1],line.xyL[1][1],(line.xyL[1][1]-line.xyL[0][1])/loN)
+    z=interp.interpn((la0,lo0),z0,np.concatenate([la.reshape([-1,1]),lo.reshape([-1,1])],axis=-1),method='linear')
+    return la,lo,z
+def plotTopo(m,R,topo='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd',laN=800,loN=800,cptfile='wiki-2.0.cpt'):#'cpt17.txt'):
+    la0,lo0,z0=readnetcdf(R,topo)
     la,lo,z=getZInR(la0,lo0,z0,R,laN=laN,loN=loN)
-    loM,laM=plt.meshgrid(lo,la)
+    #loM,laM=np.meshgrid(lo,la)
     x,y=m(lo,la)
     #print(la[0,0],lo[0,0])
     m.pcolor(x,y,z,cmap=cpt2cm(cptfile),vmin=0, vmax=5000)
-    plt.colorbar()
+    bar=plt.colorbar()
+    bar.set_label('Topography')
     #z.set_clim(-9000,9000)
 
 def quakeLs2kml(quakeLs,filename):
@@ -278,7 +295,7 @@ def plotQuakeDis(quakeLs,output='quakeDis.png',cmd='.b',markersize=0.8,\
     hQ,=plotOnMap(m,la,lo,cmd,markersize,alpha)
     #mt.scatterOnMap(m,la,lo,s=np.exp(mlL/1.5)*mul,alpha=alpha,c=np.array([1,0,0]))
     parallels = np.arange(0.,90,2.)
-
+    plotTopo(m,R)
     if len(laL0)>1:
         #hC,=mt.plotOnMap(m,laL0,loL0,'ok',markersize=2)
         plt.legend((hQ,hC,hS,hF),('Quakes','Catalog','Station','Faults'),\
@@ -378,4 +395,71 @@ def plotQuakeCCDis(quakeCCLs,quakeRefL,output='quakeDis.png',cmd='.r',markersize
     m.drawmeridians(meridians,labels=[True,False,False,True])
     return m
 
-    
+def plotDep(qL,R,filename):
+    paraL = qL.paraL(['la','lo','dep','ml','time'],req={'R':R})
+    plt.close()
+    fig=plt.figure()
+    timeL = (np.array(paraL['time'])-np.array(paraL['time']).min())/86400
+    dLaPerKm,dLoPerKm = R.perKm()
+    if dLaPerKm>dLoPerKm:
+        x= paraL['la']
+        perKm = dLaPerKm
+        xLabel='la'
+        xlim=[R.xyL[:,0].min(),R.xyL[:,0].max()]
+    else:
+        x= paraL['lo']
+        perKm = dLoPerKm
+        xLabel='lo'
+        xlim=[R.xyL[:,1].min(),R.xyL[:,1].max()]
+    pc=plt.scatter(x,paraL['dep'],s=((np.array(paraL['ml'])*0+1)**2)*0.3/3,c=timeL,cmap='gist_rainbow')
+    cbar=fig.colorbar(pc, orientation="horizontal",fraction=0.046, pad=0.04)
+    cbar.set_label('time from the first earthquake')
+    plt.xlabel(xLabel)
+    plt.ylabel('dep/km')
+    plt.ylim([50,-10])
+    plt.xlim(xLim)
+    plt.gca().set_aspect(perKm)
+    plt.savefig(filename,dpi=300)
+    plt.close()
+
+def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
+    paraL = qL.paraL(['la','lo','dep','ml','time'],req={'R':R})
+    plt.close()
+    fig=plt.figure(figsize=[5,3])
+    if isTopo:
+        plt.subplot(2,1,1)
+        la0,lo0,z0=readnetcdf(R.xyL.transpose().reshape([-1]).tolist())
+        la,lo,z=getZInLine(la0,lo0,z0,R)
+        laLo = np.array([la.tolist(),lo.tolist()]).transpose()
+        l = R.l(laLo)
+        plt.plot(l,z/1000,'k')
+        plt.xlabel('Distance/km')
+        plt.ylabel('Elevation/km')
+        plt.ylim([0,6])
+        plt.xlim([0,R.L])
+        plt.gca().set_aspect(10)
+    if isTopo:
+        plt.subplot(2,1,2)
+    timeL = (np.array(paraL['time'])-np.array(paraL['time']).min())/86400
+    laLo = np.array([paraL['la'],paraL['lo']]).transpose()
+    l = R.l(laLo)
+    if not isinstance(vModel,type(None)):
+        la,lo,z,Dist,V= vModel.outputP2(R.xyL,isPer=isPer,line=R)
+        Dist = R.l(np.array([la[0].tolist(),lo[0].tolist()]).transpose())
+        pc=plt.pcolor(Dist,z,V,cmap=cmap)
+        #cbar=fig.colorbar(pc,fraction=0.046, pad=0.04)
+        cbar=fig.colorbar(pc, orientation="horizontal")
+        cbar.set_label('v (km/s)')
+    #pc=plt.scatter(l,paraL['dep'],s=1,c=timeL*0,cmap='gist_rainbow')#((np.array(paraL['ml'])*0+1)**2)*0.3/3
+    pc=plt.plot(l,paraL['dep'],'.k',markersize=1)
+    #cbar=fig.colorbar(pc, orientation="horizontal",fraction=0.046, pad=0.04)
+    #cbar.set_label('time from the first earthquake')
+    plt.xlabel('along/km')
+    plt.ylabel('dep/km')
+    plt.ylim([50,-10])
+    plt.xlim([0,R.L])
+    plt.gca().set_aspect(1)
+    plt.gca().set(facecolor='#A9A9A9')
+    fig.tight_layout()
+    plt.savefig(filename,dpi=300)
+    plt.close()
