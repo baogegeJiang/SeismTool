@@ -1072,7 +1072,7 @@ class QuakeL(list):
             if 'keysIn' in self.inQuake:
                 tmp = self.inQuake['keysIn'].split()
                 for quake in self:
-                    self.keysIn = tmp
+                    quake.keysIn = tmp
             if 'keysIn' in self.inRecord:
                 tmp = self.inRecord['keysIn'].split()
                 for quake in self:
@@ -1127,6 +1127,18 @@ class QuakeL(list):
             for key in keyL:
                 pL[key].append(quake[key])
         return pL
+    def analy(self):
+        eCount = len(self)
+        pCount = 0
+        sCount = 0
+        for quake in self:
+            for record in quake.records:
+                if record['pTime']>0:
+                    pCount+=1
+                if record['sTime']>0:
+                    sCount+=1
+        print('event: %d | P phase: %d | S phase: %d|'%(eCount,pCount,sCount))
+        return eCount,pCount,sCount
 
 
 

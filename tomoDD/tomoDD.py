@@ -1,7 +1,7 @@
 import numpy as np
 from obspy import UTCDateTime
 import matplotlib.pyplot as plt
-from ..mathTool.mathFunc_bak import corrNP as xcorr, Model as Model0
+from ..mathTool.mathFunc_bak import corrNP as xcorr, Model as Model0,outR
 #from ..MFT.cudaFunc import torchcorrnnNorm as xcorr
 from ..io.tool import getYmdHMSj
 from ..mathTool.distaz import DistAz
@@ -10,6 +10,7 @@ import mpl_toolkits.basemap as basemap
 import pycpt
 import os
 from scipy import interpolate,stats
+import matplotlib.colors as colors
 
 
 cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
@@ -450,6 +451,51 @@ def reportDTM(dTM):
     plt.savefig('fig/TOMODD/dTM_report.png',dpi=300)
     plt.close()
 
+def analyDTM(dTM,resFile):
+    #dt,maxC,staIndex,2
+    plt.close()
+    fig=plt.figure(figsize=[4,3])
+    pL=[]
+    pCCL=[]
+    sL=[]
+    sCCL=[]
+    bins=[np.arange(-1,1,0.02),np.arange(0.6,1,0.03),]
+    for event in dTM:
+        for pair in event:
+            if isinstance(pair,type(None)):
+                continue
+            for phase in pair:
+                dt,maxC,staIndex,phaseType = phase
+                if phaseType==1:
+                    pL.append(dt)
+                    pCCL.append(maxC)
+                if phaseType==2:
+                    sL.append(dt)
+                    sCCL.append(maxC)
+    plt.subplot(2,1,1)
+    #plt.hist2d(pL,pCCL,bins)
+    h,x,y=np.histogram2d(pL,pCCL,bins)
+    h=h.transpose()
+    h/=h.sum(axis=1,keepdims=True)
+    plt.pcolor(x[:-1]*0.5+x[1:]*0.5,y[:-1]*0.5+y[1:]*0.5,h,norm=colors.LogNorm(vmin=h[h!=0].min()*2, vmax=h.max()))
+    cbar=plt.colorbar()
+    cbar.set_label('density')
+    plt.xlabel('dTime/s')
+    plt.ylabel('cc (P phase)')
+    plt.subplot(2,1,2)
+    #plt.hist2d(sL,sCCL,bins)
+    h,x,y=np.histogram2d(sL,sCCL,bins)
+    h=h.transpose()
+    h/=h.sum(axis=1,keepdims=True)
+    plt.pcolor(x[:-1]*0.5+x[1:]*0.5,y[:-1]*0.5+y[1:]*0.5,h, norm=colors.LogNorm(vmin=h[h!=0].min()*2, vmax=h.max()))
+    #plt.colorbar()
+    cbar=plt.colorbar()
+    cbar.set_label('density')
+    plt.xlabel('dTime/s')
+    plt.ylabel('cc (S phase)')
+    fig.tight_layout()
+    plt.savefig(resFile,dpi=300)
+
 def getReloc(quakeL,filename='abc'):
     if filename=='abc':
         filename='%s/tomoDD.reloc'%wkdir
@@ -482,8 +528,25 @@ def getReloc(qL,filename):
             qLNew.append(quake)
     return qLNew
 
+def  analyReloc(filename,resFile):
+    data = np.loadtxt(filename)
+    erroL=np.arange(0,250,2)
+    erroLa = data[:,7]
+    erroLo = data[:,8]
+    erroDep = data[:,9]
+    plt.hist(erroLa,erroL,alpha=0.7)
+    plt.hist(erroLo,erroL,alpha=0.7)
+    plt.hist(erroDep,erroL,alpha=0.7)
+    plt.legend(['latitude','longitude','depth'])
+    plt.xlabel('uncertainty(m)')
+    plt.ylabel('number')
+    plt.savefig(resFile,dpi=300)
+    plt.close()
+
+
+
 class Model(Model0):
-    def __init__(self,laN,loN,zN,laL,loL,zL,v,mode='v',quakeL=[],quakeL0=[],R=[-90,90,-180,180]):
+    def __init__(self,laN,loN,zN,laL,loL,zL,v,mode='v',quakeL=[],quakeL0=[],R=[-90,90,-180,180],vR=''):
         self.nxyz=[laN,loN,zN]
         self.laN =laN
         self.loN =loN
@@ -496,6 +559,10 @@ class Model(Model0):
         self.quakeL=quakeL
         self.quakeL0=quakeL0
         self.R = R
+        if len(vR)!=0:
+            out  = outR(vR,self.la,self.lo)
+            print(out)
+            self.v[out]=np.nan
     def plot(self,resDir,doDense='True'):
         if not os.path.exists(resDir):
             os.makedirs(resDir)
@@ -512,6 +579,7 @@ class Model(Model0):
             m = basemap.Basemap(llcrnrlat=self.la[2],urcrnrlat=self.la[-3],llcrnrlon=self.lo[2],\
             urcrnrlon=self.lo[-3])
             la,lo,v=self.denseLaLoGrid(self.v[:,:,i].copy(),dIndex=2,doDense=doDense,N=500)
+            #la,lo,v = [self.la,self.lo,self.v[:,:,i]] 
             if isinstance(v,type(None)):
                 plt.close()
                 print('no enough data in depth:',z)
@@ -519,9 +587,11 @@ class Model(Model0):
             #x,y=m(*np.meshgrid(lo,la))
             x,y=m(lo,la)
             if self.mode in ['dVp','dVs','dVpr','dVsr']:
+                cmapRWB.set_bad('#A9A9A9', 0)
                 m.pcolormesh(x,y,v,vmin=-0.05,vmax=0.05,cmap=cmapRWB,shading='flat')
                 name0='dv/v0'
             else:
+                cmap.set_bad('#A9A9A9', 0)
                 m.pcolormesh(x,y,v,cmap=cmap,shading='flat')
             R =self.R
             plt.gca().set(facecolor='#A9A9A9')
@@ -546,7 +616,7 @@ class Model(Model0):
             plt.savefig('%s/%s_%.1f.jpg'%(resDir,self.mode,z),dpi=300)
 
 class model:
-    def __init__(self,workDir,quakeL=[],quakeL0=[],isSyn=False,isDWS=False,minDWS=-1,R=[-90,90,-180,180]):
+    def __init__(self,workDir,quakeL=[],quakeL0=[],isSyn=False,isDWS=False,minDWS=-1,R=[-90,90,-180,180],vR=''):
         initFile=workDir+'/MOD'
         with open(initFile) as f:
             loN,laN,zN=[int(tmp)for tmp in f.readline().split()[1:]]
@@ -560,8 +630,8 @@ class model:
         vs = np.loadtxt(workDir+'/Vs_model.dat').reshape(zN,laN,loN).transpose([1,2,0])
         self.vp0=Model(loN,laN,zN,loL,laL,zL,vp0,'vp0',quakeL=quakeL,quakeL0=quakeL0,R=R)
         self.vs0=Model(loN,laN,zN,loL,laL,zL,vs0,'vs0',quakeL=quakeL,quakeL0=quakeL0,R=R)
-        self.vp =Model(loN,laN,zN,loL,laL,zL,vp ,'vp',quakeL=quakeL,quakeL0=quakeL0,R=R)
-        self.vs =Model(loN,laN,zN,loL,laL,zL,vs ,'vs',quakeL=quakeL,quakeL0=quakeL0,R=R)
+        self.vp =Model(loN,laN,zN,loL,laL,zL,vp ,'vp',quakeL=quakeL,quakeL0=quakeL0,R=R,vR=vR)
+        self.vs =Model(loN,laN,zN,loL,laL,zL,vs ,'vs',quakeL=quakeL,quakeL0=quakeL0,R=R,vR=vR)
         self.modelL = [self.vp0,self.vs0,self.vp,self.vs]
         if isDWS:
             DWSFile = workDir + 'tomoDD.vel'
@@ -595,7 +665,7 @@ class model:
                     ).reshape(zN,laN,loN).transpose([1,2,0])
                 vsr=np.array([[float(tmp)for tmp in f.readline().split()]for i in range(laN*zN)]\
                     ).reshape(zN,laN,loN).transpose([1,2,0])
-                vs0 = vpr/vsr
+                vsr = vpr/vsr
             self.vpr=Model(loN,laN,zN,loL,laL,zL,vpr,'vpReal',quakeL=quakeL,quakeL0=quakeL0,R=R)
             self.vsr=Model(loN,laN,zN,loL,laL,zL,vsr,'vsReal',quakeL=quakeL,quakeL0=quakeL0,R=R)
             dVp = self.vp.v/self.vp0.v-1

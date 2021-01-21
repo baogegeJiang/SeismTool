@@ -1589,28 +1589,39 @@ def plotFVM(fvM,fvD={},resDir='test/',isDouble=False):
                 fvL += fvM[keyNew]
         if key in fvD:
             fvRef = fvD[key]
-        plotFVL(fvL,fvRef,filename=filename)
+        plotFVL(fvL,fvRef,filename=filename,title=key)
     
 
-def plotFVL(fvL,fvRef=None,filename='test.jpg',thresholdL=[2]):
+def plotFVL(fvL,fvRef=None,filename='test.jpg',thresholdL=[2],title='fvL'):
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename))
     plt.close()
+    hL=[]
+    lL=[]
+    plt.figure(figsize=[4,4])
     for fv in fvL:
         if isinstance(fvL,dict):
             fv = fvL[fv]
         if len(fv.f)>2:
-            parts = validL(fv.v,fv.f,1)
+            parts = validL(fv.v,fv.f,0)
             for part in parts:
                 if len(part)>0:
                     part = np.array(part)
-                    plt.plot(fv.v[part],fv.f[part],'k',linewidth=0.1,alpha=0.2)
+                    h=plt.plot(fv.v[part],fv.f[part],'k',linewidth=0.1,alpha=0.2)
+    hL.append(h)
+    lL.append('pairs')
     if fvRef !=None:
         for threshold in thresholdL:
             plt.plot(fvRef.v-threshold*fvRef.std,fvRef.f,'-.r',linewidth=0.5)
-            plt.plot(fvRef.v+threshold*fvRef.std,fvRef.f,'-.r',linewidth=0.5)
-        plt.plot(fvRef.v,fvRef.f,'r',linewidth=0.5)
+            h1=plt.plot(fvRef.v+threshold*fvRef.std,fvRef.f,'-.r',linewidth=0.5)
+        h2=plt.plot(fvRef.v,fvRef.f,'r',linewidth=0.5)
+        hL.append(h2)
+        lL.append('average')
+        hL.append(h1)
+        lL.append('threshold')
     figSet()
+    #plt.legend(hL,lL)
+    plt.title(title)
     plt.savefig(filename,dpi=200)
     plt.close()
 
@@ -1748,8 +1759,9 @@ class areas:
             os.makedirs(resDir)
         for i in range(N):
             for j in range(N):
-                plotFVL(self.fvM[i][j],self.avM[i][j],'%s/fvM+%.2f_%.2f+%.2f_%.2f.jpg'%\
-                    (resDir,self.la[i],self.lo[i],self.la[j],self.lo[j]),thresholdL=[1,2,3,4])
+                plotFVL(self.fvM[i][j],self.avM[i][j],'%s/fvM%.2f_%.2f+%.2f_%.2f.jpg'%\
+                    (resDir,self.la[i],self.lo[i],self.la[j],self.lo[j]),thresholdL=[1,2,3,4],title=r'between (%.2f $^\circ$N %.2f$^\circ$E) and (%.2f $^\circ$N %.2f$^\circ$W)'%\
+                    (self.la[i],self.lo[i],self.la[j],self.lo[j]))
 
 
 

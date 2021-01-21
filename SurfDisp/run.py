@@ -329,7 +329,7 @@ class run:
 		DS.test(vL,indexL,self.stations)
 	def loadAndPlot(self):
 		self.DS.loadRes()
-		self.DS.plotByZ(p2L=self.config.para['p2L'])
+		self.DS.plotByZ(p2L=self.config.para['p2L'],R=self.config.para['R'])
 
 	def test(self):
 		self.loadCorr()
@@ -387,7 +387,8 @@ paraYNSC={ 'quakeFileL'  : ['phaseLPickCEA'],\
 		        	'threshold'   :0.05,\
 		        	'minProb'     :0.5,\
 		        	'minP'        :0.5}
-
+NL=np.array([[45,110],[50,115],[55,120],[55,130],[50,136],\
+	[43,136],[40,130],[30,125],[30,125],[20,120],[15,110],[18,100],[28,93],[30,80],[40,70],[45,80],[50,90],[45,100],[45,110]])
 paraAll={ 'quakeFileL'  : ['phaseLPickCEA'],\
     'stationFileL': ['stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
     'isLoadFvL'   : [False],#False********\
@@ -402,7 +403,7 @@ paraAll={ 'quakeFileL'  : ['phaseLPickCEA'],\
                     'dlalo':[0.8,0.8], 'maxN':800,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 3,\
 					'maxIT':100,'nBatch':100,'smoothDV':80,'smoothG':160},\
-	'runDir'      : 'DS/1015_CEA160_all/',#_man/',\
+	'runDir'      : '../DS/1015_CEA160_all/',#_man/',\
 	'gpuIndex'    : 1,\
 	'gpuN'        : 2,\
 	'lalo'        :[-1,180,-1,180],#[20,34,96,108][]*******,\
@@ -413,7 +414,7 @@ paraAll={ 'quakeFileL'  : ['phaseLPickCEA'],\
 	'loL'         : [],\
 	'areasLimit'  :  3}
 paraAll2={ 'quakeFileL'  : ['phaseLPickCEA'],\
-    'stationFileL': ['stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
+    'stationFileL': ['../stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
     'isLoadFvL'   : [False],#False********\
     'byRecordL'   : [False],\
     'trainDir'    : 'predict/1010_0.95_0.05_3.2_randMove/',\
@@ -425,8 +426,8 @@ paraAll2={ 'quakeFileL'  : ['phaseLPickCEA'],\
     'surPara'     : { 'nxyz':[56,88,0], 'lalo':[56,70],#[40,60,0][55,108]\
                     'dlalo':[0.8,0.8], 'maxN':800,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 3,\
-					'maxIT':100,'nBatch':100,'smoothDV':80,'smoothG':160},\
-	'runDir'      : 'DS/1026_CEA160_all/',#_man/',\
+					'maxIT':100,'nBatch':100,'smoothDV':80,'smoothG':160,'vR':NL},\
+	'runDir'      : '../DS/1015_CEA160_all/',#_man/',\
 	'gpuIndex'    : 1,\
 	'gpuN'        : 2,\
 	'lalo'        :[-1,180,-1,180],#[20,34,96,108][]*******,\
@@ -435,7 +436,15 @@ paraAll2={ 'quakeFileL'  : ['phaseLPickCEA'],\
 	'minP'        :0.7,\
 	'laL'         : [35,30, 28,  35, 45],\
 	'loL'         : [95,108,118,115,125],\
-	'areasLimit'  :  3}
+	'areasLimit'  :  3,\
+	'p2L':[\
+	[[30,98,0],[34,103,250]],\
+	[[45,110,0],[35,105,250]],
+	[[45,115,0],[35,110,250]],
+	[[41,105,0],[41,125,250]],
+	[[33,105,0],[50,130,250]],
+	],\
+	'R':[]}
 
 paraWest={ 'quakeFileL'  : ['phaseLPickCEA'],\
     'stationFileL': ['stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
@@ -450,7 +459,7 @@ paraWest={ 'quakeFileL'  : ['phaseLPickCEA'],\
     'surPara'     : { 'nxyz':[56,88,0], 'lalo':[56,70],#[40,60,0][55,108]\
                     'dlalo':[0.8,0.8], 'maxN':800,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 3,\
-					'maxIT':100,'nBatch':100,'smoothDV':80,'smoothG':160},\
+					'maxIT':100,'nBatch':100,'smoothDV':80,'smoothG':160,'vR':NL},\
 	'runDir'      : 'DS/1026_CEA160_west/',#_man/',\
 	'gpuIndex'    : 1,\
 	'gpuN'        : 2,\
@@ -628,6 +637,75 @@ paraNorthLagerNew2={ 'quakeFileL'  : ['phaseLPickCEA'],\
 	'areasLimit'  :  3,\
 	'p2L':[\
 	[[45,115,0],[35,115,250]],\
+	[[45,110,0],[35,105,250]],
+	[[45,115,0],[35,110,250]],
+	[[41,105,0],[41,125,250]],
+	[[33,105,0],[50,130,250]],
+	]}
+NL=np.array([[30,98],[34,102.6],[31.5,107.5],[26,107.5],[22.5,106],\
+	[21,102],[22,98],[24,97.5],[30,98]])
+paraYNSC={ 'quakeFileL'  : ['phaseLPickCEA'],\
+    'stationFileL': ['../stations/SCYN_withComp_ac'],#**********'stations/CEA.sta_know_few'\
+    'isLoadFvL'   : [False],#False********\
+    'byRecordL'   : [False],\
+    'trainDir'    : 'predict/1010_0.95_0.05_3.2_randMove/',\
+    'resDir'      : '/fastDir/results/1015_all_V?/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+    'perN'        : 1,\
+    'eventDir'    : '/HOME/jiangyr/eventSac/',\
+    'z'           : [0,5,10,15,20,25,30,35,45,50,55,60,65,70,80,90,100,115,130,160,200,230,260,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+    'tSur'        : (32**np.arange(0,1.000001,1/49))*10,\
+    'surPara'     : { 'nxyz':[30,25,0], 'lalo':[34,97],#[40,60,0][55,108]\
+                    'dlalo':[0.5,0.5], 'maxN':350,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 1.5,\
+					'maxIT':30,'nBatch':1,'smoothDV':20,'smoothG':40,'vR':NL},\
+	'runDir'      : '../DS/SCYNLonger/',#_man/',\
+	'gpuIndex'    : 1,\
+	'gpuN'        : 2,\
+	'lalo'        :[0,180,0,180],#[20,34,96,108][]*******,\
+	'nlalo'        :[-1,-1,-1,-1],\
+	'threshold'   :0.03,\
+	'minProb'     :0.7,\
+	'minP'        :0.7,\
+	'laL'         : [40,38,45],\
+	'loL'         : [110,120,125],\
+	'R'           :[20, 35, 95, 110],
+	'areasLimit'  :  3,\
+	'p2L':[\
+	[[30,98,0],[34,103,250]],\
+	[[45,110,0],[35,105,250]],
+	[[45,115,0],[35,110,250]],
+	[[41,105,0],[41,125,250]],
+	[[33,105,0],[50,130,250]],
+	]}
+
+paraYNSCV2={ 'quakeFileL'  : ['phaseLPickCEA'],\
+    'stationFileL': ['../stations/SCYN_withComp_ac'],#**********'stations/CEA.sta_know_few'\
+    'isLoadFvL'   : [False],#False********\
+    'byRecordL'   : [False],\
+    'trainDir'    : 'predict/1010_0.95_0.05_3.2_randMove/',\
+    'resDir'      : '/fastDir/results/1015_all_V?/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+    'perN'        : 1,\
+    'eventDir'    : '/HOME/jiangyr/eventSac/',\
+    'z'           : [0,5,10,15,20,25,30,35,45,50,55,60,65,70,80,90,100,115,130,160,200,260,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+    'tSur'        : (16**np.arange(0,1.000001,1/49))*10,\
+    'surPara'     : { 'nxyz':[30,25,0], 'lalo':[34,97],#[40,60,0][55,108]\
+                    'dlalo':[0.5,0.5], 'maxN':350,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 1.5,\
+					'maxIT':30,'nBatch':1,'smoothDV':20,'smoothG':40,'vR':NL},\
+	'runDir'      : '../DS/SCYNV2/',#_man/',\
+	'gpuIndex'    : 1,\
+	'gpuN'        : 2,\
+	'lalo'        :[0,180,0,180],#[20,34,96,108][]*******,\
+	'nlalo'        :[-1,-1,-1,-1],\
+	'threshold'   :0.03,\
+	'minProb'     :0.7,\
+	'minP'        :0.7,\
+	'laL'         : [40,38,45],\
+	'loL'         : [110,120,125],\
+	'R'           :[20, 35, 95, 110],
+	'areasLimit'  :  3,\
+	'p2L':[\
+	[[30,98,0],[34,103,250]],\
 	[[45,110,0],[35,105,250]],
 	[[45,115,0],[35,110,250]],
 	[[41,105,0],[41,125,250]],

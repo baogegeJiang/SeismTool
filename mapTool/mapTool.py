@@ -10,7 +10,10 @@ from lxml import etree
 from pycpt.load import gmtColormap as cpt2cm
 from ..mathTool.distaz import DistAz
 from ..mathTool.mathFunc_bak import R as mathR
+from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
+
 cmap = cpt2cm(os.path.dirname(__file__)+'/../data/temperatureInv')
+cmapTemp = cpt2cm(os.path.dirname(__file__)+'/../data/temperature')
 
 volcano=np.loadtxt(os.path.dirname(__file__)+'/../data/volcano')
 pi=3.1415927
@@ -43,10 +46,10 @@ def readnetcdf(R,file='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd'):
     R1 = R[2:]
     R0.sort()
     R1.sort()
-    laI0 = np.abs(la-R0[0]).argmin()-1
-    laI1 = np.abs(la-R0[1]).argmin()+1
-    loI0 = np.abs(lo-R1[0]).argmin()-1
-    loI1 = np.abs(lo-R1[1]).argmin()+1
+    laI0 = np.abs(la-R0[0]).argmin()-2
+    laI1 = np.abs(la-R0[1]).argmin()+2
+    loI0 = np.abs(lo-R1[0]).argmin()-2
+    loI1 = np.abs(lo-R1[1]).argmin()+2
     z=nc.variables['z'][:]
     return np.array(la[laI0:laI1]),np.array(lo[loI0:loI1]),np.array(z[laI0:laI1,loI0:loI1])
 
@@ -172,7 +175,7 @@ def readFault(filename):
     for fault in faultL:
         fault.update()
     return faultL
-
+faultL = readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
 class lineArea:
     def __init__(self,p0,p1,dkm):
         self.p0=np.array(p0)
@@ -294,7 +297,7 @@ def plotQuakeDis(quakeLs,output='quakeDis.png',cmd='.b',markersize=0.8,\
         plotOnMap(m,laLB,loLB,'r',linewidth=3,markersize=3)
     hQ,=plotOnMap(m,la,lo,cmd,markersize,alpha)
     #mt.scatterOnMap(m,la,lo,s=np.exp(mlL/1.5)*mul,alpha=alpha,c=np.array([1,0,0]))
-    parallels = np.arange(0.,90,2.)
+    
     plotTopo(m,R)
     if len(laL0)>1:
         #hC,=mt.plotOnMap(m,laL0,loL0,'ok',markersize=2)
@@ -303,6 +306,7 @@ def plotQuakeDis(quakeLs,output='quakeDis.png',cmd='.b',markersize=0.8,\
     else:
         plt.legend((hQ,hS,hF),('Quakes','Station','Faults'),bbox_to_anchor=(1, 1),\
               loc='lower right')
+    parallels = np.arange(0.,90,2.)
     m.drawparallels(parallels,labels=[False,True,True,False])
     meridians = np.arange(10.,360.,2.)
     plt.gca().yaxis.set_ticks_position('left')
@@ -426,40 +430,87 @@ def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
     paraL = qL.paraL(['la','lo','dep','ml','time'],req={'R':R})
     plt.close()
     fig=plt.figure(figsize=[5,3])
+    sFig=fig
+    ax=plt.gca()
+    ax_divider = make_axes_locatable(ax)
     if isTopo:
-        plt.subplot(2,1,1)
         la0,lo0,z0=readnetcdf(R.xyL.transpose().reshape([-1]).tolist())
         la,lo,z=getZInLine(la0,lo0,z0,R)
         laLo = np.array([la.tolist(),lo.tolist()]).transpose()
         l = R.l(laLo)
-        plt.plot(l,z/1000,'k')
-        plt.xlabel('Distance/km')
-        plt.ylabel('Elevation/km')
-        plt.ylim([0,6])
-        plt.xlim([0,R.L])
-        plt.gca().set_aspect(10)
-    if isTopo:
-        plt.subplot(2,1,2)
+        Tax = ax_divider.append_axes("top", size="50%", pad="10%")
+        Tax.plot(l,z/1000,'k')
+        #Tax.set_xlabel('Distance/km')
+        Tax.set_ylabel('Topo/km')
+        Tax.set_ylim([0,6])
+        Tax.set_xlim([0,R.L])
+        Tax.set_xticks([])
+        Tax.text(10,6,R.name,ha='left',va='bottom',c='r',size=10,weight='bold')
+        Tax.text(R.L,6,R.name+'\'',ha='right',va='bottom',c='r',size=10,weight='bold')
+        #Tax.set_aspect(5)
     timeL = (np.array(paraL['time'])-np.array(paraL['time']).min())/86400
     laLo = np.array([paraL['la'],paraL['lo']]).transpose()
     l = R.l(laLo)
     if not isinstance(vModel,type(None)):
         la,lo,z,Dist,V= vModel.outputP2(R.xyL,isPer=isPer,line=R)
         Dist = R.l(np.array([la[0].tolist(),lo[0].tolist()]).transpose())
-        pc=plt.pcolor(Dist,z,V,cmap=cmap)
+        pc=ax.pcolor(Dist,z,V,vmin=-np.abs(V).max(),vmax=np.abs(V).max(),cmap=cmap)
+        #position=fig.add_axes([0.15, 0.05, 0.7, 0.03])
         #cbar=fig.colorbar(pc,fraction=0.046, pad=0.04)
-        cbar=fig.colorbar(pc, orientation="horizontal")
-        cbar.set_label('v (km/s)')
+        # add an axes above the main axes.
+        cax = ax_divider.append_axes("bottom", size="7%", pad="80%")
+        #cb2 = fig.colorbar(im2, cax=cax2, orientation="horizontal")
+        cbar=fig.colorbar(pc, cax=cax, orientation="horizontal")
+        # change tick position to top. Tick position defaults to bottom and overlaps
+        # the image.
+        #cax2.xaxis.set_ticks_position("top")
+        if isPer:
+            if vModel.mode == 'vp':
+                cbar.set_label('dVp/V0')
+            else:
+                cbar.set_label('dVs/V0')
+        else:
+            cbar.set_label('V (km/s)')
     #pc=plt.scatter(l,paraL['dep'],s=1,c=timeL*0,cmap='gist_rainbow')#((np.array(paraL['ml'])*0+1)**2)*0.3/3
-    pc=plt.plot(l,paraL['dep'],'.k',markersize=1)
+    pc=ax.plot(l,paraL['dep'],'.k',markersize=0.3)
     #cbar=fig.colorbar(pc, orientation="horizontal",fraction=0.046, pad=0.04)
     #cbar.set_label('time from the first earthquake')
-    plt.xlabel('along/km')
-    plt.ylabel('dep/km')
-    plt.ylim([50,-10])
-    plt.xlim([0,R.L])
-    plt.gca().set_aspect(1)
-    plt.gca().set(facecolor='#A9A9A9')
+    ax.set_xlabel('Distance/km')
+    ax.set_ylabel('Depth/km')
+    ax.set_ylim([70,-10])
+    ax.set_xlim([0,R.L])
+    ax.set_aspect(1)
+    ax.set(facecolor='#A9A9A9')
     fig.tight_layout()
     plt.savefig(filename,dpi=300)
     plt.close()
+
+def showInMap(v,laL,loL,R,resFile,name='res'):
+    plt.close()
+    fig=plt.figure(figsize=[4,5])
+    m = basemap.Basemap(llcrnrlat=R[0],urcrnrlat=R[1],llcrnrlon=R[2],\
+        urcrnrlon=R[3])
+    for fault in faultL:
+        if fault.inR(R):
+            fh=fault.plot(m,markersize=0.3)
+    loM,laM=np.meshgrid(loL,laL)
+    x,y=m(loM,laM)
+    parallels = np.arange(0.,90,2.)
+    m.drawparallels(parallels,labels=[False,True,True,False])
+    meridians = np.arange(10.,360.,2.)
+    plt.gca().yaxis.set_ticks_position('left')
+    m.drawmeridians(meridians,labels=[True,False,False,True])
+    V = np.ma.masked_where(np.isnan(v), v)
+    cmp=plt.get_cmap('coolwarm')
+    #cmap = co.copy(cm.get_cmap(plt.rcParams['image.cmap']))
+    cmap.set_bad('y', 0)
+    pc=m.pcolormesh(x,y,V,cmap=cmap,shading='gouraud')
+    #cbar=fig.colorbar(pc,orientation="horizontal")
+    ax=plt.gca()
+    ax_divider = make_axes_locatable(ax)
+    cax = ax_divider.append_axes("bottom", size="7%", pad="5%")
+    cbar=fig.colorbar(pc, cax=cax, orientation="horizontal")
+    #cbar=plt.colorbar()
+    cbar.set_label(name)
+    fig.tight_layout()
+    plt.savefig(resFile,dpi=300)

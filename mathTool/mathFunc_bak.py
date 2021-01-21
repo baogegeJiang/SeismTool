@@ -277,7 +277,15 @@ class  Line(R):
         return True
     def perKm(self):
         return 1
-
+class Round:
+    def __init__(self,p0,R):
+        self.p0=p0
+        self.R=R
+    def isIn(self,p):
+        ##print(p)
+        return DistAz(self.p0[0],self.p0[1],p[0],p[1]).getDelta()*110.19<=self.R
+    def isIN(self,pL):
+        return [self.isIn(p) for p in pL ]
 class Model:
     def __init__(self,config,mode,la,lo,z,v):
         self.mode = mode
@@ -304,7 +312,7 @@ class Model:
         V= self.v
         V[np.isnan(V)]=-1e9
         for i in range(nxyzTmp[-1]):
-            vTmp[:,:,i] = interpolate.interp2d(self.lo, self.la, V[:,:,i],bounds_error=False,fill_value=1e-8,kind='cubic')(lo,la)
+            vTmp[:,:,i] = interpolate.interp2d(self.lo, self.la, V[:,:,i],bounds_error=False,fill_value=1e-8,kind='linear')(lo,la)
         if la[-1]<la[0]:
             vTmp = vTmp[::-1]
         if lo[-1]<lo[0]:
@@ -346,6 +354,8 @@ class Model:
         points = np.concatenate((Lo.reshape([-1,1]),La.reshape([-1,1]),Z.reshape([-1,1])),axis=1)
         v=interpolate.griddata(points,V,(lo,la,z),method='linear')
         #v[v<0]=np.nan
+        isnan = isNan3D(self.la,self.lo,self.z,self.v,la,lo,z)
+        v[isnan==1]=np.nan
         return v
     def Output(self,la,lo,z,isPer=False,vR=''):
         #Lo,La,Z = np.meshgrid(self.lo,self.la,self.z)
@@ -369,6 +379,7 @@ class Model:
         return v
     def Output2D(self,la,lo,V,isPer=False,vR=''):
         Lo,La = np.meshgrid(self.lo,self.la)
+        V0=V
         V = V.reshape([-1])
         #V[np.isnan(V)]=-1e9
         vaild = (np.isnan(V)==False)
@@ -376,7 +387,9 @@ class Model:
             ),axis=1)
         if vaild.sum()==0:
             return None
-        v=interpolate.griddata(points,V[vaild],(lo,la),method='linear')
+        v=interpolate.griddata(points,V[vaild],(lo,la),method='cubic')
+        isnan = isNan(self.la,self.lo,V0,la,lo)
+        v[isnan==1]=np.nan
         #v[v<0]=np.nan
         return v
     def denseLaLo(self,Per,N=300,dIndex=0,doDense=True):
@@ -402,9 +415,9 @@ class Model:
         #Per[np.isnan(Per)]=mean
         dLa = (self.la[-dIndex]-self.la[dIndex])/N
         dLo = (self.lo[-dIndex]-self.lo[dIndex])/N
-        la  = np.arange(self.la[dIndex],self.la[-dIndex]+1e-5*dLa,dLa)
+        la  = np.arange(self.la[dIndex],self.la[-dIndex],dLa)
         la.sort()
-        lo  = np.arange(self.lo[dIndex],self.lo[-dIndex]+1e-5*dLo,dLo)
+        lo  = np.arange(self.lo[dIndex],self.lo[-dIndex],dLo)
         la,lo=np.meshgrid(la,lo)
         return la,lo,self.Output2D(la,lo,Per)
     def outputP2(self,P2,N=100,isPer=False,line=''):
@@ -426,3 +439,119 @@ class Model:
                 V[i]/=V[i,np.isnan(V[i])==False].mean()
             V-=1
         return la,lo,z,Dist,V
+
+def isNan(La,Lo,V,la,lo):
+    shape=la.shape
+    La=La.reshape([-1,1])
+    Lo=Lo.reshape([-1,1])
+    la=la.reshape([1,-1])
+    lo=lo.reshape([1,-1])
+    i = np.abs(La-la).argmin(axis=0)
+    j = np.abs(Lo-lo).argmin(axis=0)
+    #print(i,j)
+    isnan = i*0
+    for I in range(len(i)):
+        if np.isnan(V[i[I],j[I]]):
+            isnan[I]=1
+            #print(I,i[I],j[I])
+    return isnan.reshape(shape)
+def isNan3D(La,Lo,Z,V,la,lo,z):
+    shape=la.shape
+    La=La.reshape([-1,1])
+    Lo=Lo.reshape([-1,1])
+    Z=Z.reshape([-1,1])
+    la=la.reshape([1,-1])
+    lo=lo.reshape([1,-1])
+    z=z.reshape([1,-1])
+    i = np.abs(La-la).argmin(axis=0)
+    j = np.abs(Lo-lo).argmin(axis=0)
+    k = np.abs(Z-z).argmin(axis=0)
+    #print(i,j)
+    isnan = i*0
+    for I in range(len(i)):
+        if np.isnan(V[i[I],j[I],k[I]]):
+            isnan[I]=1
+            #print(I,i[I],j[I])
+    return isnan.reshape(shape)
+def outR(vR,la,lo):
+    lo,la=np.meshgrid(lo,la)
+    print(lo,la)
+    #print(np.conca(la,lo).shape)
+    lalo=np.concatenate((la.reshape([1,la.shape[0],la.shape[1]]),\
+            lo.reshape([1,la.shape[0],la.shape[1]])),axis=0).transpose([1,2,0])
+    dlalo = lalo.reshape([lalo.shape[0],lalo.shape[1],1,2])- vR.reshape([1,1,-1,2])
+    dlalo2 = np.concatenate((dlalo[:,:,:-1].reshape([1,dlalo.shape[0],dlalo.shape[1],\
+            dlalo.shape[2]-1,dlalo.shape[3]])\
+            ,dlalo[:,:,1:].reshape([1,dlalo.shape[0],dlalo.shape[1],\
+            dlalo.shape[2]-1,dlalo.shape[3]]))\
+        ,axis=0).transpose([0,4,1,2,3])
+    print(dlalo2.shape,dlalo.shape)
+    theta = np.arcsin((dlalo2[0,0]*dlalo2[1,1]-dlalo2[0,1]*dlalo2[1,0])\
+    /((dlalo2[0]**2).sum(axis=0)*(dlalo2[1]**2).sum(axis=0))**0.5)
+    sumTheta=theta.sum(axis=2)
+    print(sumTheta)
+    return np.abs(sumTheta)<np.pi/3
+
+#calc_b is from Zhou Yijian
+def gr_fit(mag, min_num=100, method='MAXC'):
+    if len(mag) < min_num: return np.nan, [np.nan, np.nan], np.nan
+    mag = np.array(mag)
+    if method=='MAXC': mc = calc_mc_maxc(mag)
+    mag = mag[mag>=mc]
+    b_val, b_dev = calc_b(mag)
+    return mc, [b_val, b_dev], np.log10(len(mag))
+
+
+# calc b value
+def calc_b(mag, min_num=None):
+    num_events = len(mag)
+    if min_num: 
+        if num_events < min_num: return -1, -1
+    b_val = np.log10(np.exp(1)) / (np.mean(mag) - np.min(mag) + 0.05)
+    b_dev = 2.3 * b_val**2 * (np.var(mag) / num_events)**0.5
+    return round(b_val,2), round(b_dev,2)
+
+
+# calc fmd
+def calc_fmd(mag):
+    mag = mag[mag!=-np.inf]
+    mag_max = np.ceil(10 * max(mag)) / 10
+    mag_min = np.floor(10 * min(mag)) / 10
+    mag_bin = np.around(np.arange(mag_min-0.1, mag_max+0.2, 0.1),1)
+    num = np.histogram(mag, mag_bin)[0]
+    cum_num = np.cumsum(num[::-1])[::-1]
+    return mag_bin[1:], num, cum_num
+
+
+# calc Mc by MAXC method
+def calc_mc_maxc(mag):
+    mag_bin, num, _ = calc_fmd(mag)
+    return mag_bin[np.argmax(num)]
+
+
+# calc b_val to Mc relation
+def calc_b2mc(mag):
+    mag_min = np.floor(10 * min(mag)) / 10
+    mag_max = np.ceil(10 * max(mag)) / 10
+    mc_min = calc_mc_maxc(mag)
+    mag_rng = np.arange(mc_min-1., mc_min+1.5, 0.1)
+    b_val_dev = np.array([calc_b(mag[mag>mi]) for mi in mag_rng])
+    return b_val_dev, mag_rng
+
+
+def devide(rM,pL,paraL):
+    return [[ paraL[np.array(r.isIN(pL))] for r in rL]for rL in rM]
+
+def calc_B(mag, min_num=1000,min_mag=-2,max_mag=5):
+    mag=np.array(mag)
+    mag=mag[mag>min_mag]
+    mag=mag[mag<max_mag]
+    if len(mag)<min_num:
+        return [np.nan,np.nan]
+    
+    mc, [b_val, b_dev], a_val = gr_fit(mag, min_num=min_num)
+    print(b_val,b_dev)
+    if mc<0:
+        return [np.nan,np.nan]
+    else:
+        return [b_val,mc]

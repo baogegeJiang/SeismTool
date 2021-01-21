@@ -14,12 +14,11 @@ from ..io import tool
 from ..io.seism import getTrace3ByFileName,Quake,QuakeL,Record,QuakeCC,RecordCC,t0,t1
 from ..io.sacTool import staTimeMat
 
-from ..mapTool.mapTool import readFault,plotTopo
+from ..mapTool.mapTool import readFault,plotTopo,faultL
 import mpl_toolkits.basemap as basemap
 import torch
 maxA=2e19
 os.environ["MKL_NUM_THREADS"] = "8"
-faultL = readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
 @jit
 def isZeros(a):
     new = a.reshape([-1,10,a.shape[-1]])
@@ -748,8 +747,8 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=Fa
     if not os.path.exists(dayDir):
         os.mkdir(dayDir)
     fig=plt.figure(figsize=[6.2,5])
-    m = basemap.Basemap(llcrnrlat=laL[0],urcrnrlat=laL[1],llcrnrlon=loL[0],\
-        urcrnrlon=loL[1])
+    m = basemap.Basemap(llcrnrlat=laL[0],urcrnrlat=laL[-1],llcrnrlon=loL[0],\
+        urcrnrlon=loL[-1])
     if len(staInfos)>0:
         req={'staInfos':staInfos,'minCover':0.5,'minMl':-5}
     else:
@@ -761,18 +760,15 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=Fa
     ml,dep=[np.array(pL['ml']),np.array(pL['dep'])]
     for fault in faultL:
         if fault.inR(laL+loL):
-            f=fault.plot(m,markersize=0.3)
-    for R in rL:
-        x,y=m(R.xyL[:,1],R.xyL[:,0])
-        plt.arrow(x[0],y[0],x[1]-x[0],y[1]-y[0])
-        plt.text(x-0.01,y+0.01,ha='left',va='bottom')
+            fh=fault.plot(m,markersize=0.3)
+    
     #m.plot(eX,eY,'ro',markersize=2)
     #m.etopo()
     if isTopo:
         plotTopo(m,laL+loL)
     #sc=m.scatter(eX,eY,c=dep,s=((ml*0+1)**2)*0.3/3,vmin=-5,vmax=50,cmap='gist_rainbow')#Reds
     #sc=m.scatter(eX,eY,c=dep,s=((ml*0+1)**2)*0.3/3,vmin=-5,vmax=50,cmap='jet')
-    m.plot(eX,eY,'.k',markersize=0.3,alpha=0.5)
+    eh=m.plot(eX,eY,'.r',markersize=0.3,alpha=1)
     staLa= []
     staLo=[]
     for sta in staInfos:
@@ -780,10 +776,9 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=Fa
         staLo.append(sta.loc()[1])
     #staLa,staLo = staL.loc()
     staX,staY=m(np.array(staLo),np.array(staLa))
-    st=m.plot(staX,staY,'b^',markersize=3,alpha=1)
+    sh=m.plot(staX,staY,'k^',markersize=3,alpha=1)
     #plt.legend([st,sc,f],['station','event','fault'])
     #m.arcgisimage()
-    
     #plt.scatter()
     parallels = np.arange(0.,90,3)
     m.drawparallels(parallels,labels=[False,True,True,False])
@@ -794,7 +789,13 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=Fa
     #cbar=fig.colorbar(sc, orientation="horizontal", fraction=0.046, pad=0.04)
     #cbar.set_label('Depth')
     #plt.colorbar()
+    #plt.legend((sh,eh,fh),['station','earthquake','fault'],loc=1)
     fig.tight_layout()
+    for R in rL:
+        x,y=m(R.xyL[:,1],R.xyL[:,0])
+        plt.arrow(x[0],y[0],x[1]-x[0],y[1]-y[0],color='b')
+        plt.text(x[0],y[0],R.name,ha='left',va='bottom',c='b',size=12,weight='bold')
+        plt.text(x[1],y[1],R.name+'\'',ha='right',va='top',c='b',size=12,weight='bold')
     plt.savefig(filename,dpi=300)
 
     plt.close()
