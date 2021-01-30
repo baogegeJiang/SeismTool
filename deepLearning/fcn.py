@@ -1,5 +1,5 @@
 from tensorflow import keras
-from tensorflow.keras.models import  Model
+from tensorflow.keras import  Model
 from tensorflow.keras.layers import Input, MaxPooling2D,\
   AveragePooling2D,Conv2D,Conv2DTranspose,concatenate,\
   Dropout,BatchNormalization, Dense,Softmax
@@ -7,7 +7,8 @@ from tensorflow.python.keras.layers import Layer, Lambda
 from tensorflow.python.keras import initializers, regularizers, constraints, activations
 #LayerNormalization = keras.layers.BatchNormalization
 import numpy as np
-from tensorflow.keras import backend as K
+#from tensorflow.keras import backend as K
+from tensorflow.compat.v1.keras import backend as K
 from matplotlib import pyplot as plt   
 from tensorflow.keras.layers import Activation
 from tensorflow.keras.utils import get_custom_objects
@@ -20,6 +21,7 @@ import os
 from tensorflow.keras.utils import plot_model
 import tensorflow as tf
 from numba import jit
+from .node_cell import ODELSTMR
 # this module is to construct deep learning network
 def defProcess():
     config = tf.ConfigProto()
@@ -87,7 +89,18 @@ class lossFuncSoft:
         return -K.mean((self.w*y0*K.log(yout0+1e-13)+y1*K.log(yout1+1e-13))*\
             (K.max(y0,axis=1, keepdims=True)*1+0.0)*channelW,\
             axis=-1)
-
+class lossFuncSoftSq:
+    # 当有标注的时候才计算权重
+    # 这样可以保持结构的一致性
+    def __init__(self,w=1):
+        self.w=w
+        self.__name__ = 'lossFuncSoft'
+    def __call__(self,y0,yout0):
+        y1 = 1-y0
+        yout1 = 1-yout0
+        return -K.mean((self.w*y0*K.log(yout0+1e-13)+y1*K.log(yout1+1e-13))*\
+            (K.max(y0,axis=1, keepdims=True)*1+0.0)*channelW,\
+            axis=-1)
 class lossFuncSoftBak:
     def __init__(self,w=1):
         self.w=w
@@ -127,6 +140,22 @@ def rightRateNp(yinPos,youtPos,yinMax,youtMax,maxD=0.03,K=np, minP=0.5):
 
 
 def printRes_old(yin, yout):
+    #       0.01  0.8  0.36600 0.9996350
+    strL   = 'maxD   minP hitRate rightRate F old'
+    strfmt = '\n%5.3f %3.1f %7.5f %7.5f %7.5f'
+    yinPos  = yin.argmax( axis=1)
+    youtPos = yout.argmax(axis=1)
+    yinMax = yin.max(axis=1)
+    youtMax = yout.max(axis=1)
+    for maxD in [0.03,0.02,0.01,0.005]:
+        for minP in [0.5,0.7,0.8,0.9]:
+            hitRate,rightRate,F = rateNp(\
+                yinPos,youtPos,yinMax,youtMax,maxD=maxD,minP=minP)
+            strL += strfmt%(maxD, minP, hitRate, rightRate,F)
+    print(strL)
+    return strL
+
+def printRes_sq(yin, yout):
     #       0.01  0.8  0.36600 0.9996350
     strL   = 'maxD   minP hitRate rightRate F old'
     strfmt = '\n%5.3f %3.1f %7.5f %7.5f %7.5f'
@@ -254,7 +283,15 @@ def inAndOutFuncNewV6(config, onlyLevel=-10000):
         outputs = outputsL[onlyLevel]
     return inputs,outputs
 
-
+def inAndOutFuncODELSTMR(config):
+    pixel_input = tf.keras.Input(shape=(config.padSize, config.channelSize), name="pixel")
+    time_input = tf.keras.Input(shape=(config.padSize,config.outSize ), name="time")
+    inputs = [pixel_input,time_input]
+    rnn = tf.keras.layers.RNN(ODELSTMR(units=config.size),time_major=False,return_sequences=True,go_backwards=True,)
+    dense_layer = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(1,activation='sigmoid'))
+    output_states = rnn((pixel_input, time_input))
+    y = dense_layer(output_states)
+    return inputs,[y]
 class xyt:
     def __init__(self,x,y,t=''):
         self.x = x
@@ -346,6 +383,73 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
         model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
         T=tTrain,outputDir=outputDir,level=level)
 
+def trainAndTestSq(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTrain=tTrain,\
+    sigmaL=[4,3,2,1.5],count0=3,perN=2,w0=4):
+    '''
+    依次提高精度要求，加大到时附近权重，以在保证收敛的同时逐步提高精度
+    '''
+    #xTrain, yTrain, timeTrain =corrLTrain(np.arange(0,20000))
+    #model.show(xTrain,yTrain,time0L=timeTrain ,delta=1.0,T=tTrain,outputDir=outputDir+'_train')
+    #2#4#8#8*3#8#5#10##model.config.lossFunc.w
+    tmpDir =  os.path.dirname(outputDir)
+    if not os.path.exists(tmpDir):
+        os.makedirs(tmpDir)
+    #model.plot(outputDir+'model.png')
+    testCount = len(corrLTest)
+    showCount = int(len(corrLTest)*1)
+    showD     = int(showCount/40)
+    resStr = 'testCount %d showCount %d \n'%(testCount,showCount)
+    resStr +='train set setting: %s\n'%corrLTrain
+    resStr +='test  set setting: %s\n'%corrLTest
+    resStr +='perN: %d count0: %d w0: %.5f\n'%(perN, count0, w0)
+    resStr +='sigmaL: %s\n'%sigmaL
+    print(resStr)
+    trainTestLossL =[]
+    for sigma in sigmaL:
+        model.config.lossFunc.w = w0*(1.5/sigma)**0.5
+        corrLTrain.timeDisKwarg['sigma']=sigma
+        corrLTest.timeDisKwarg['sigma']=sigma
+        corrLValid.timeDisKwarg['sigma']=sigma
+        corrLValid.iL=np.array([])
+        corrLTrain.iL=np.array([])
+        corrLTest.iL=np.array([])
+        model.compile(
+            optimizer=tf.keras.optimizers.RMSprop(0.0005),
+            loss=model.config.lossFunc,
+        )
+        xTest, yTest,nTest, tTest =corrLValid.newCall(np.arange(len(corrLValid)))
+        resStrTmp, trainTestLoss=model.trainByXYT(corrLTrain,xTest=xTest,yTest=yTest,\
+            nTest=nTest,count0=count0, perN=perN)
+        resStr += resStrTmp
+        trainTestLossL.append(trainTestLoss)
+    xTest, yTest, tTest =corrLValid.newCall(np.arange(len(corrLValid)))
+    yout=model.predict(xTest)  
+    for threshold in [0.5,0.7,0.8]:
+        corrLValid.plotPickErro(yout,tTrain,fileName=outputDir+'erro_valid.jpg',\
+            threshold=threshold)
+    xTest, yTest, tTest =corrLTest.newCall(np.arange(showCount))
+    yout=model.predict(xTest)
+    resStr += '\n test part\n'
+    resStr+= printRes_sq(yTest, yout)+'\n'
+        #resStr+= printRes(yTest, yout[:,:,level:level+1])+'\n'
+    head = outputDir+'resStr_'+\
+        obspy.UTCDateTime(time.time()).strftime('%y%m%d-%H%M%S')
+    with open(head+'.log','w') as f:
+        ###save model
+        model.summary(print_fn=lambda x: f.write(x + '\n'))
+        f.write(resStr)
+    for i in range(len(sigmaL)):
+        sigma = sigmaL[i]
+        trainTestLoss = trainTestLossL[i]
+        np.savetxt('%s_sigma%.3f_loss'%(head,sigma),np.array(trainTestLoss))
+    for threshold in [0.5,0.7,0.8]:
+        corrLTest.plotPickErro(yout,tTrain,fileName=outputDir+'erro_test.jpg',\
+                threshold=threshold)
+    model.save(head+'_model')
+    iL=np.arange(0,showCount,showD)
+    for level in range(-1,-model.config.deepLevel-1,-1):
+        model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
+        T=tTrain,outputDir=outputDir,level=level)
 
 
 def trainAndTestCross(model0,model1,corrLTrain0,corrLTrain1,corrLTest,outputDir='predict/',tTrain=tTrain,\
@@ -390,9 +494,9 @@ def trainAndTestCross(model0,model1,corrLTrain0,corrLTrain1,corrLTest,outputDir=
             model0.setTrain([],False)
             model1.setTrain([],True)
             per1 = 0.5
-        xTest, yTest, tTest =corrLTest(np.arange(2000,4000))
+        xTest, yTest, tTest =corrLTest.newCall(np.arange(2000,4000))
         model0.trainByXYTCross(model1,corrLTrain0,corrLTrain1,xTest=xTest,yTest=yTest,per1=per1)
-    xTest, yTest, tTest =corrLTest(np.arange(2000))
+    xTest, yTest, tTest =corrLTest.newCall(np.arange(2000))
     corrLTest.plotPickErro(model0.predict(xTest),tTrain,\
     fileName=outputDir+'erro.jpg')
     iL=np.arange(0,1000,50)
@@ -488,6 +592,15 @@ class fcnConfig:
     def inAndOut(self,*argv,**kwarg):
         return self.inAndOutFunc(self,*argv,**kwarg)
 
+class odelstmrConfig:
+    def __init__(self,mode='surf',size=10):
+        self.inAndOutFunc = inAndOutFuncODELSTMR
+        self.mode=mode
+        self.lossFunc     = lossFuncSoftSq(w=10)
+        self.padSize, self.channelSize,self.outSize=[4096*3,3,1]
+        self.size=size
+    def inAndOut(self,*argv,**kwarg):
+        return self.inAndOutFunc(self,*argv,**kwarg)
 w1=np.ones(1500)*0.5
 w0=np.ones(250)*(-0.75)
 w2=np.ones(250)*(-0.25)
@@ -582,7 +695,7 @@ class model(Model):
         else:
             x/=x.std(axis=(1,2,3),keepdims=True)+np.finfo(x.dtype).eps
         return x
-    def __call__(self,x):
+    def __call__(self,x,*args,**kwargs):
         return super(Model, self).__call__(K.tensor(self.inx(x)))
     def train(self,x,y,**kwarg):
         if 't' in kwarg:
@@ -724,6 +837,213 @@ class model(Model):
             if i>10 and i%5==0:
                 perN += int(perN*0.02)
         self.set_weights(w0)
+    def show(self, x, y0,outputDir='predict/',time0L='',delta=0.5,T=np.arange(19),fileStr='',\
+        level=-1):
+        y = self.predict(x)
+        f = 1/T
+        count = x.shape[1]
+        for i in range(len(x)):
+            #print('show',i)
+            timeL = np.arange(count)*delta
+            if len(time0L)>0:
+                timeL+=time0L[i]
+            xlim=[timeL[0],timeL[-1]]
+            xlimNew=[0,500]
+            #xlim=xlimNew
+            tmpy0=y0[i,:,0,:]
+            pos0  =tmpy0.argmax(axis=0)
+            tmpy=y[i,:,0,:]
+            pos  =tmpy.argmax(axis=0)
+            plt.close()
+            plt.figure(figsize=[12,8])
+            plt.subplot(4,1,1)
+            plt.title('%s%d'%(outputDir,i))
+            legend = ['r s','i s',\
+            'r h','i h']
+            for j in range(x.shape[-1]):
+                plt.plot(timeL,self.inx(x[i:i+1,:,0:1,j:j+1])[0,:,-1,0]-j,'rbgk'[j],\
+                    label=legend[j],linewidth=0.3)
+            #plt.legend()
+            plt.xlim(xlim)
+            plt.subplot(4,1,2)
+            #plt.clim(0,1)
+            plt.pcolor(timeL,f,y0[i,:,0,:].transpose(),cmap='bwr',vmin=0,vmax=1)
+            plt.plot(timeL[pos.astype(np.int)],f,'k',linewidth=0.5,alpha=0.5)
+            plt.ylabel('f/Hz')
+            plt.gca().semilogy()
+            plt.xlim(xlimNew)
+            plt.subplot(4,1,3)
+            plt.pcolor(timeL,f,y[i,:,level,:].transpose(),cmap='bwr',vmin=0,vmax=1)
+            #plt.clim(0,1)
+            plt.plot(timeL[pos0.astype(np.int)],f,'k',linewidth=0.5,alpha=0.5)
+            plt.ylabel('f/Hz')
+            plt.xlabel('t/s')
+            plt.gca().semilogy()
+            plt.xlim(xlimNew)
+            plt.subplot(4,1,4)
+            delta = timeL[1] -timeL[0]
+            N = len(timeL)
+            fL = np.arange(N)/N*1/delta
+            for j in range(x.shape[-1]):
+                spec=np.abs(np.fft.fft(self.inx(x[i:i+1,:,0:1,j:j+1])[0,:,0,0])).reshape([-1])
+                plt.plot(fL,spec/(spec.max()+1e-16),'rbgk'[j],\
+                    label=legend[j],linewidth=0.3)
+            plt.xlabel('f/Hz')
+            plt.ylabel('A')
+            plt.xlim([fL[1],fL[-1]/2])
+            #plt.gca().semilogx()
+            plt.savefig('%s%s_%d_%d.jpg'%(outputDir,fileStr,level,i),dpi=200)
+    def predictRaw(self,x):
+        yShape = list(x.shape)
+        yShape[-1] = self.config.outputSize[-1]
+        y = np.zeros(yShape)
+        d = self.config.outputSize[0]
+        halfD = int(self.config.outputSize[0]/2)
+        iL = list(range(0,x.shape[0]-d,halfD))
+        iL.append(x.shape[0]-d)
+        for i0 in iL:
+            y[:,i0:(i0+d)] = x.predict(x[:,i0:(i0+d)])
+        return y
+    def set(self,modelOld):
+        self.set_weights(modelOld.get_weights())
+    def setTrain(self,name,trainable=True):
+        lr0= K.get_value(self.optimizer.lr)
+        for layer in self.layers:
+            if layer.name.split('_')[0] in name:
+                layer.trainable = trainable
+                print('set',layer.name,trainable)
+            else:
+                layer.trainable = not trainable
+                print('set',layer.name,not trainable)
+
+        self.compile(loss=self.config.lossFunc, optimizer='Nadam')
+        K.set_value(self.optimizer.lr,  lr0)
+
+
+class modelSq(Model):
+    def __init__(self,weightsFile='',config=odelstmrConfig(),metrics=rateNp,\
+        channelList=[1,2,3,4],onlyLevel=-1000,maxCount=-1):
+        config.channelSize=len(channelList)
+        if maxCount >0:
+            config.padSize=maxCount
+        self.genM(config)
+        self.config = config
+        self.Metrics = metrics
+        self.channelList = channelList
+        #self.compile(loss=self.config.lossFunc, optimizer='Nadam')
+        if len(weightsFile)>0:
+            model.load_weights(weightsFile)
+        print(self.summary())
+
+    def genM(self,config):
+        inputs, outputs = config.inAndOut()
+        #outputs  = Softmax(axis=3)(last)
+        super().__init__(inputs=inputs,outputs=outputs)
+        self.compile(loss=config.lossFunc, optimizer='Nadam')
+        return model
+    def predict(self,x):
+        #print('inx')
+        x = self.inx(x)
+        #print('inx done')
+        if self.config.mode=='surf':
+            return super().predict(x).astype(np.float16)
+        else:
+            return super().predict(x)
+    def fit(self,x,y,batchSize=20):
+        x=self.inx(x)
+        if np.isnan(x[0]).sum()>0 or np.isinf(x[0]).sum()>0:
+            print('bad record')
+            return None
+        return super().fit(x=x ,y=(y,),batch_size=batchSize,epochs=1)
+    def plot(self,filename='model.png'):
+        plot_model(self, to_file=filename)
+    def inx(self,x):
+        x0 = x[0]
+        x1 = x[1]
+        x=x0
+        if self.config.mode=='surf':
+            if x.shape[-1] > len(self.channelList):
+                x = x[:,:,self.channelList]
+            timeN0 = np.float32(x.shape[1])
+            timeN  = (x!=0).sum(axis=1,keepdims=True).astype(np.float32)
+            timeN *= 1+0.2*(np.random.rand(*timeN.shape).astype(np.float32)-0.5)
+            x/=(x.std(axis=(1),keepdims=True))*(timeN0/timeN)**0.5
+        else:
+            x/=x.std(axis=(1,2),keepdims=True)+np.finfo(x.dtype).eps
+        return (x,x1)
+    #def __call__(self,x,*args,**kwargs):
+    #    return super(Model, self).__call__(self.inx(x))
+    def train(self,x,y,**kwarg):
+        if 't' in kwarg:
+            t = kwarg['t']
+        else:
+            t = ''
+        XYT = xyt(x,y,t)
+        self.trainByXYT(XYT,**kwarg)
+    def trainByXYT(self,XYT,N=2000,perN=10,batchSize=None,xTest='',\
+        yTest='',nTest='',k0 = 4e-3,t='',count0=3):
+        if k0>1:
+            K.set_value(self.optimizer.lr, k0)
+        indexL = range(len(XYT))
+        sampleDone = np.zeros(len(XYT))
+        #print(indexL)
+        lossMin =100
+        count   = count0
+        w0 = self.get_weights()
+        resStr=''
+        trainTestLoss = []
+        iL = random.sample(indexL,int(xTest.shape[0]/20))
+        xTrain, yTrain , nTrain,t0LTrain = XYT.newCall(iL)
+        #print(self.metrics)
+        for i in range(N):
+            iL = random.sample(indexL,perN)
+            for ii in iL:
+                sampleDone[ii]+=1
+            x, y ,n, t0L = XYT.newCall(iL)
+            print(x.shape,y.shape,n.shape)
+            #print(XYT.iL)
+            self.fit((x,n),y,batchSize=batchSize)
+            if i%10==0:
+                if len(xTest)>0:
+                    lossTrain = self.evaluate(x=self.inx((xTrain,nTrain)),y=yTrain)
+                    lossTest    = self.evaluate(x=self.inx((xTest,nTest)),y=yTest)
+                    print('train loss',lossTrain,'test loss: ',lossTest,\
+                        'sigma: ',XYT.timeDisKwarg['sigma'],\
+                        'w: ',self.config.lossFunc.w, \
+                        'no sampleRate:', 1 - np.sign(sampleDone).mean(),\
+                        'sampleTimes',sampleDone.mean())
+                    resStr+='\n %d train loss : %f valid loss :%f'%(i,lossTrain,lossTest)
+                    trainTestLoss.append([i,lossTrain,lossTest])
+                    if lossTest >= lossMin:
+                        count -= 1
+                    if lossTest > 3*lossMin:
+                        self.set_weights(w0)
+                        #count = count0
+                        print('reset to smallest')
+                    if lossTest < lossMin:
+                        count = count0
+                        lossMin = lossTest
+                        w0 = self.get_weights()
+                        print('find better')
+                    if count ==0:
+                        break
+                    #print(self.metrics)
+                    
+                    if i%30==0 and i>10:
+                        youtTrain = 0
+                        youtTest  = 0
+                        youtTrain = self.predict((xTrain,nTest))
+                        youtTest  = self.predict((xTest,nTest))
+                        resStr+='\ntrain '+printRes_sq(yTrain, youtTrain)
+                        resStr+='\ntest '+printRes_sq(yTest, youtTest)
+            if i%5==0:
+                print('learning rate: ',self.optimizer.lr)
+                K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.95)
+            if i>10 and i%5==0:
+                perN += int(perN*0.05)
+                perN = min(1000, perN)
+        self.set_weights(w0)
+        return resStr,trainTestLoss
     def show(self, x, y0,outputDir='predict/',time0L='',delta=0.5,T=np.arange(19),fileStr='',\
         level=-1):
         y = self.predict(x)

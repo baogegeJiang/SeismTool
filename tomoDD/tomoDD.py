@@ -36,6 +36,13 @@ def preEvent(quakeL,staInfos,filename='abc',R=[-90,90,-180,180]):
             quake=quakeL[i]
             ml=0
             if not quake.inR(R):
+                if quake['ml']!=None :
+                    if quake['ml']>-2:
+                        ml=quake['ml']
+                Y=getYmdHMSj(UTCDateTime(quake['time']))
+                f.write("%s  %s%02d   %.4f   %.4f    % 7.3f % 5.2f   0.15    0.51  % 5.2f   % 8d %1d\n"%\
+                    (Y['Y']+Y['m']+Y['d'],Y['H']+Y['M']+Y['S'],int(quake['time']*100)%100,\
+                        (R[0]+R[1])/2+i/10e5,(R[2]+R[3])/2+i/10e5,max(0,quake['dep']),ml,1,i,0))
                 continue
             if quake['ml']!=None :
                 if quake['ml']>-2:
@@ -136,6 +143,8 @@ def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
                     continue                  
                 for dtD in dTM[i][j]:
                     dt,maxC,staIndex,phaseType=dtD
+                    if maxC>2:
+                        continue
                     index0 = indexL0.index(staIndex)
                     index1 = indexL1.index(staIndex)
                     if isNick:
@@ -521,10 +530,11 @@ def getReloc(qL,filename):
             quake['lo'] = float(tmp[2])
             quake['dep'] = float(tmp[3])
             timeL = [int(float(t)) for t in tmp[10:16]]
+            sec  = float(tmp[15])%1
             if timeL[-1]>=60:
                 timeL[-1]%=60
-                timeL[-2]+=1
-            quake['time'] = (UTCDateTime(*timeL)+float(tmp[15])%1).timestamp
+                sec+=60
+            quake['time'] = (UTCDateTime(*timeL)+sec).timestamp
             qLNew.append(quake)
     return qLNew
 

@@ -207,7 +207,7 @@ class config:
         print(tmpName)
         return fv(tmpName,'file')
     def quakeCorr(self,quakes,stations,byRecord=True,remove_resp=False,para={},minSNR=-1,
-        isLoadFv=False,fvD={},isByQuake=False,quakesRef=[],resDir = 'eventSac/'):
+        isLoadFv=False,fvD={},isByQuake=False,quakesRef=[],resDir = 'eventSac/',maxCount=-1):
         corrL = []
         disp = self.getDispL()[0]
         if minSNR <0:
@@ -242,7 +242,7 @@ class config:
                 minDDist=self.minDDist,maxDDist=self.maxDDist,\
                 srcSac=quake.name(s='_'),isCut=self.isCut,isFromO=self.isFromO,\
                 removeP=self.removeP,fvD=fvD,isLoadFv=isLoadFv,quakeName=quakeName,\
-                isByQuake=isByQuake)
+                isByQuake=isByQuake,maxCount=maxCount)
             print('###########',len(corrL))
         return corrL
     def modelCorr(self,count=1000,randDrop=0.3,noises=None,para={},minSNR=-1):
@@ -994,7 +994,9 @@ class disp:
         plt.subplot(2,1,1);plt.pcolor(t,F,np.abs(zxx));plt.subplot(2,1,2);plt.plot(timeL,data);
         if isShow:
             plt.show()
-    def sacXcorr(self,sac0,sac1,isCut=False):
+    def sacXcorr(self,sac0,sac1,isCut=False,maxCount=-1):
+        #corr.x0 = sac0.data
+        #corr.x1 = sac1.data
         fs = sac0.stats['sampling_rate']
         self.fs=fs
         self.halfN = np.int(self.halfDt*self.fs)
@@ -1010,7 +1012,7 @@ class disp:
         timeL = np.arange(xx.size)/fs+dTime
         dDis = dis0 - dis1
         #print(np.imag(xx))
-        return corr(xx,timeL,dDis,fs)
+        return corr(xx,timeL,dDis,fs,x0=sac0.data,x1=sac1.data,maxCount=maxCount)
     def test(self,data0,data1,isCut=True):
         xx = self.xcorr(data0,data1,isCut=isCut)
         F,t,zxx = self.stft(xx)
@@ -1775,8 +1777,14 @@ class corr:
     def __init__(self,xx=np.arange(0,dtype=np.complex),timeL=np.arange(0),dDis=0,fs=0,\
         az=np.array([0,0]),dura=0,M=np.array([0,0,0,0,0,0,0]),dis=np.array([0,0]),\
         dep = 10,modelFile='',name0='',name1='',srcSac='',x0=np.arange(0),\
-        x1=np.arange(0),quakeName=''):
+        x1=np.arange(0),quakeName='',maxCount=-1):
         self.maxCount = -1
+        maxCount0   = xx.shape[0]
+        if maxCount<maxCount0 and maxCount>0:
+            xx = xx[:maxCount]
+            x0 = x0[:maxCount]
+            x1 = x1[:maxCount]
+            timeL=timeL[:maxCount]
         maxCount   = xx.shape[0]
         self.dtype = self.getDtype(maxCount)
         self.xx    = xx.astype(np.complex64)
@@ -1948,6 +1956,55 @@ class corr:
             #print(aF,aF<rThreshold)
             timeDis[:,aF<rThreshold]=timeDis[:,aF<rThreshold]*0
         return timeDis,t0
+    def outputTimeDisNew(self,FV,sigma=2,\
+        byT=False,byA=False,rThreshold=0.1,set2One=False,move2Int=False,noY=False,T=[]):
+        t0 = self.timeL[0]
+        delta = self.timeL[1]-self.timeL[0]
+        halfV = np.exp(-(delta*0.5/sigma)**2)
+        #f = f.reshape([1,-1])
+        f = FV.f.reshape([1,-1])
+        v = FV.v.reshape([1,-1])
+        if len(T)>0:
+            f = 1/T
+            v = FV(f,self.dis[0],self.dis[1])
+        f= f[v>0.3]
+        v= v[v>0.3]
+        f = f.reshape([1,-1])
+        v = v.reshape([1,-1])
+        if v.size<2:
+            return [],[],[],[]
+        dim = [self.timeL.shape[0],f.shape[-1]]
+        t = self.dDis/v
+        timeDis = np.zeros(dim)
+        timeL = self.timeL.reshape([-1,1])
+        dim = [self.timeL.shape[0],f.shape[-1]]
+        timeDis = np.zeros(dim)
+        if noY:
+            return timeDis,t0
+        t = self.dDis/v
+        if move2Int:
+            dt = np.abs(t-timeL)
+            minT = dt.min(axis=0)
+            indexT = dt.argmin(axis=0)
+            t[0,minT<delta] = timeL[indexT,0][minT<delta]
+        tmpSigma = sigma
+        if byT:
+            tMax =max(300,t.max())
+            tmpSigma = sigma/300*tMax
+        timeDis = np.exp(-((timeL-t)/tmpSigma)**2)
+        if set2One and byT == False:
+            timeDis[timeDis>halfV] = 1
+        if byA:
+            spec = np.abs(np.fft.fft(self.xx))
+            minf = 1/(len(self.timeL)*(self.timeL[1]-self.timeL[0]))
+            indexF = (f.reshape([-1])/minf).astype(np.int)
+            maxIndexF = indexF.max() 
+            #spec/=spec.max()
+            spec/=spec[:maxIndexF+1].mean()
+            aF = spec[indexF]
+            #print(aF,aF<rThreshold)
+            timeDis[:,aF<rThreshold]=timeDis[:,aF<rThreshold]*0
+        return timeDis.transpose(),t0,(timeL*f).transpose(),f.transpose()
     def compareSpec(self,N=40):
         spec0 = self.toFew(np.abs(np.fft.fft(self.x0)),N)
         spec1 = self.toFew(np.abs(np.fft.fft(self.x1)),N)
@@ -2128,6 +2185,35 @@ class corrL(list):
         plt.title(fileName[:-4]+'_%.2f_R'%threshold)
         plt.savefig(fileName[:-4]+'_%.2f_R.jpg'%threshold,dpi=300)
         plt.close()
+    def plotPickErroSq(self,yout,iL=[],fileName='erro.jpg',threshold=0.5):
+        plt.close()
+        N = yout.shape[0]
+        dPos = yout.argmax(axis=1)-self.y.argmax(axis=1)
+        bins   = np.arange(-50,50,2)/4
+        res    = np.zeros([len(T),len(bins)-1])
+        plt.histogram2d(dPos,1/self.fL,[bins,unique((1/self.fL).tolist()).sort()],density=True)
+        #plt.pcolor(bins[:-1],1/T,res,cmap='viridis')
+        #plt.scatter(dPosL,fL,s=0.5,c = dDisL/2000,alpha=0.3)
+        plt.xlabel('erro/s')
+        plt.ylabel('f/Hz')
+        plt.colorbar()
+        plt.gca().semilogy()
+        plt.gca().invert_yaxis()
+        plt.title(fileName[:-4]+'_%.2f'%threshold)
+        plt.savefig(fileName[:-4]+'_%.2f.jpg'%threshold,dpi=300)
+        plt.close()
+        plt.histogram2d(dPos/self.y.argmax(axis=1),1/self.fL,[bins,unique((1/self.fL).tolist()).sort()],density=True)
+        #plt.pcolor(bins[:-1],1/T,res,cmap='viridis')
+        #plt.scatter(dPosL,fL,s=0.5,c = dDisL/2000,alpha=0.3)
+        plt.xlabel('erro/s')
+        plt.ylabel('f/Hz')
+        plt.colorbar()
+        plt.gca().semilogy()
+        plt.gca().invert_yaxis()
+        plt.title(fileName[:-4]+'_%.2f'%threshold)
+        plt.savefig(fileName[:-4]+'_%.2f_Rela.jpg'%threshold,dpi=300)
+        plt.close()
+
     def setTimeDis(self,*argv,**kwargs):
         self.timeDisArgv = argv
         self.timeDisKwarg=kwargs
@@ -2135,6 +2221,9 @@ class corrL(list):
     def __call__(self,iL):
         self.getTimeDis(iL,*self.timeDisArgv,**self.timeDisKwarg)
         return self.x, self.y, self.t0L
+    def newCall(self,iL):
+        self.getTimeDisNew(iL,*self.timeDisArgv,**self.timeDisKwarg)
+        return self.x, self.y,self.n, self.t0L
     def __str__(self):
         return '%d %s'%(len(self),str(self.timeDisKwarg))
     def getTimeDis(self,iL,fvD={},T=[],sigma=2,maxCount=512,noiseMul=0,byT=False,\
@@ -2226,6 +2315,111 @@ class corrL(list):
         self.dDisL      = dDisL
         self.deltaL     = deltaL
         #print(x[0,1500,0])
+    def getTimeDisNew(self,iL,fvD={},T=[],sigma=2,maxCount=512,noiseMul=0,byT=False,\
+        byA=False,rThreshold=0.1,byAverage=False,set2One=False,move2Int=False,\
+        modelNameO='',noY=False,randMove=False):
+        #print('sigma',sigma)
+        if len(iL)==0:
+            iL=np.arange(len(self))
+        if not isinstance(iL,np.ndarray):
+            iL = np.array(iL).astype(np.int)
+        if iL.size == self.iL.size:
+            if compareList(iL,self.iL):
+                print('already done')
+                return None
+        self.iL = iL
+        dtype = np.float32
+        maxCount0 = maxCount
+        x      = []
+        y      = []
+        n      = []
+        t0L    = []
+        dDisL  = []
+        deltaL = []
+        randIndexL = []
+        indexL=[]
+        fL    = []
+        for ii in range(len(iL)):
+            i = iL[ii]
+            maxCount = min(maxCount0,self[i].xx.shape[0],self[i].x0.shape[0],\
+                self[i].x1.shape[0])
+            if modelNameO == '':
+                modelName =self[i].modelFile
+                if byAverage:
+                    if len(modelName.split('_'))>=2:
+                        name0 = modelName.split('_')[-2]
+                        name1 = modelName.split('_')[-1]
+                        modelName0 ='%s_%s'%(name0,name1)
+                        modelName1 ='%s_%s'%(name1,name0)
+                        #print(modelName0)
+                        if modelName0 in fvD:
+                            #print(modelName0)
+                            modelName = modelName0
+                        if modelName1 in fvD:
+                            #print(modelName1)
+                            modelName = modelName1
+            else:
+                modelName = modelNameO
+            if len(fvD[modelName].f)<2:
+                continue
+            tmpy,t0,tmpn,tmpf=self[i].outputTimeDisNew(fvD[modelName],\
+                T=T,sigma=sigma,byT=byT,byA=byA,rThreshold=rThreshold,set2One=set2One,\
+                move2Int=move2Int,noY=noY)
+            if len(tmpy)==0:
+                continue
+            X = np.zeros([tmpy.shape[0],maxCount0,4],dtype=dtype)
+            Y = np.zeros([tmpy.shape[0],maxCount0,1],dtype=dtype)
+            N = np.zeros([tmpy.shape[0],maxCount0,1],dtype=dtype)
+            iP,iN = self.ipin(t0,self[i].fs)
+            Y[:,iP:maxCount+iN,0] =tmpy[:,-iN:maxCount-iP]
+            X[:,iP:maxCount+iN,0] = np.real(self[i].xx.\
+                reshape([-1]))[-iN:maxCount-iP]
+            X[:,iP:maxCount+iN,1] = np.imag(self[i].xx.\
+                reshape([-1]))[-iN:maxCount-iP].reshape([1,-1])
+            #t0L[ii]=t0-iN/self[i].fs-iP/self[i].fs
+            dt = np.random.rand()*5-2.5
+            iP,iN = self.ipin(t0+dt,self[i].fs)
+            X[:,iP:maxCount+iN,2] = self[i].x0.\
+            reshape([-1])[-iN:maxCount-iP].reshape([1,-1])
+            iP,iN = self.ipin(dt,self[i].fs)
+            X[:,iP:maxCount+iN,3]       = self[i].x1.\
+            reshape([-1])[-iN:maxCount-iP].reshape([1,-1])
+            #print('###',t0,dt,iP,iN)
+            if False:# randMove:
+                dT = (np.random.rand(1)-0.5)*2*self[i].dDis/4*0.1
+                if np.random.rand()<0.001:
+                    print('random ',dT,self[i].dDis)
+                dN = int(dT*self[i].fs)
+                t0L[ii]= -dN/self[i].fs
+                if dN>0:
+                    for channel in [0,1,2]:
+                        x[ii,dN:,0,channel] = x[ii,:-dN,0,channel]
+                        x[ii,:dN,0,channel] = 0
+                    y[ii,dN:,0,0] = y[ii,:-dN,0,0]
+                if dN<0:
+                    for channel in [0,1,2]:
+                        x[ii,:dN,0,channel] = x[ii,-dN:,0,channel]
+                        x[ii,dN:,0,channel] =0
+                    y[ii,:dN,0,0] = y[ii,-dN:,0,0]
+            dDisL += [self[i].dDis]*len(tmpf)
+            deltaL+= [self[i].timeL[1]-self[i].timeL[0]]*len(tmpf)
+            x      .append(X)
+            y      .append(Y)
+            n      .append(N)
+            t0L    +=[t0]*len(tmpf)
+            randIndexL = []
+            indexL=[i]*len(tmpf)
+            fL += tmpf.reshape([-1]).tolist()
+        #xStd = x.std(axis=1,keepdims=True)
+        self.x          = np.concatenate(x,axis=0)
+        self.n         = np.concatenate(n,axis=0)
+        self.y          = np.concatenate(y,axis=0)
+        self.randIndexL = randIndexL
+        self.t0L        = np.array(t0L)
+        self.dDisL      = np.array(dDisL)
+        self.deltaL     = np.array(deltaL)
+        self.indexL     = np.array(indexL)
+        self.fL         = np.array(fL)
     @jit
     def getV(self,yout,isSimple=True,D=0.15,isLimit=False,isFit = False):
         #print(isSimple)
@@ -2475,6 +2669,84 @@ class corrL(list):
                             f.write('%f '%v[i][ii][j])
                             f.write('%f '%prob[i][ii][j])
                         f.write('\n')
+    def saveVAllSq(self,v,prob,T,iL=[],stations=[], minProb= 0.7,resDir ='models/predict/'):
+        '''
+        if len(iL) ==0:
+            iL=self.iL
+        for i in range(v.shape[0]):
+            index = iL[i]
+            corr  = self[index]
+            f.write('%s %s %s %s | '%(corr.srcSac, corr.modelFile, corr.name0, corr.name1))
+            for tmp in T:
+                f.write(' %.3f '% (1/tmp))
+            f.write('|')
+            for tmp in v[i]:
+                f.write(' %.3f '% tmp)
+            f.write('|')
+            for tmp in prob[i]:
+                f.write(' %.3f '% tmp)
+            f.write('\n')
+        '''
+        '''
+        NE31 NE32
+        BHZ 5
+        2010 9 1 7 32 56
+        42.670818 117.070084
+        37.930000 142.059998 50.299999 5.162567 0.000000
+        19.612045 95.567268 0.000000 0.000000
+        BHZ 5
+        2010 9 1 7 32 56
+        42.696079 116.081772
+        37.930000 142.059998 50.299999 5.162567 0.000000
+        20.340097 94.787933 0.000000 0.000000
+        2 9
+        0.033819
+        3.684213 
+        '''
+        if len(iL) ==0:
+            iL=self.iL
+        for i in range(v.shape[0]):
+            index = iL[i]
+            corr  = self[index]
+            sta0,sta1 = corr.getStaName()
+            station0 = stations.Find(sta0)
+            station1 = stations.Find(sta1)
+            timeStr, laStr, loStr =corr.quakeName.split('_')
+            time = float(timeStr)
+            la   = float(laStr)
+            lo   = float(loStr)
+            #YP.NE31/YP.NE31_YP.NE32/Rayleigh
+            fileDir = '%s/%s/%s_%s/Rayleigh/'%(resDir,sta0,sta0,sta1)
+            if not os.path.exists(fileDir):
+                os.makedirs(fileDir)
+            file = fileDir+'pvt_all.dat'
+            vIndex =[]
+            for j in range(len(prob[i])):
+                if (prob[i][j]>minProb).sum()>0:
+                    vIndex.append(j)
+            if len(vIndex)==0:
+                continue
+            with open(file,'a') as f:
+                f.write('%s %s\n'%(station0['sta'],station1['sta']))
+                f.write('%s 5\n'%(station0['comp'][-1]))
+                f.write(obspy.UTCDateTime(time).strftime('%Y %m %d %H %M %S\n'))
+                f.write('%f %f\n'%(station0['la'],station0['lo']))
+                f.write('%f %f -1 -1 0\n'%(la,lo))
+                f.write('%f %f 0 0 \n'%(corr.dis[0], corr.az[0]))
+                f.write('%s 5\n'%(station1['comp'][-1]))
+                f.write(obspy.UTCDateTime(time).strftime('%Y %m %d %H %M %S\n'))
+                f.write('%f %f\n'%(station1['la'],station1['lo']))
+                f.write('%f %f -1 -1 0\n'%(la,lo))
+                f.write('%f %f 0 0 \n'%(corr.dis[1], corr.az[1]))
+                f.write('2 %d\n'%len(vIndex))
+                for ii in vIndex:
+                    f.write('%f\n'%(1/T[ii]))
+                for ii in vIndex:
+                    for j in range(prob[i][ii]):
+                        if prob[i][ii][j]>minProb:
+                            f.write('%f '%v[i][ii][j])
+                            f.write('%f '%prob[i][ii][j])
+                        f.write('\n')
     def saveVByPair(self,v,prob,T,iL=[],stations=[], minProb= 0.7,resDir ='models/predict/'):
         '''
         if len(iL) ==0:
@@ -2569,6 +2841,75 @@ class corrL(list):
             Y=model.predict(x)
             print('calV')
             v[i0:i1],prob[i0:i1],vM,probM=self.getV(Y,isSimple=isSimple,\
+                D=D,isLimit=isLimit,isFit=isFit)
+            self.saveVAll(vM,probM,T,self.indexL,stations,resDir =resDir,minProb=minProb)
+            #v0[i0:i1],prob0[i0:i1]=self.getV(y)
+        self.saveV(v,prob,T, np.arange(N),stations,resDir =resDir,minProb=minProb)
+        if isPlot:
+            '''
+            plt.close()
+            plt.plot(v.transpose(),1/T,'k',linewidth=0.1,alpha=0.3)
+            plt.gca().semilogy()
+            plt.xlim([2.5,6])
+            plt.savefig(fileName+'.jpg',dpi=300)
+            plt.close()
+            plt.plot(v.transpose()-v0.transpose(),1/T,'k',linewidth=0.1,alpha=0.3)
+            plt.gca().semilogy()
+            plt.xlim([2.5,6])
+            plt.savefig(fileName+'_dv.jpg',dpi=300)
+            '''
+            dv = np.abs(v-v0)
+            dvO = v-v0
+            plt.close()
+            for i in range(dv.shape[0]):
+                indexL = validL(dv[i],prob[i],minProb=minProb,minV=-1,maxV=2)
+                if np.random.rand()<0.1:
+                        print('validL: ',indexL)
+                for iL in indexL:
+                    iL = np.array(iL).astype(np.int)
+                    plt.plot(v[i,iL],1/T[iL],'k',linewidth=0.1,alpha=0.3)
+            plt.xlim([2,7])
+            plt.gca().semilogy()
+            plt.xlabel('v/(m/s)')
+            plt.ylabel('f/Hz')
+            plt.savefig(fileName+'.jpg',dpi=300)
+            plt.close()
+            for i in range(dv.shape[0]):
+                indexL = validL(dv[i],prob[i],minProb=minProb,minV=-1,maxV=2)
+                if np.random.rand()<0.1:
+                        print('validL: ',indexL)
+                for iL in indexL:
+                    iL = np.array(iL).astype(np.int)
+                    plt.plot(dvO[i,iL],1/T[iL],'k',linewidth=0.1,alpha=0.3)
+            plt.xlim([-1,1])
+            plt.xlabel('dv/(m/s)')
+            plt.ylabel('f/Hz')
+            plt.gca().semilogy()
+            plt.savefig(fileName+'_dv.jpg',dpi=300)
+            plt.close()
+    def getAndSaveOldSq(self,model,fileName,stations,isPlot=False,isSimple=True,\
+        D=0.2,isLimit=False,isFit = False,minProb=0.7):
+        N = len(self)
+        if 'T' in self.timeDisKwarg:
+            T = self.timeDisKwarg['T']
+        else:
+            T = self.timeDisArgv[1]
+        resDir = os.path.dirname(fileName)
+        if not os.path.exists(resDir):
+            os.makedirs(resDir)
+        M = len(T)
+        v = np.zeros([N,M])
+        v0= np.zeros([N,M])
+        prob=np.zeros([N,M])
+        prob0=np.zeros([N,M])
+        for i0 in range(0,N,1000):
+            i1 = min(i0+1000,N)
+            print(i0,i1)
+            x, y, t= self(np.arange(i0, i1))
+            print('predict')
+            Y=model.predict(x).reshape([-1,len(T),x.shape[1],0]).transpose([0,2,3,1])
+            print('calV')
+            v[i0:i1],prob[i0:i1],vM,probM=self.getVSq(Y,isSimple=isSimple,\
                 D=D,isLimit=isLimit,isFit=isFit)
             self.saveVAll(vM,probM,T,self.indexL,stations,resDir =resDir,minProb=minProb)
             #v0[i0:i1],prob0[i0:i1]=self.getV(y)
@@ -2727,8 +3068,8 @@ def getSacTimeL(sac):
 
 def corrSac(d,sac0,sac1,name0='',name1='',quakeName='',az=np.array([0,0]),\
     dura=0,M=np.array([0,0,0,0,0,0,0]),dis=np.array([0,0]),dep = 10,\
-    modelFile='',srcSac='',isCut=False):
-    corr = d.sacXcorr(sac0,sac1,isCut=isCut)
+    modelFile='',srcSac='',isCut=False,maxCount=-1):
+    corr = d.sacXcorr(sac0,sac1,isCut=isCut,maxCount=maxCount)
     corr.az    = az
     corr.dura  = dura
     corr.M     = M
@@ -2738,8 +3079,6 @@ def corrSac(d,sac0,sac1,name0='',name1='',quakeName='',az=np.array([0,0]),\
     corr.name0 = name0
     corr.name1 = name1
     corr.srcSac=srcSac
-    corr.x0 = sac0.data
-    corr.x1 = sac1.data
     corr.quakeName=quakeName
     return corr
 
@@ -2749,7 +3088,7 @@ def corrSacsL(d,sacsL,sacNamesL,dura=0,M=np.array([0,0,0,0,0,0,0])\
     ,dep = 10,modelFile='',srcSac='',minSNR=5,isCut=False,\
     maxDist=1e8,minDist=0,maxDDist=1e8,minDDist=0,isFromO = False,\
     removeP=False,isLoadFv=False,fvD={},quakeName='',isByQuake=False,\
-    specN = 40,specThreshold=0.1,isDisp=False):#specThreshold=0.8
+    specN = 40,specThreshold=0.1,isDisp=False,maxCount=-1):#specThreshold=0.8
     modelFileO = modelFile
     if len(sacsL)!=len(sacNamesL):
         print('#####################################not right')
@@ -2888,7 +3227,7 @@ def corrSacsL(d,sacsL,sacNamesL,dura=0,M=np.array([0,0,0,0,0,0,0])\
             if isLoadFv :
                 if modelFile0 not  in fvD and modelFile1 not in fvD:
                     continue
-            corr = corrSac(d,sac0,sac1,name0,name1,quakeName,az,dura,M,dis,dep,modelFile,srcSac,isCut=isCut)
+            corr = corrSac(d,sac0,sac1,name0,name1,quakeName,az,dura,M,dis,dep,modelFile,srcSac,isCut=isCut,maxCount=maxCount)
             if corr.compareSpec(N=specN)>specThreshold:
                 corrL.append(corr)
             else:
