@@ -119,7 +119,7 @@ class run:
 			sta.set('oRemove', para['oRemoveL'][i])
 			sta.getInventory()
 			stations += sta
-			q       = seism.QuakeL(para['quakeFileL'][i])[:5]
+			q       = seism.QuakeL(para['quakeFileL'][i])
 			quakes  += q
 			fvDA    = para['dConfig'].loadNEFV(sta,fvDir=para['avgPairDirL'][i])
 			fvDAvarage.update(fvDA)
@@ -143,7 +143,7 @@ class run:
 		fvL = [key for key in self.fvDAvarage]
 		random.shuffle(fvL)
 		fvN = len(fvL)
-		fvn = int(fvN/10)
+		fvn = int(fvN/50)
 		fvTrain = fvL[fvn*2:]
 		fvTest  = fvL[fvn:fvn*2]
 		fvVaild = fvL[:fvn]
@@ -161,22 +161,22 @@ class run:
 		self.corrLTrain.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=True,rThreshold=0.0,byAverage=False,\
 		set2One=True,move2Int=False,randMove=True)
-		self.corrLTest.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=4096*3,\
+		self.corrLTest.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=True,rThreshold=0.0,byAverage=False,\
 		set2One=True,move2Int=False,randMove=True)
-		self.corrLValid.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=4096*3,\
+		self.corrLValid.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=True,rThreshold=0.0,byAverage=False,\
 		set2One=True,move2Int=False,randMove=True)
 		self.corrLTrain(np.arange(10))
 		print(self.corrLTrain.t0L)
 		self.loadModel()
 		fcn.trainAndTest(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
-	   		outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=200,count0=5,w0=3)#w0=3
+	   		outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=50,count0=200,w0=1)#w0=3
 	def trainSq(self):
 		fvL = [key for key in self.fvDAvarage]
 		random.shuffle(fvL)
 		fvN = len(fvL)
-		fvn = int(fvN/10)
+		fvn = int(fvN/30)
 		fvTrain = fvL[fvn*2:]
 		fvTest  = fvL[fvn:fvn*2]
 		fvVaild = fvL[:fvn]
@@ -204,7 +204,41 @@ class run:
 		print(self.corrLTrain.t0L)
 		self.loadModelSq()
 		fcn.trainAndTestSq(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
-	   		outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=10,count0=5,w0=3)
+	   		outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=20,count0=20,w0=10)
+	def trainDt(self):
+		fvL = [key for key in self.fvDAvarage]
+		random.shuffle(fvL)
+		fvN = len(fvL)
+		fvn = int(fvN/100)
+		fvTrain = fvL[fvn*2:]
+		fvTest  = fvL[fvn:fvn*2]
+		fvVaild = fvL[:fvn]
+		para    = self.config.para
+		specThreshold = 0.0
+		self.corrLTrain = d.corrL(self.corrL1,specThreshold=specThreshold,fvD=fvTrain)
+		self.corrLTest  = d.corrL(self.corrL1,specThreshold=specThreshold,fvD=fvTest)
+		#corrLQuakePTrain = d.corrL(corrLQuakePCEA[:-1000])
+		self.corrLValid = d.corrL(self.corrL1,specThreshold=specThreshold,fvD=fvVaild)
+		#corrLQuakePTest  = d.corrL(corrLQuakePNE)
+		#random.shuffle(corrLQuakePTrain)
+		#random.shuffle(corrLQuakePValid)
+		#random.shuffle(corrLQuakePTest)
+		tTrain = para['T']
+		self.corrLTrain.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
+		byT=False,noiseMul=0.0,byA=True,rThreshold=0.0,byAverage=False,\
+		set2One=True,move2Int=False,randMove=True)
+		self.corrLTest.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
+		byT=False,noiseMul=0.0,byA=True,rThreshold=0.0,byAverage=False,\
+		set2One=True,move2Int=False,randMove=True)
+		self.corrLValid.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
+		byT=False,noiseMul=0.0,byA=True,rThreshold=0.0,byAverage=False,\
+		set2One=True,move2Int=False,randMove=True)
+		self.corrLTrain.newCall(np.arange(10))
+		print(self.corrLTrain.t0L)
+		self.loadModelDt()
+		fcn.trainAndTestSq(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
+	   		outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=para['perN'],count0=20,w0=3)
+	
 	def loadModel(self,file=''):
 		if self.model == None:
 			self.model = fcn.model(channelList=[0,2,3])
@@ -215,6 +249,12 @@ class run:
 			self.model = fcn.modelSq(channelList=[0],maxCount=self.config.para['maxCount'])
 		if file != '':
 			self.model.load_weights(file, by_name= True)
+	def loadModelDt(self,file=''):
+		if self.model == None:
+			self.model = fcn.modelDt(channelList=[0],maxCount=self.config.para['maxCount'])
+		if file != '':
+			self.model.load_weights(file, by_name= True)
+	
 	def calResOneByOne(self):
 		config     = self.config
 		para       = config.para
@@ -753,15 +793,69 @@ paraYNSCV2={ 'quakeFileL'  : ['phaseLPickCEA'],\
 
 paraAllSq={ 'quakeFileL'  : ['../phaseLPickCEA'],\
     'stationFileL': ['../stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
-    'isLoadFvL'   : [False],#False********\
+    'isLoadFvL'   : [True],#False********\
     'byRecordL'   : [False],\
 	'maxCount'    : 1024,\
     'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
     'resDir'      : '/fastDir/results/1015_all_V?/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
-    'perN'        : 1,\
+    'perN'        : 20,\
     'eventDir'    : '/HOME/jiangyr/eventSac/',\
     'z'           : [0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,200,270,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
     'T'           : [],
+	'tSur'        : (16**np.arange(0,1.000001,1/24.5))*10,\
+    'surPara'     : { 'nxyz':[56,88,0], 'lalo':[56,70],#[40,60,0][55,108]\
+                    'dlalo':[0.8,0.8], 'maxN':800,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 3,\
+					'maxIT':100,'nBatch':100,'smoothDV':80,'smoothG':160},\
+	'runDir'      : '../DS/1015_CEA160_all/',#_man/',\
+	'gpuIndex'    : 1,\
+	'gpuN'        : 2,\
+	'lalo'        :[38,54,110,134],#[20,34,96,108][]*******,\
+	'threshold'   :0.03,\
+	'minProb'     :0.5,\
+	'minP'        :0.7,\
+	'laL'         : [],\
+	'loL'         : [],\
+	'areasLimit'  :  3}
+
+paraAllDt={ 'quakeFileL'  : ['../phaseLPickCEA'],\
+    'stationFileL': ['../stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
+    'isLoadFvL'   : [True],#False********\
+    'byRecordL'   : [False],\
+	'maxCount'    : 512*3,\
+    'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
+    'resDir'      : '/fastDir/results/1015_all_V?/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+    'perN'        : 20,\
+    'eventDir'    : '/HOME/jiangyr/eventSac/',\
+    'z'           : [0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,200,270,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+    'T'           : [],
+	'tSur'        : (16**np.arange(0,1.000001,1/24.5))*10,\
+    'surPara'     : { 'nxyz':[56,88,0], 'lalo':[56,70],#[40,60,0][55,108]\
+                    'dlalo':[0.8,0.8], 'maxN':800,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 3,\
+					'maxIT':100,'nBatch':100,'smoothDV':80,'smoothG':160},\
+	'runDir'      : '../DS/1015_CEA160_all/',#_man/',\
+	'gpuIndex'    : 1,\
+	'gpuN'        : 2,\
+	'lalo'        :[38,54,110,134],#[20,34,96,108][]*******,\
+	'threshold'   :0.03,\
+	'minProb'     :0.5,\
+	'minP'        :0.7,\
+	'laL'         : [],\
+	'loL'         : [],\
+	'areasLimit'  :  3}
+
+paraAllO={ 'quakeFileL'  : ['../phaseLPickCEA'],\
+    'stationFileL': ['../stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
+    'isLoadFvL'   : [True],#False********\
+    'byRecordL'   : [False],\
+	'maxCount'    : 512*3,\
+    'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
+    'resDir'      : '/fastDir/results/1015_all_V?/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+    'perN'        : 20,\
+    'eventDir'    : '/HOME/jiangyr/eventSac/',\
+    'z'           : [0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,200,270,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+    'T'           : (16**np.arange(0,1.000001,1/49))*10,
 	'tSur'        : (16**np.arange(0,1.000001,1/24.5))*10,\
     'surPara'     : { 'nxyz':[56,88,0], 'lalo':[56,70],#[40,60,0][55,108]\
                     'dlalo':[0.8,0.8], 'maxN':800,#[0.5,0.5]\

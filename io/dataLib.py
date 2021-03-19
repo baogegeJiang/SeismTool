@@ -103,6 +103,10 @@ class filePath:
             #2000015_220000_090be_1_2.msd
             pattern='%s/%s/%s.%s.00.DN%s.%s.SAC'\
             %(staDir,sta,net,sta,comp[-1],time.strftime('%Y%m%d'))
+        elif nameMode =='xinxilan':
+            pattern='%s/%s/%s.%s.10.%s.SAC'\
+            %(staDir,time.strftime('%Y%m%d'),net,sta,comp)
+            #print(pattern)
         return glob(pattern)
     def getStaDirL(self,net,sta,nameMode=''):
         staDirL = []
@@ -135,6 +139,9 @@ class filePath:
             staDirL=['/HOME/jiangyr/XA_HSR_DATA/201908DX_BB/MSD/']
         if nameMode =='RD':
             staDirL =['/HOME/jiangyr/XA_HSR_DATA/201908DX/sac/']
+        if nameMode =='xinxilan':
+            staDirL =['/home/jiangyr/Surface-Wave-Dispersion/xinxilan2/']
+            #staDirL =['/media/jiangyr/YNSCMOVE/sac']
         return staDirL
     
     def getSensorDas(self,net,sta,nameMode=''):

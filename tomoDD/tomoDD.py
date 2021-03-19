@@ -11,6 +11,7 @@ import pycpt
 import os
 from scipy import interpolate,stats
 import matplotlib.colors as colors
+from SeismTool.plotTool import figureSet as fs
 
 
 cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
@@ -491,6 +492,7 @@ def analyDTM(dTM,resFile):
     cbar.set_label('density')
     plt.xlabel('dTime/s')
     plt.ylabel('cc (P phase)')
+    fs.setABC('(a)')
     plt.subplot(2,1,2)
     #plt.hist2d(sL,sCCL,bins)
     h,x,y=np.histogram2d(sL,sCCL,bins)
@@ -503,6 +505,7 @@ def analyDTM(dTM,resFile):
     plt.xlabel('dTime/s')
     plt.ylabel('cc (S phase)')
     fig.tight_layout()
+    fs.setABC('(b)')
     plt.savefig(resFile,dpi=300)
 
 def getReloc(quakeL,filename='abc'):
@@ -544,6 +547,8 @@ def  analyReloc(filename,resFile):
     erroLa = data[:,7]
     erroLo = data[:,8]
     erroDep = data[:,9]
+    plt.close()
+    plt.figure(figsize=(3,3))
     plt.hist(erroLa,erroL,alpha=0.7)
     plt.hist(erroLo,erroL,alpha=0.7)
     plt.hist(erroDep,erroL,alpha=0.7)
@@ -701,6 +706,26 @@ def denseLaLo(La,Lo,Per,N=200):
     lo  = np.arange(Lo[0],Lo[-1],dLo)
     per = interpolate.interp2d(Lo, La, Per,kind= 'linear')(lo,la)
     return la, lo, per
+
+def diff(quakeL0,quakeL1,filename):
+    filenameL =  quakeL0.paraL(keyL=['filename'])['filename']
+    dkm =[]
+    dz  =[]
+    for quake1 in quakeL1:
+        index0 = filenameL.index(quake1['filename'])
+        quake0 = quakeL0[index0]
+        dkm.append(quake0.dist(quake1))
+        dz.append(np.abs(quake0['dep']-quake1['dep']))
+    plt.close()
+    plt.figure(figsize=(3,3))
+    plt.plot(dkm,dz,'.',markersize=0.1)
+    plt.xlabel('horizontal difference/km')
+    plt.xlim([0,25])
+    plt.gca().set_aspect(1)
+    plt.ylabel('vertical difference/km')
+    plt.savefig(filename,dpi=300)
+
+
 '''
 def calDT(quake0,quake1,waveform0,waveform1,staInfos,bSec0=-2,eSec0=3,\
     bSec1=-3,eSec1=4,delta=0.02,minC=0.6,maxD=0.3,minSameSta=5):

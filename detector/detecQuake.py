@@ -67,7 +67,7 @@ def predictLongData(model, x, N=2000, indexL=range(750, 1250)):
 '''
 indexL0=range(275, 1500)
 @jit
-def predictLongData(model, x, N=2000, indexL=range(750, 1250),dIndex=2000):
+def predictLongData(model, x, N=2000, indexL=range(750, 1250),dIndex=2000,dec=1):
     L = x.shape[0]
     if L <=dIndex*3:
         return np.zeros(L)
@@ -156,7 +156,7 @@ class sta(object):
         else:
             pass
     def predict(self,modelL=None, staTimeM=None,\
-     mode='mid', isClearData=False,maxD=80):
+     mode='mid', isClearData=False,maxD=80,decPre=1):
         self.timeL = list()
         self.vL = list()
         self.mode = mode
@@ -174,7 +174,7 @@ class sta(object):
         minDeltaL=[500, 750]
         for i in range(len(modelL)):
             tmpL = getDetec(predictLongData(modelL[i], self.data.Data(),\
-             indexL=indexLL[i]), minValue=minValueL[i], minDelta =\
+             indexL=indexLL[i],dec=decPre), minValue=minValueL[i], minDelta =\
               minDeltaL[i])
             print(ctime(),'find',len(tmpL[0]))
             self.timeL.append(tmpL[0])
@@ -507,7 +507,7 @@ def getStaL(staInfos, staTimeML=[], modelL=[],\
     date=obspy.UTCDateTime(0),taupM=tool.quickTaupModel(),\
      mode='mid',isPre=True,f=[2, 15],R=[-90,90,\
     -180,180],maxD=80,f_new=[-1,-1],delta0=0.02,resampleN=-1,\
-    isClearData=False):
+    isClearData=False,decPre=1):
     staL=[None for i in range(len(staInfos))]
     threads = list()
     for i in range(len(staInfos)):  
@@ -525,7 +525,7 @@ def getStaL(staInfos, staTimeML=[], modelL=[],\
             staTimeM=None
         print(ctime(),'predict on sta: ',date,i)
         staL[i].predict(modelL, staTimeM, mode,\
-            maxD=maxD,isClearData=isClearData)
+            maxD=maxD,isClearData=isClearData,decPre=decPre)
     return staL
 
 def getStaQuick(staInfos,date,f,taupM,R,delta0,f_new,resampleN):

@@ -6,7 +6,9 @@ import os
 from matplotlib import pyplot as plt
 from multiprocessing import pool
 import matplotlib
-matplotlib.rcParams['font.family']='Simhei'
+from plotTool import figureSet
+from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
+#matplotlib.rcParams['font.family']='Simhei'
 class hsr:
     def __init__(self,f0=3.2,fmax=50,fL0=np.arange(0,50,0.02)):
         self.f0=f0
@@ -97,12 +99,25 @@ class hsr:
                 timeLNew.append(time1)
         return np.array(timeLNew)
     def MeanTime(self,t3):
-        data = np.abs(t3.Data())
+        data = np.abs(t3.Data()[:,2])
         if len(data)>0:
             bTime,eTime=t3.getTimeLim()
             delta = t3.Delta()
             indexL = np.arange(len(data))
-            iM=(indexL*data[:,2]).sum()/data[:,2].sum()
+            iM=(indexL*data).sum()/data.sum()
+            print(iM,data.argmax(),np.where(data>0)[0].mean(),np.where(data>0)[0])
+            time1=iM*delta+bTime.timestamp
+            return time1
+        else:
+            return -1
+    def MeanTime_(self,t3):
+        data = np.abs(t3.Data()[:,2])
+        #data[data<data.max()*0.3] =0 
+        if len(data)>0:
+            bTime,eTime=t3.getTimeLim()
+            delta = t3.Delta()
+            indexL = np.arange(len(data))
+            iM=(indexL*data).sum()/data.sum()
             time1=iM*delta+bTime.timestamp
             return time1
         else:
@@ -358,8 +373,10 @@ class hsr:
                 continue
             station = stations[i]
             staName = station.name('.')+'_'+head+'_v=%d'%v
-            filename = workDir+'/'+ staName+'.jpg'
+            filename = workDir+'/'+ staName+'.eps'
             plt.close()
+            plt.figure(figsize=[0.75,0.75])
+            figureSet.init()
             FBe,SBe= self.FindFF(specBe[0],fL0L[0][0,:],minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
             FAf,SAf = self.FindFF(specAf[0],fL0L[0][0,:],minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
             fBeL = FBe*n
@@ -386,15 +403,54 @@ class hsr:
                 hAt=plt.plot(fL0L[i][i,:],specAt[i],'k',linewidth=0.5)
                 hBe=plt.plot(fL0L[i][i,:],specBe[i],'b',linewidth=0.5)
                 hAf=plt.plot(fL0L[i][i,:],specAf[i],'r',linewidth=0.5)
-            plt.legend((hAt,hBe,hAf),['at','before','after'])
+            #plt.legend((hAt,hBe,hAf),['at','before','after'])
             plt.xlim([0,maxF])
             #plt.ylim([-1,800])
             plt.title(staName+' V: %.2f'%V)
+            plt.xlabel('f/Hz')
+            plt.ylabel('A')
             fileDir = os.path.dirname(filename)
             if not os.path.exists(fileDir):
                 os.makedirs(fileDir)
             plt.savefig(filename,dpi=300)
             plt.close()
+        return FBeL,FAfL,SBeL,SAfL,vL
+    def anSpec(self,fL0L,specAtL,specBeL,specAfL,stations,maxF=20,v=3000):
+        n= np.arange(1,10)
+        fBe = v/(v-80)*3.2*n*25/32
+        fAf = v/(v+80)*3.2 *n*25/32
+        FBeL = []
+        FAfL = []
+        SBeL=[]
+        SAfL=[]
+        vL =[]
+        for i in range(len(stations)):
+            for j in range(len(specAtL[i])):
+                specAt = specAtL[i][j:j+1]
+                specBe = specBeL[i][j:j+1]
+                specAf = specAfL[i][j:j+1]
+                if len(specAt)==0:
+                    continue
+                FBe,SBe= self.FindFF(specBe[0],fL0L[0][0,:],minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
+                FAf,SAf = self.FindFF(specAf[0],fL0L[0][0,:],minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
+                fBeL = FBe*n
+                fAfL = FAf*n
+                V = (FBe+FAf)/(FBe-FAf)*80
+                FBeL.append(FBe)
+                FAfL.append(FAf)
+                SBeL.append(SBe)
+                SAfL.append(SAf)
+                vL.append(V)
+                '''
+                for f in fBe:
+                    plt.plot([f,f],[-1,2000],'-b',linewidth=0.3)
+                for f in fAf:
+                    plt.plot([f,f],[-1,2000],'-r',linewidth=0.3)
+                for f in fBeL:
+                    plt.plot([f,f],[-1,2000],'-.b',linewidth=0.3)
+                for f in fAfL:
+                    plt.plot([f,f],[-1,2000],'-.r',linewidth=0.3)     
+                '''    
         return FBeL,FAfL,SBeL,SAfL,vL
     def showSpecs(self,fL0L,specAfL,specBeL,specAtL,stations,head='',workDir='',maxF=20):
         specAtL=specAtL.copy()
@@ -444,7 +500,7 @@ class hsr:
     def getSacs(self,sacsL,disL0,dist):
         index = np.abs(np.abs(distL0)-np.abs(dist)).argmin()
         return sacsL[index],distL0[indexL]
-    def plotFV(self,FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL,eSecL,dTimeL,workDir,head='',marker='.'):
+    def plotFV(self,FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL,eSecL,dTimeL,workDir,head='',marker='.',strL='ab'):
         for comp in range(3):
             FBeLNL = np.array(FBeLNM[comp])
             FAfLNL = np.array(FAfLNM[comp])
@@ -454,7 +510,8 @@ class hsr:
             vLSL = np.array(vLSM[comp])
             midSecL = (eSecL+bSecL)/2
             plt.close()
-            plt.figure(figsize=[3,4])
+            plt.figure(figsize=[1,1])
+            figureSet.init()
             plt.subplot(2,1,1)
             plt.ylim([4,6])
             plt.xlim([-5000,5000])
@@ -466,6 +523,7 @@ class hsr:
                 plt.plot((-midSecL+dTime)*80,FAfLSL[:,i],marker+'r')
             #plt.xlim([-60,60])
             plt.ylabel('f/Hz')
+            figureSet.setABC('(%s)'%strL[0],[0.01,0.98],c='k')
             plt.subplot(2,1,2)
             plt.ylim([0,5000])
             for i in range(len(dTimeL)):
@@ -473,8 +531,9 @@ class hsr:
                 plt.plot((midSecL-dTime)*80,vLNL[:,i],marker+'k')
                 plt.plot((-midSecL+dTime)*80,vLSL[:,i],marker+'k')
             plt.xlim([-5000,5000])
-            plt.xlabel('dis/m')
+            plt.xlabel('distance/m')
             plt.ylabel('v/(m/s)')
+            figureSet.setABC('(%s)'%strL[1],[0.01,0.98],c='k')
             if not os.path.exists(workDir):
                 os.makedirs(workDir)
             plt.savefig(workDir+head+'%d.pdf'%comp)
@@ -522,6 +581,9 @@ class hsr:
     def plotSV2(self,SBeLNM,SAfLNM,vLNM,SBeLSM,SAfLSM,vLSM,bSecL,eSecL,dTimeL,workDir,head='',markerL='.*d'):
         plt.close()
         compL='RTZ'
+        plt.figure(figsize=[1.5,1.5])
+        figureSet.init()
+        figIndex='bcd'
         for comp in range(3):
             plt.subplot(3,1,comp+1)
             SBeLNL = np.array(SBeLNM[comp])**2/(np.array(SBeLNM)**2).sum(axis=0)
@@ -538,13 +600,22 @@ class hsr:
             beSS=(SBeLSL).reshape([-1]).tolist()
             afNS=(SAfLNL).reshape([-1]).tolist()
             afSS=(SAfLSL).reshape([-1]).tolist()
-            plt.hist2d(beNT+beST+afNT+afST,beNS+beSS+afNS+afSS,range=[[-50,50],[0,1]],cmap='bwr')
+            pc=plt.hist2d(beNT+beST+afNT+afST,beNS+beSS+afNS+afSS,range=[[-50,50],[0,1]],cmap='bwr')
+            cb=plt.colorbar()
+            cb.set_label('count')
             plt.ylabel(compL[comp]+'/All')
+            figureSet.setABC('(%s)'%figIndex[comp],[0.01,0.98],c='k')
             if comp==2:
                 plt.xlabel('t/s')
+        '''
+        plt.subplot(5,1,5)
+        pc=plt.hist2d(beNT+beST+afNT+afST,beNS+beSS+afNS+afSS,range=[[-50,50],[0,1]],cmap='bwr',cmin=0, cmax=7000)
+        cb=plt.colorbar()
+        cb.set_label('count')
+        '''
         if not os.path.exists(workDir):
             os.makedirs(workDir)
-        plt.savefig(workDir+head+'.pdf')
+        plt.savefig(workDir+head+'.eps')
     def calE(self,N=16,L=25,v=80,f=np.arange(0,100,0.01)):
         E = (f*0).astype(np.complex128)
         for i in range(N):
@@ -588,13 +659,15 @@ class hsr:
     def plotr(self,N=16,v=80,U=2300,L=np.arange(100)*32+16,A=1,timeL=np.arange(-50,50,0.01),head=''):
         rAf= self.calr(N=N,v=v,U=U,L=L,A=A,timeL=timeL)
         rBe= self.calr(N=N,v=v,U=U,L=-L,A=A,timeL=timeL)
+        self.plotWS(rAf+rBe,time0=timeL[0],head='syn',whiteL=[2.5,5,7.5,10,15,20,25])
+        return 
         plt.close()
         plt.figure(figsize=[8,4])
         plt.subplot(2,1,1)
         plt.plot(timeL,rAf,'r',linewidth=0.5)
         plt.plot(timeL,rBe,'b',linewidth=0.5)
         plt.xlabel('t/s')
-        plt.ylabel('Disp')
+        plt.ylabel('D/count')
         plt.xlim([-20,20])
         plt.subplot(2,1,2)
         data,TL,FL=SFFT(rAf+rBe,0.01,10,800)
@@ -621,6 +694,51 @@ class hsr:
         plt.xlim([0,20])
         plt.savefig('../hsrRes/ER%s.pdf'%head)
         plt.close()
+    def plotERR(self,N=16,v=80,U=3000,Lc=25,L=np.arange(30,100)*32+16,A=1,timeL=np.arange(-50,50,0.01)\
+        ,f=np.arange(0,100,0.01),head='',t3='',time=0):
+        E = self.calE(N=N,L=Lc,v=v,f=f)
+        RAf,f= self.calR(N=N,v=v,U=U,L=L,A=A,timeL=timeL)
+        RBe,f= self.calR(N=N,v=v,U=U,L=-L,A=A,timeL=timeL)
+        ERAf = np.conj(E)*RAf
+        ERBe = np.conj(E)*RBe
+        t3Be=t3.slice(time-20,time-10)
+        t3At=t3.slice(time-4,time+4)
+        t3Af=t3.slice(time+10,time+20)
+        beS,beF=t3Be.getSpec(comp=0,isNorm=False)
+        atS,atF=t3At.getSpec(comp=0,isNorm=False)
+        afS,afF=t3Af.getSpec(comp=0,isNorm=False)
+        FBe,SBe= self.FindFF(beS,beF,minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
+        FAf,SAf= self.FindFF(afS,afF,minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
+        print(FBe,FAf,(FBe+FAf)/(FBe-FAf)*80)
+        plt.close()
+        plt.figure(figsize=[6,1.5])
+        figureSet.init()
+        plt.subplot(1,3,1)
+        plt.plot(f,np.abs(RAf),'r',linewidth=0.5)
+        plt.plot(f,np.abs(RBe),'b',linewidth=0.5)
+        plt.xlabel('f/Hz')
+        plt.ylabel('Amplitude')
+        plt.xlim([0,20])
+        figureSet.setABC('(a)',[0.01,0.98],c='k')
+        plt.subplot(1,3,2)
+        plt.plot(f[10:],np.abs(ERAf[10:]),'r',linewidth=0.5)
+        plt.plot(f[10:],np.abs(ERBe[10:]),'b',linewidth=0.5)
+        plt.xlabel('f/Hz')
+        #plt.ylabel('Amplitude')
+        plt.xlim([0,20])
+        figureSet.setABC('(b)',[0.01,0.98],c='k')
+        plt.subplot(1,3,3)
+        N = int(20*t3.delta*len(afF))
+        N=-1
+        plt.plot(afF,np.abs(afS)/np.abs(afS[:N]).max(),'r',linewidth=0.3)
+        plt.plot(beF,np.abs(beS)/np.abs(beS[:N]).max(),'b',linewidth=0.3)
+        plt.plot(atF,np.abs(atS)/np.abs(atS[:N]).max(),'k',linewidth=0.3)
+        plt.xlabel('f/Hz')
+        #plt.ylabel('Amplitude')
+        plt.xlim([0,20])
+        figureSet.setABC('(c)',[0.01,0.98],c='k')
+        plt.savefig('../hsrRes/ERR%s.eps'%head,dpi=300)
+        plt.close()
     def plotERL(self,N=16,v=80,UL=[500,1000,3000],Lc=25,\
         L=np.arange(30,100)*32+16,A=1,timeL=np.arange(-50,50,0.01)\
         ,f=np.arange(0,100,0.01),head=''):
@@ -641,6 +759,37 @@ class hsr:
         plt.xlim([0,20])
         plt.savefig('../hsrRes/ERL%s.pdf'%head)
         plt.close()
+    def plotWS(self,data,time0=-40,head='test',delta=0.01,fMax=10,xlim=[-40,40],whiteL=[]):
+        figureSet.init()
+        #head = '1.567142294544028521e+09'
+        plt.close()
+        fig=plt.figure(figsize=[6,4])
+        fig.tight_layout()
+        plt.subplot(2,1,1)
+        plt.plot(np.arange(len(data))*delta+time0,data,'k',linewidth=0.5)
+        #plt.plot(timeL,rBe,'b',linewidth=0.5)
+        #plt.xlabel('t/s')
+        plt.ylabel('D/count')
+        plt.xlim(xlim)
+        figureSet.setABC('(a)',[0.01,0.98])
+        plt.subplot(2,1,2)
+        N=int(8/delta)
+        dataS,TL,FL=SFFT(data,delta,10,N)
+        pc=plt.pcolormesh(TL+time0,FL[:int(N*fMax*delta)],np.log(np.abs(dataS[:int(N*fMax*delta)])/np.std(dataS[:int(N*fMax*delta)]).max(axis=0,keepdims=True)+1e-3),cmap='hot')
+        for white in whiteL:
+            plt.plot(TL+time0,(TL+time0)*0+white,'-.k',linewidth=0.5)
+        plt.xlabel('t/s')
+        plt.ylabel('f/Hz')
+        plt.xlim(xlim)
+        plt.ylim([0,fMax])
+        figureSet.setABC('(b)',[0.01,0.98],c='w')
+        ax=plt.gca()
+        ax_divider = make_axes_locatable(ax)
+        cax = ax_divider.append_axes("bottom", size="7%", pad="60%")
+        cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
+        cbar.set_label('log(A)')
+        #plt.tight_layout()
+        plt.savefig('../hsrRes/rt%s%d.jpg'%(head,time0),dpi=500)
         
 
 def handleDay(l):
@@ -652,7 +801,7 @@ def SFFT(data,dt,dN,dn):
     N1 = int(N0/dN)
     print(N1)
     data1 = np.zeros([dn,N1],np.complex128)
-    tL= (np.arange(N1)*dN-dN/2)*dt
+    tL= (np.arange(N1)*dN+dn/2)*dt
     fL=(np.arange(dn)/dn*1/dt)
     for i in range(N1):
         #print([i*dN,(i*dN+dn)])
@@ -669,9 +818,71 @@ def toStr(num):
 def meanE(num):
     return (num**2).mean()**0.5
 
+def plotWSpec(t3):
+    data = t3.Data()
+    data/=data.max()
+    bTime = t3.bTime
+    timeL = bTime + np.arange(len(data))*t3.delta
+    specFL= [t3.getSpec(i) for i in range(3)]
+    plt.subplot(2,1,1)
+    for i in range(3):
+        plt.plot(timeL,data[:,i],linewidth=0.5)
 
-        
 
-        
+def plotStaRail(stations,mt,basemap):
+    hsr = mt.readFault('data/hsr.shape')
+    staLa,staLo=stations.loc()
+    dLa = staLa.max()-staLa.min()
+    dLo = staLo.max()-staLo.min()
+    laL = [staLa.min()-dLa*2,staLa.max()+dLa*2]
+    loL = [staLo.min()-dLo*2,staLo.max()+dLo*2]
+    laL0 = [staLa.min()-dLa*90,staLa.max()+dLa*90]
+    loL0 = [staLo.min()-dLo*90,staLo.max()+dLo*90]
+
+    plt.close()
+    fig=plt.figure(figsize=[5,4])
+    #fig.tight_layout()
+    figureSet.init()
+    plt.subplot(1,2,1)
+    m0 = basemap.Basemap(llcrnrlat=laL0[0],urcrnrlat=laL0[1],llcrnrlon=loL0[0],\
+            urcrnrlon=loL0[1])
+    pc=mt.plotTopo(m0,laL0+loL0,isColorbar=False,vmin=0,vmax=1500)
+    squareLa = [laL[0],laL[0],laL[1],laL[1],laL[0]]
+    squareLo = [loL[0],loL[1],loL[1],loL[0],loL[0]]
+    squareX,squareY=m0(squareLo,squareLa)
+    plt.plot(squareX,squareY,'b',linewidth=0.5)
+    for fault in hsr:
+        if fault.inR(laL0+loL0):
+            f=fault.plot(m0,linewidth=2,cmd='-k')
 
 
+    plt.xlim()
+    plt.ylim()
+    R=laL0+loL0
+    dD=max(int((R[1]-R[0])*3)/8,int((R[3]-R[2])*3)/8)
+    #m.arcgisimage(service='World_Physical_Map', xpixels = 1500, verbose= False)
+    parallels = np.arange(int(R[0]),int(R[1]+1),dD)
+    m0.drawparallels(parallels,labels=[1,0,0,1],fontsize=8)
+    meridians = np.arange(int(R[2]),int(R[3]+1),dD)
+    m0.drawmeridians(meridians,labels=[1,0,0,1],fontsize=8)
+    figureSet.setABC('(a)',[0.01,0.98],c='k',m=m0)
+    figureSet.setColorbar(pc,label='Topography',pos='bottom')
+    plt.subplot(1,2,2)
+    m = basemap.Basemap(llcrnrlat=laL[0],urcrnrlat=laL[1],llcrnrlon=loL[0],\
+            urcrnrlon=loL[1])
+    staX,staY=m(np.array(staLo),np.array(staLa))
+    R=laL+loL
+    st=m.plot(staX,staY,'b^',markersize=2)
+    for fault in hsr:
+        if fault.inR(laL+loL):
+            f=fault.plot(m,linewidth=2,cmd='-k')
+
+    figureSet.setABC('(b)',[0.01,0.98],c='k',m=m)
+    dD=max(int((R[1]-R[0])*150)/400,int((R[3]-R[2])*150)/400)
+    #m.arcgisimage(service='World_Physical_Map', xpixels = 1500, verbose= False)
+    parallels = np.arange(int(R[0]),int(R[1]+1),dD)
+    m.drawparallels(parallels,labels=[1,0,0,1],fontsize=8)
+    meridians = np.arange(int(R[2]),int(R[3]+1),dD)
+    m.drawmeridians(meridians,labels=[1,0,0,1],fontsize=8)
+    fig.tight_layout()
+    plt.savefig('../hsrRes/hsr_sta.jpg',dpi=600)

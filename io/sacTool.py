@@ -349,7 +349,7 @@ def doOne(l):
 def getXYFromCatalogP(catalog,w,delta0=0.01,\
     delta=0.02,dtP=0.1,dtS=0.2,f=[0.5,20],\
     order=2,oIndex=-1,dIndex=2000,channelIndex=0,\
-    maxPS=21,phase='ps'):
+    maxPS=40,phase='ps'):
     decimateN=1#int(delta/delta0)
     dIndex0=dIndex*decimateN
     x=np.zeros([len(catalog),dIndex0,1,3])
@@ -367,7 +367,7 @@ def getXYFromCatalogP(catalog,w,delta0=0.01,\
             else:
                 argHinet.append([c,0,delta,delta0,dtP,dtS,f,\
             order,oIndexTmp,dIndex0,maxPS,0,phase,resL])
-        with Pool(10) as p:
+        with Pool(5) as p:
             p.map(doOne,argHinet)
         #for arg in argHinet:
         #    doOne(arg)

@@ -8,6 +8,9 @@ from matplotlib import pyplot as plt
 import numpy as np
 from SeismTool.HSR import hsr
 from SeismTool.SurfDisp import fk
+from plotTool import figureSet
+from SeismTool.mapTool import mapTool as mt
+import mpl_toolkits.basemap as basemap
 stations =  seism.StationList('hsrStd')
 
 #通过速度校正，前后分别叠加
@@ -59,9 +62,9 @@ for comp in [0,1,2]:
         fL0LN,specAtLN,specBeLN,specAfLN,FFAtLN,FFBeLN,FFAfLN,dTLN=\
         h.loadStationsSpec(stations,'../hsrRes/V11/%d_%d/'%(bSec,eSec),comp=comp,isAdd=True,minDT=-100,maxDT=0,dF=0.15,)
         head = 'N_%d_%d~%d'%(comp,bSec,eSec)
-        FBeLN,FAfLN,SBeLN,SAfLN,vLN=h.showSpec(fL0LS,specAtLN,specBeLS,specAfLN,stations,head=head,workDir='../hsrRes/V11/fig1/',maxF=20,v=3000,isPlot=False)
+        FBeLN,FAfLN,SBeLN,SAfLN,vLN=h.showSpec(fL0LS,specAtLN,specBeLS,specAfLN,stations,head=head,workDir='../hsrRes/V11/fig3/',maxF=20,v=3000,isPlot=False)
         head = 'S_%d_%d~%d'%(comp,bSec,eSec)
-        FBeLS,FAfLS,SBeLS,SAfLS,vLS=h.showSpec(fL0LS,specAtLS,specBeLN,specAfLS,stations,head=head,workDir='../hsrRes/V11/fig1/',maxF=20,v=3000,isPlot=True)
+        FBeLS,FAfLS,SBeLS,SAfLS,vLS=h.showSpec(fL0LS,specAtLS,specBeLN,specAfLS,stations,head=head,workDir='../hsrRes/V11/fig3/',maxF=20,v=3000,isPlot=True)
         FBeLNM[comp].append(FBeLN)
         FAfLNM[comp].append(FAfLN)
         SBeLNM[comp].append(SBeLN)
@@ -78,8 +81,11 @@ bSecL1[0]=-1000
 eSecL1[0]=-1000
 bSecL1[1]=-1000
 eSecL1[1]=-1000
-h.plotFV(FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL1,eSecL1,np.arange(17)*40/80,workDir='../hsrRes/V11/fig2/',head='plotFV')
-h.plotFV(FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL1,eSecL1,np.arange(1)*40/80*0,workDir='../hsrRes/V11/fig2/',head='plotFV—single',marker='.')
+reload(hsr)
+h = hsr.hsr()
+h.plotFV(FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL1,eSecL1,np.arange(1)*40/80*0,workDir='../hsrRes/',head='plotFV—single',marker='.',strL='ac')
+h.plotFV(FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL1,eSecL1,np.arange(17)*40/80,workDir='../hsrRes/',head='plotFV',strL='bd')
+
 h.plotSV2(SBeLNM,SAfLNM,vLNM,SBeLSM,SAfLSM,vLSM,bSecL1,eSecL1,np.arange(17)*40/80*0,workDir='../hsrRes/V11/fig2/',head='plotSVReLa')
 #基频与桥频之差，反映轨道形状
 #有的随车速变化，有的不随；
@@ -119,28 +125,115 @@ FK.test(distance=distance,modelFile=modelFile,dt=dt,depth=depth,expnt=expnt,dura
 reload(hsr)
 h = hsr.hsr()
 h.plotER()
-T3=seism.Trace3(seism.getTrace3ByFileName(stations[0].\
-    getFileNames(1.567123401723240137e+09),freq=[0.5, 45],delta0=0.01))
-t3=T3.slice(1.567123893571964979e+09-40,1.567123893571964979e+09+60)
+#t0=1.567133837665162086e+09+10
+dt = 1000*stations[1].dist(stations[0])/80
+t0=1.567129671405785799e+09+dt
+T3=seism.Trace3(seism.getTrace3ByFileName(stations[1].\
+    getFileNames(int(t0/86400)*86400),freq=[0.5, 95],delta0=0.004))
+reload(hsr)
+h= hsr.hsr()
+t3=T3.slice(t0-50,t0+60)
 t31=t3.rotate(25)
-from matplotlib import pyplot as plt
+data = t31.Data()[:,0]
+
+h.plotERR(t3=t31,time=t0)
+reload(hsr)
+h = hsr.hsr()
+h.plotWS(data,time0=-50,head='real',fMax=10,delta=0.004,whiteL=[2.5,5,7.5])
+h.plotWS(data,time0=-50,head='all',fMax=100,delta=0.004)
+reload(hsr)
+h = hsr.hsr()
+h.plotr()
+1.567142294544028521e+09
+
+t1 = 1.567132350323159933e+09-dt
+t3_=T3.slice(t1-50,t1+60)
+t31=t3_.rotate(25)
+
+###plot Two Direction
+bSec = -40
+eSec = 40
+bT=12
+eT=20
+v=80
+
+y=[0,0]
+x=[bSec*v,eSec*v]
+squareX = [bT*v,bT*v,eT*v,eT*v,bT*v]
+squareX_ = [-bT*v,-bT*v,-eT*v,-eT*v,-bT*v]
+squareT= [bT,bT,eT,eT,bT]
+squareT_= [-bT,-bT,-eT,-eT,-bT]
+squareY = [0.5,   -0.5,  -0.5  , 0.5,  0.5]
+plt.close()
+fig=plt.figure(figsize=[4,6])
+figureSet.init()
+plt.subplot(3,1,1)
+plt.plot(x,y,'k',linewidth=2)
+plt.plot([0],[0],'^y',markersize=10)
+plt.plot(squareX,squareY,'b')
+plt.plot(squareX_,squareY,'r')
+plt.xlim(x)
+plt.xlabel('distance/m')
+plt.ylim([-1,1])
+plt.yticks([])
+figureSet.setABC('(a)',[0.01,0.98],c='k')
+plt.subplot(3,1,2)
+data = t31.Data()[:,0]
+data/=data.max()*1.2
+timeL=np.arange(len(data))*t31.delta-50
+plt.plot(timeL,data,'k',linewidth=0.5)
+plt.plot(squareT,squareY,'b')
+plt.plot(squareT_,squareY,'r')
+plt.xlim([bSec,eSec])
+plt.ylim([-1,1])
+plt.xlabel('time/s')
+plt.ylabel('A')
+figureSet.setABC('(b)',[0.01,0.98],c='k')
+plt.subplot(3,1,3)
+data = t31_.Data()[:,0]
+data/=data.max()*1.2
+timeL=np.arange(len(data))*t31.delta-50
+plt.plot(timeL,data,'k',linewidth=0.5)
+plt.plot(squareT,squareY,'r')
+plt.plot(squareT_,squareY,'b')
+plt.xlim([eSec,bSec])
+plt.ylim([-1,1])
+plt.xlabel('time/s(distance/km)')
+plt.ylabel('A')
+figureSet.setABC('(c)',[0.01,0.98],c='k')
+fig.tight_layout()
+plt.savefig('../hsrRes/twoD.eps')
+############plot stations and high speed rail
+reload(hsr)
+h= hsr.hsr()
+hsr.plotStaRail(stations,mt,basemap)
+####plotERR
+
+h.plotERR(t3=t31,time=t0)
+
+
+
+'''
+figureSet.init()
+head = '1.567142294544028521e+09'
 plt.close()
 data = t31.Data()
-plt.figure(figsize=[8,4])
+plt.figure(figsize=[12,8])
 plt.subplot(2,1,1)
-plt.plot(np.arange(len(data))*0.01-40,data[:,0],'r',linewidth=0.5)
+plt.plot(np.arange(len(data))*0.01-40,data[:,0],'k',linewidth=0.5)
 #plt.plot(timeL,rBe,'b',linewidth=0.5)
 plt.xlabel('t/s')
 plt.ylabel('Disp')
 plt.xlim([-40,40])
 plt.subplot(2,1,2)
 dataS,TL,FL=hsr.SFFT(data[:,0],0.01,10,800)
-plt.pcolor(TL-40,FL[:int(800*0.08)],np.abs(dataS)[:int(800*0.08)]/np.abs(dataS.std(axis=0,keepdims=True)))
+plt.pcolormesh(TL-40,FL[:int(800*15/100)],np.log(np.abs(dataS[:int(800*15/100)])/np.std(dataS[:int(800*15/100)]).max(axis=0,keepdims=True)+1e-3),cmap='hot')
 plt.xlabel('t/s')
 plt.ylabel('f/Hz')
 plt.xlim([-40,40])
-plt.ylim([0,8])
-plt.savefig('../hsrRes/rtReal%s.jpg'%head,dpi=500)
+plt.ylim([0,15])
+plt.tight_layout()
+plt.savefig('../hsrRes/rtReal%d.jpg'%t0,dpi=500)
 stations = stations0[:1]+stations0[-1:]
 T3L=[]
 day=timeL[0]
@@ -148,5 +241,36 @@ for station in stations:
     print('loading', station)
     T3L.append(seism.Trace3(seism.getTrace3ByFileName(station.\
         getFileNames(day),freq=[0.5, 90],delta0=0.005)))
+'''
+
+
 reload(hsr)
-h= hsr.hsr(fL0=np.arange(0,100,0.01))
+h = hsr.hsr()
+allSBeLSM=[[]for i in range(3)]
+allSAfLSM=[[]for i in range(3)]
+allvLSM=[[]for i in range(3)]
+allSBeLNM=[[]for i in range(3)]
+allSAfLNM=[[]for i in range(3)]
+allvLNM=[[]for i in range(3)]
+for comp in [0,1,2]:
+    for j in range(len(bSecL)):
+        bSec=bSecL[j]
+        eSec=eSecL[j]        
+        fL0LS,specAtLS,specBeLS,specAfLS,FFAtLS,FFBeLS,FFAfLS,dTLS=\
+        h.loadStationsSpec(stations,'../hsrRes/V11/%d_%d/'%(bSec,eSec),comp=comp,isAdd=False,minDT=0,maxDT=100,dF=0.15,)
+        fL0LN,specAtLN,specBeLN,specAfLN,FFAtLN,FFBeLN,FFAfLN,dTLN=\
+        h.loadStationsSpec(stations,'../hsrRes/V11/%d_%d/'%(bSec,eSec),comp=comp,isAdd=False,minDT=-100,maxDT=0,dF=0.15,)
+        head = 'N_%d_%d~%d'%(comp,bSec,eSec)
+        FBeLN,FAfLN,SBeLN,SAfLN,vLN=h.anSpec(fL0LS,specAtLN,specBeLS,specAfLN,stations,maxF=20,v=3000)
+        head = 'S_%d_%d~%d'%(comp,bSec,eSec)
+        FBeLS,FAfLS,SBeLS,SAfLS,vLS=h.anSpec(fL0LS,specAtLS,specBeLN,specAfLS,stations,maxF=20,v=3000)
+        allSBeLNM[comp].append(SBeLN)
+        allSAfLNM[comp].append(SAfLN)
+        allvLNM[comp].append(vLN)
+        allSBeLSM[comp].append(SBeLS)
+        allSAfLSM[comp].append(SAfLS)
+        allvLSM[comp].append(vLS)
+
+reload(hsr)
+h = hsr.hsr()
+h.plotSV2(allSBeLNM,allSAfLNM,allvLNM,allSBeLSM,allSAfLSM,allvLSM,bSecL1,eSecL1,np.arange(17)*40/80*0,workDir='../hsrRes/',head='plotSVReLa')

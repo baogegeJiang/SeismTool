@@ -11,6 +11,7 @@ from pycpt.load import gmtColormap as cpt2cm
 from ..mathTool.distaz import DistAz
 from ..mathTool.mathFunc_bak import R as mathR
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
+from ..plotTool import figureSet as fs
 
 cmap = cpt2cm(os.path.dirname(__file__)+'/../data/temperatureInv')
 cmapTemp = cpt2cm(os.path.dirname(__file__)+'/../data/temperature')
@@ -65,16 +66,18 @@ def getZInLine(la0,lo0,z0,line,laN=500,loN=500):
     lo=np.arange(line.xyL[0][1],line.xyL[1][1],(line.xyL[1][1]-line.xyL[0][1])/loN)
     z=interp.interpn((la0,lo0),z0,np.concatenate([la.reshape([-1,1]),lo.reshape([-1,1])],axis=-1),method='linear')
     return la,lo,z
-def plotTopo(m,R,topo='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd',laN=800,loN=800,cptfile='wiki-2.0.cpt'):#'cpt17.txt'):
+def plotTopo(m,R,topo='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd',laN=800,loN=800,cptfile='wiki-2.0.cpt',vmax=5000,vmin=0,isColorbar=True):#'cpt17.txt'):
     la0,lo0,z0=readnetcdf(R,topo)
     la,lo,z=getZInR(la0,lo0,z0,R,laN=laN,loN=loN)
     #loM,laM=np.meshgrid(lo,la)
     x,y=m(lo,la)
     #print(la[0,0],lo[0,0])
-    m.pcolor(x,y,z,cmap=cpt2cm(cptfile),vmin=0, vmax=5000)
-    bar=plt.colorbar()
-    bar.set_label('Topography')
+    pc=m.pcolormesh(x,y,z,cmap=cpt2cm(cptfile),vmin=vmin, vmax=vmax,rasterized=True)
+    if isColorbar:
+        bar=plt.colorbar()
+        bar.set_label('Topography')
     #z.set_clim(-9000,9000)
+    return pc
 
 def quakeLs2kml(quakeLs,filename):
     fold=KML.Folder()
@@ -429,7 +432,7 @@ def plotDep(qL,R,filename):
 def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
     paraL = qL.paraL(['la','lo','dep','ml','time'],req={'R':R})
     plt.close()
-    fig=plt.figure(figsize=[5,3])
+    fig=plt.figure(figsize=[4,2.5])
     sFig=fig
     ax=plt.gca()
     ax_divider = make_axes_locatable(ax)
@@ -454,7 +457,7 @@ def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
     if not isinstance(vModel,type(None)):
         la,lo,z,Dist,V= vModel.outputP2(R.xyL,isPer=isPer,line=R)
         Dist = R.l(np.array([la[0].tolist(),lo[0].tolist()]).transpose())
-        pc=ax.pcolor(Dist,z,V,vmin=-np.abs(V).max(),vmax=np.abs(V).max(),cmap=cmap)
+        pc=ax.pcolormesh(Dist,z,V,vmin=-np.abs(V).max(),vmax=np.abs(V).max(),cmap=cmap,rasterized=True)
         #position=fig.add_axes([0.15, 0.05, 0.7, 0.03])
         #cbar=fig.colorbar(pc,fraction=0.046, pad=0.04)
         # add an axes above the main axes.
@@ -485,9 +488,9 @@ def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
     plt.savefig(filename,dpi=300)
     plt.close()
 
-def showInMap(v,laL,loL,R,resFile,name='res'):
+def showInMap(v,laL,loL,R,resFile,name='res',abc=''):
     plt.close()
-    fig=plt.figure(figsize=[4,5])
+    fig=plt.figure(figsize=[3,4])#[4,5]
     m = basemap.Basemap(llcrnrlat=R[0],urcrnrlat=R[1],llcrnrlon=R[2],\
         urcrnrlon=R[3])
     for fault in faultL:
@@ -504,7 +507,10 @@ def showInMap(v,laL,loL,R,resFile,name='res'):
     cmp=plt.get_cmap('coolwarm')
     #cmap = co.copy(cm.get_cmap(plt.rcParams['image.cmap']))
     cmap.set_bad('y', 0)
-    pc=m.pcolormesh(x,y,V,cmap=cmap,shading='gouraud')
+    #pc=m.pcolormesh(x,y,V,cmap=cmap,shading='gouraud')
+    pc=m.pcolormesh(x,y,V,cmap=cmap)
+    if len(abc)>0:
+        fs.setABC(abc)
     #cbar=fig.colorbar(pc,orientation="horizontal")
     ax=plt.gca()
     ax_divider = make_axes_locatable(ax)

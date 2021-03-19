@@ -14,6 +14,8 @@ from .dataLib import filePath
 from ..mathTool.mathFunc import rotate,getDetec
 from ..mathTool.mathFunc_bak import R as mathR
 from . import parRead
+from SeismTool.plotTool import figureSet as fs
+dm = 0
 comp3='RTZ'
 comp33=[]
 cI33=[]
@@ -288,11 +290,12 @@ class StationList(list):
     def __init__(self,*argv,**kwargs):
         super().__init__()
         self.inD = {}
-        if isinstance(argv[0],list):
-            for sta in argv[0]:
-                self.append(sta)
-        if isinstance(argv[0],str):
-            self.read(argv[0])
+        if len(argv)>0:
+            if isinstance(argv[0],list):
+                for sta in argv[0]:
+                    self.append(sta)
+            if isinstance(argv[0],str):
+                self.read(argv[0])
     def inR(self,lalo):
         indexL = []
         for i in range(len(self)-1,-1,-1):
@@ -409,7 +412,7 @@ class StationList(list):
     def plot(self,filePath='station.jpg'):
         plt.close()
         for sta in self:
-            plt.plot(sta['lo'],sta['la'],'^k')
+            plt.plot(sta['lo']%360,sta['la'],'^k')
         plt.savefig(filePath,dpi=300)
         plt.close()
     def loc(self):
@@ -582,8 +585,7 @@ class Quake(Dist):
     def __getitem__(self,key):
         if key=='num':
             return len(self.records)
-        return super().__getitem__(key)
-        
+        return super().__getitem__(key) 
     def saveSacs(self,staL, staInfos, matDir='output/'\
     ,bSec=-10,eSec=40,dtype=np.float32):
         eventDir = matDir+'/'+self['filename'].split('.mat')[0]+'/'
@@ -621,6 +623,71 @@ class Quake(Dist):
                 sTime=record['sTime']))
             T3L[-1].filt(f,filtOrder)
         return T3L
+    def plotSacs(self,T3L,fileDir='',channel=2,A=12,linewidth=0.15,key='ZGKX',quakeRef='',T3LRef='',threshold=0.4,alpha=1):
+        bSec=-3
+        eSec=+4
+        if not os.path.exists(fileDir):
+            os.makedirs(fileDir)
+        filename = '%s/%d.pdf'%(fileDir,self['time'])
+        print(filename)
+        fs.init(key)
+        plt.close()
+        plt.figure(figsize=[4,4])
+        count=0
+        if len(quakeRef)>0:
+            indexLRef = self.staIndexs()
+        for T3 in T3L:
+            countRef=-1
+            if len(T3)<0:
+                continue
+            loc=[T3[0].stats['sac']['stla'],T3[0].stats['sac']['stlo']]
+            dist = self.dist(loc)
+            data = T3.Data()[:,channel]
+            maxA = np.abs(data).max()
+            data*= A/maxA
+            timeL = T3.bTime.timestamp+np.arange(len(data))*T3.Delta()-self['time']
+            plt.plot(timeL,data+dist,'k',linewidth=linewidth)
+            record = self.records[count]
+            index  = record['staIndex']
+            if len(quakeRef)>0:
+                countRef = indexLRef.index(index)
+            if T3.pTime>self['time']:
+                dTp =  T3.pTime.timestamp - self['time']
+                plt.plot([dTp,dTp],[dist-A,dist+A],'b',linewidth=linewidth)
+                if len(quakeRef)>0 and countRef>=0:
+                    T3Ref = T3LRef[countRef]
+                    if T3Ref.pTime>quakeRef['time']:
+                        T3Ref = T3LRef[countRef]
+                        data0 = T3.Data(T3.pTime.timestamp+bSec,T3.pTime.timestamp+eSec)[:,channel]
+                        data1  = T3Ref.Data(T3Ref.pTime.timestamp+bSec,T3Ref.pTime.timestamp+eSec)[:,channel]
+                        data1  *= data0.std()/data1.std()
+                        data1  *=A/maxA
+                        if record['pCC']>threshold:
+                            color ='c'
+                        else:
+                            color = 'g'
+                        plt.plot(T3.pTime.timestamp+np.arange(len(data1))*T3.Delta()-self['time']+bSec,data1+dist,color,linewidth=linewidth,alpha=alpha)
+            if T3.sTime>self['time']and countRef>=0:
+                dTs =  T3.sTime.timestamp - self['time']
+                plt.plot([dTs,dTs],[dist-A,dist+A],'r',linewidth=linewidth)
+                if len(quakeRef)>0 and countRef>=0:
+                    T3Ref = T3LRef[countRef]
+                    if T3Ref.sTime>quakeRef['time']:
+                        data0 = T3.Data(T3.sTime.timestamp+bSec,T3.sTime.timestamp+eSec)[:,channel]
+                        data1  = T3Ref.Data(T3Ref.sTime.timestamp+bSec,T3Ref.sTime.timestamp+eSec)[:,channel]
+                        data1  *= data0.std()/data1.std()
+                        data1  *=A/maxA
+                        if record['sCC']>threshold:
+                            color ='c'
+                        else:
+                            color = 'g'
+                        plt.plot(T3.sTime.timestamp+np.arange(len(data1))*T3.Delta()-self['time']+bSec,data1+dist,color,linewidth=linewidth,alpha=alpha)
+            count+=1
+        plt.xlim([-5,70])
+        plt.xlabel('t/s')
+        plt.ylabel('distance/km')
+        plt.savefig(filename,dpi=300)
+
     def loadPSSacs(self,staInfos,matDir='output',\
         isCut=False,index0=-250,index1=250,\
         f=[-1,-1],filtOrder=2):
@@ -1127,6 +1194,33 @@ class QuakeL(list):
             for key in keyL:
                 pL[key].append(quake[key])
         return pL
+    def compare(self,self1,maxDt=10,maxDd=0.3):
+        paraL0 = self.paraL(keyL=['time','la','lo'])
+        time0  = np.array(paraL0['time'])
+        la0    = np.array(paraL0['la'])
+        lo0    = np.array(paraL0['lo'])
+        paraL1 = self1.paraL(keyL=['time','la','lo'])
+        time1  = np.array(paraL1['time'])
+        la1    = np.array(paraL1['la'])
+        lo1    = np.array(paraL1['lo'])
+        index0L= []
+        index1L= []
+        m0L    = []
+        m1L    = []
+        for index0 in range(len(self)):
+            T0 = time0[index0]
+            La0= la0[index0]
+            Lo0= lo0[index0]
+            absDTime = np.abs(time1-T0)
+            absDd =((la1-La0)**2+(lo1-Lo0)**2)**0.5
+            diff = (absDTime>maxDt)*1000+ (absDd>maxDd)*1000+absDTime+absDd*110/5
+            if diff.min()<120:
+                index1 = diff.argmin()
+                index0L.append(index0)
+                index1L.append(index1)
+                m0L.append(self[index0]['ml'])
+                m1L.append(self1[index1]['ml'])
+        return index0L,index1L,m0L,m1L            
     def analy(self):
         eCount = len(self)
         pCount = 0
@@ -1139,10 +1233,13 @@ class QuakeL(list):
                     sCount+=1
         print('event: %d | P phase: %d | S phase: %d|'%(eCount,pCount,sCount))
         return eCount,pCount,sCount
-
-
-
-
+    def adjustMl(self,a=0.05,b=-0.9,c=-0.3,maxMl=4.2):
+        for q in self:
+            if q['ml']>-10 and q['ml']<10:
+                if q['ml']<maxMl:
+                    q['ml']+=a+b*q['ml']
+                else:
+                    q['ml']+=c
 
 def adjust(data,stloc=None,kzTime=None,tmpFile='test.sac',decMul=-1,\
     eloc=None,chn=None,sta=None,net=None,o=None,pTime=None,sTime=None):
@@ -1267,7 +1364,9 @@ def mergeSacByName(sacFileNames, **kwargs):
             else:
                 pass
         try:
+            #print('start merge')
             sacM=tmpSacL.merge(fill_value=0,method=1,interpolation_samples=0)[0]
+            #print('end merge')
             std=sacM.std()
             if std>para['maxA']:
                 print('#####too many noise std : %f#####'%std)
@@ -1407,9 +1506,9 @@ class Trace3(obspy.Stream):
             #     starttime=self.bTime,\
             #     npts=int((self.eTime-self.bTime)/self.delta))
             decMul= round(delta/self.delta)
-            print(ctime(),'start dec')
+            #print(ctime(),'start dec')
             self.decimate(decMul,no_filter=True)
-            print(ctime(),'end dec')
+            #print(ctime(),'end dec')
         if isData:
             self.data = self.Data()
     def getPSTime(self):

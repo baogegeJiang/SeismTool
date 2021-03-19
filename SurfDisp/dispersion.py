@@ -2226,7 +2226,7 @@ class corrL(list):
         return self.x, self.y,self.n, self.t0L
     def __str__(self):
         return '%d %s'%(len(self),str(self.timeDisKwarg))
-    def getTimeDis(self,iL,fvD={},T=[],sigma=2,maxCount=512,noiseMul=0,byT=False,\
+    def getTimeDis(self,iL,fvD={},T=[],sigma=2,√512,noiseMul=0,byT=False,\
         byA=False,rThreshold=0.1,byAverage=False,set2One=False,move2Int=False,\
         modelNameO='',noY=False,randMove=False):
         #print('sigma',sigma)
@@ -2372,6 +2372,7 @@ class corrL(list):
             N = np.zeros([tmpy.shape[0],maxCount0,1],dtype=dtype)
             iP,iN = self.ipin(t0,self[i].fs)
             Y[:,iP:maxCount+iN,0] =tmpy[:,-iN:maxCount-iP]
+            N[:,:,0] =tmpn[:,-iN:-iN+1]+(np.arange(maxCount0)-iP).reshape([1,-1])*(tmpn[:,1:2]-tmpn[:,0:1])
             X[:,iP:maxCount+iN,0] = np.real(self[i].xx.\
                 reshape([-1]))[-iN:maxCount-iP]
             X[:,iP:maxCount+iN,1] = np.imag(self[i].xx.\

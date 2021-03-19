@@ -2,7 +2,6 @@ from numpy.core.arrayprint import _make_options_dict
 from obspy import UTCDateTime
 import os
 import sys
-sys.path.append('/home/jiangyr/Surface-Wave-Dispersion/')
 from imp import reload
 from SeismTool.io import seism,sacTool,tool
 from SeismTool.detector import detecQuake
@@ -41,6 +40,7 @@ aMat=sacTool.areaMat(laL,loL,laN,loN)
 staTimeML= detecQuake.getStaTimeL(staInfos, aMat)
 
 qLAll = seism.QuakeL(phaseFile)
+qLAll.adjustMl()
 pL = qLAll.paraL(req={'minN':5,'minCover':0.8,'maxDep':50})
 
 timeL  = np.array(pL['time'])
@@ -146,6 +146,7 @@ mL=tomoDD.modeL(tomoDir)
 mL.plot(tomoDir+'../resFig/')
 
 qLAll = seism.QuakeL(phaseFile)
+aLAll.adjustMl()
 qLAll.select(req={'minN':6,'minCover':0.8,'maxDep':50,'locator':locator(staInfos),'maxRes':1.5})
 
 stationPairM= seism.StationPairM(staInfos)
@@ -243,11 +244,12 @@ qLAll.write('phaseSCYN')
 #qL.write('selectSCYNTomo')
 
 qL = seism.QuakeL('phase/phaseSCYN')
+qL.adjustMl()
 aMat=sacTool.areaMat(laL,loL,laN,loN)
 aMat.insert(qL)
 reqMore={'minN':5,'minCover':0.8,'locator':locator(staInfos),'maxRes':1.5}
 reqLess={'minN':5,'minCover':0.8,'locator':locator(staInfos),'maxRes':1.5}
-qL=aMat.select(maxN=30,reqLess=reqLess,reqMore=reqMore)
+qL=aMat.select(maxN=90,reqLess=reqLess,reqMore=reqMore)
 qL.set('sort','time')
 qL.sort()
 qL.write('phase/SCYNTOMOSort')
@@ -255,33 +257,43 @@ qL=seism.QuakeL('phase/SCYNTOMOSort')
 templateDir = '/media/jiangyr/MSSD/output/'
 
 from SeismTool.io import parRead
-
+from time import time
 t0 = time()
-T3PSLL =seism.getT3LLQuick(qL,staInfos,matDir=templateDir,f=[2,10],batch_size=100,num_workers=6)
+T3PSLL =seism.getT3LLQuick(qL,staInfos,matDir=templateDir,f=[2,10],batch_size=100,num_workers=4)
 
 
 t1 = time()
 print(t1-t0)
 R=laL+loL
 R=[-90,90,-180,180]
+R1 = laL+loL
 from SeismTool.tomoDD import tomoDD
-dTM = tomoDD.calDTMQuick(qL,T3PSLL,staInfos,minSameSta=2,num_workers=5,doCut=False)
-tomoDD.saveDTM(dTM,workDir+'output/outputV%s/dTM'%v_i)
-dTM = tomoDD.loadDTM(workDir+'output/outputVSCYNdoV40/dTM')
-tomoDir = workDir+'output/outputVSCYNdoV40/tomoDD/input/'%v_i
+dTM = tomoDD.calDTMQuick(qL,T3PSLL,staInfos,minSameSta=1,num_workers=3,doCut=True)
+tomoDD.saveDTM(dTM,workDir+'output/outputV%s/dTM_more'%v_i)
+dTM = tomoDD.loadDTM(workDir+'output/outputVSCYNdoV40/dTM_More')
+tomoDir = workDir+'output/outputVSCYNdoV40/tomoDD/input/'
 if not os.path.exists(tomoDir):
 	os.makedirs(tomoDir)
-tomoDD.preEvent(qL,staInfos,tomoDir+'/event.dat',R=R)
+
+tomoDD.preEvent(qL,staInfos,tomoDir+'/event.dat',R=R1)
 tomoDD.preABS(qL,staInfos,tomoDir+'/ABS.dat',isNick=False,R=R)
 tomoDD.preSta(staInfos,tomoDir+'/station.dat',isNick=False)
-tomoDD.preDTCC(qL,staInfos,dTM,maxD=0.3,minSameSta=1,minPCC=0.6,minSCC=0.6,filename=tomoDir+'/dt.cc',isNick=False,R=R,perCount=500,minDP=0.5)
+tomoDD.preDTCC(qL,staInfos,dTM,maxD=0.3,minSameSta=1,minPCC=0.7,minSCC=0.7,filename=tomoDir+'/dt.cc',isNick=False,R=R,perCount=1000,minDP=0.5)
 tomoDD.preMod(laL+loL,nx=20,ny=22,nz=11,filename=tomoDir+'/../inversion/MOD')
 qL.write(tomoDir+'../tomoQuake')
 
 detecQuake.plotQuakeLDis(staInfos,qL,laL,loL,filename\
           =tomoDir+'../tomoQuake.jpg')
-qLNew1 = seism.QuakeL(tomoDD.getReloc(qL,tomoDir+'/../inversion/tomoDD.reloc'))
-tomoDD.preEvent(qL,staInfos,tomoDir+'/eventReloc.dat',R=R)
+qLNew = seism.QuakeL(tomoDD.getReloc(qL,tomoDir+'/../inversion/tomoDD.reloc'))
+qL.write('phase/SCYNTOMOSort_relocV1')
+'''
+tomoDD.preEvent(qL,staInfos,tomoDir+'/event.dat',R=R1)
+tomoDD.preABS(qL,staInfos,tomoDir+'/ABS.dat',isNick=False,R=R)
+tomoDD.preSta(staInfos,tomoDir+'/station.dat',isNick=False)
+tomoDD.preDTCC(qL,staInfos,dTM,maxD=0.3,minSameSta=1,minPCC=0.75,minSCC=0.75,filename=tomoDir+'/dt.cc',isNick=False,R=R,perCount=500,minDP=0.5)
+'''
+tomoDD.preMod(laL+loL,nx=20,ny=22,nz=11,filename=tomoDir+'/../inversion/MOD')
+tomoDD.preEvent(qL,staInfos,tomoDir+'/eventReloc.dat',R=R1)
 tomoDD.preABS(qL,staInfos,tomoDir+'/ABSReloc.dat',isNick=False,R=R)
 tomoDD.preDTCC(qL,staInfos,dTM,maxD=0.3,minSameSta=1,minPCC=0.6,minSCC=0.6,filename=tomoDir+'/dtReloc.cc',isNick=False,R=R,perCount=500,minDP=0.5)
 
@@ -375,6 +387,7 @@ for staLstFile in staLstFileL[1:]:
 	staInfos+=seism.StationList(staLstFile)
 
 templateL = seism.QuakeL(templateFile)
+templateL.adjustMl()
 pL0 = np.array([[31,101],[33.2,106],[33,106.5]])
 R0=mathFunc_bak.R(pL0)
 
@@ -398,6 +411,7 @@ mapTool.plotDep(templateL,R0,'dep3.jpg')
 p_i = '20210106CC8_2-10*'
 workDir='/HOME/jiangyr/detecQuake/'
 qCCL = seism.QuakeL(workDir+'phaseDir/phaseLstV%s'%p_i,Quake=seism.QuakeCC)
+qCCL.adjustMl()
 
 qCCL.write(workDir+'phaseDir/phaseLstV%sReloc'%p_i)
 pL0 = np.array([[30,102],[32,101],[35,104]])
@@ -439,6 +453,7 @@ for q in qL:
 qL.write('/home/jiangyr/phaseLPick',quakeKeysIn='la lo dep time filename')
 
 qL = seism.QuakeL('phase/phaseSCYN')
+qL.adjustMl()
 qCCL.write(workDir+'phaseDir/phaseLstV%sReloc'%p_i,Quake=seism.QuakeCC)
 pL0 = np.array([[30,102],[33,105]])
 R0=mathFunc_bak.Line(pL0,30)
@@ -462,6 +477,7 @@ detecQuake.plotQuakeLDis(staInfos,qL,laL,loL,filename\
 
 
 qL=seism.QuakeL('phase/SCYNTOMOSort')
+qL.adjustMl()
 qLNew = seism.QuakeL(tomoDD.getReloc(qL,tomoDir+'/../inversion/tomoDD.reloc'))
 qL=seism.QuakeL('phase/SCYNTOMOSort')('phase/SCYNTOMOSort')
 qLNew=seism.QuakeL('phase/SCYNTOMOSort')('phase/SCYNTomoRelocV5')
@@ -474,6 +490,7 @@ mLSyn.plot(tomoDir+'/../Syn/resFigV5/',nameL=['dVp','dVs','dVpr','dVsr'],doDense
 p_i = '20210106CC8_2-10*'
 workDir='/HOME/jiangyr/detecQuake/'
 qCCL = seism.QuakeL(workDir+'phaseDir/phaseLstV%s'%p_i,Quake=seism.QuakeCC)
+qCCL.adjustMl()
 qCCLNew = []
 count=0
 for q in qCCL:
@@ -515,6 +532,12 @@ qLAll = seism.QuakeL('phase/phaseSCYN')
 qL=seism.QuakeL('phase/SCYNTOMOSort')
 qLNew=seism.QuakeL('phase/SCYNTomoRelocV5')
 
+qCCLNew.adjustMl()
+QCCLNew2.adjustMl()
+qLAll.adjustMl()
+qL.adjustMl()
+qLNew.adjustMl()
+
 
 detecQuake.plotQuakeLDis(staInfos,qLAll,laL,loL,filename\
           ='./resFig/allQuake.jpg',isTopo=True)
@@ -545,26 +568,26 @@ RL.append(mathFunc_bak.Line(pL0,20,name='F'))
 for r in RL:
 	mapTool.plotDepV2(qLNew,r,'resFig/dep%sRelaP.jpg'%r.name,vModel=mL.vp,isPer=True,isTopo=True)
 	mapTool.plotDepV2(qLNew,r,'resFig/dep%sRelaS.jpg'%r.name,vModel=mL.vs,isPer=True,isTopo=True)
-	mapTool.plotDepV2(qCCLNew2,r,'resFig/dep%sRelaPCC.jpg'%r.name,vModel=mL.vp,isPer=True,isTopo=True)
-	mapTool.plotDepV2(qCCLNew2,r,'resFig/dep%sRelaSCC.jpg'%r.name,vModel=mL.vs,isPer=True,isTopo=True)
+	#mapTool.plotDepV2(qCCLNew2,r,'resFig/dep%sRelaPCC.jpg'%r.name,vModel=mL.vp,isPer=True,isTopo=True)
+	#mapTool.plotDepV2(qCCLNew2,r,'resFig/dep%sRelaSCC.jpg'%r.name,vModel=mL.vs,isPer=True,isTopo=True)
 
 
 pL = qLAll.paraL(req={})
 timeL  = np.array(pL['time'])
-mlL  = np.array(pL['ml'])
+mlL  = np.array(pL['ml'])+seism.dm
 laL = np.array(pL['la'])
 loL = np.array(pL['lo'])
 
 pCCL = qCCLNew.paraL(keyL=['time','ml','dep','cc','la','lo','S','M'])
 timeCCL  = np.array(pCCL['time'])
-mlCCL  = np.array(pCCL['ml'])
+mlCCL  = np.array(pCCL['ml'])+seism.dm
 mulCCL   = (np.array(pCCL['cc'])-np.array(pCCL['M']))/np.array(pCCL['S'])
 
 timeL  = np.array(pL['time'])+8*3600
 timeL -=UTCDateTime(2014,1,1).timestamp
 timeL %= 86400
 timeL /=3600
-mlL  = np.array(pL['ml'])
+mlL  = np.array(pL['ml'])+seism.dm
 plt.close()
 fig=plt.figure(figsize=[4,3])
 plt.hist(timeL,np.arange(0,24,0.3))
@@ -607,10 +630,10 @@ plt.close()
 
 pL1 = qLAll.paraL(req={'time0':timeCCL[0],'time1':timeCCL[-1]})
 timeL1  = np.array(pL1['time'])
-mlL1  = np.array(pL1['ml'])
+mlL1  = np.array(pL1['ml'])+seism.dm
 pCCL2= qCCLNew2.paraL(keyL=['time','ml','dep','cc','la','lo','S','M'])
 timeCCL2  = np.array(pCCL2['time'])
-mlCCL2  = np.array(pCCL2['ml'])
+mlCCL2  = np.array(pCCL2['ml'])+seism.dm
 mulCCL2   = (np.array(pCCL2['cc'])-np.array(pCCL2['M']))/np.array(pCCL2['S'])
 
 plt.close()
@@ -634,17 +657,25 @@ plt.legend(['WMFT','WMFT_sel','APP++'])
 plt.savefig('resFig/ml_compare_select.jpg',dpi=300)
 plt.close()
 
-plt.close()
-lt.close()
-plt.figure(figsize=[5,4])
+
 timeDay = (np.array(pL1['time'])-UTCDateTime(2019,6,17).timestamp)/86400
 timeDayCC = (np.array(pCCL2['time'])-UTCDateTime(2019,6,17).timestamp)/86400
-plt.plot(timeDay,pL1['ml'],'.k',markersize=0.3)
-plt.plot(timeDayCC,pCCL2['ml'],'.r',markersize=0.3)
-plt.ylabel('ml')
+plt.close()
+plt.figure(figsize=[5,5])
+plt.subplot(2,1,1)
+plt.plot(timeDay,pL1['ml']+seism.dm,'.k',markersize=0.3)
+plt.ylabel('magnitude')
 plt.ylim([0,7])
+plt.xlim([-30,30])
 plt.xlabel('Days from 2019:06:17')
-plt.legend(['APP++','WMFT_sel'])
+plt.legend(['APP++'])
+plt.subplot(2,1,2)
+plt.plot(timeDayCC,pCCL2['ml']+seism.dm,'.r',markersize=0.3)
+plt.ylabel('magnitude')
+plt.ylim([0,7])
+plt.xlim([-30,30])
+plt.xlabel('Days from 2019:06:17')
+plt.legend(['WMFT_sel'])
 plt.savefig('resFig/ml_day.jpg',dpi=300)
 plt.close()
 
@@ -695,33 +726,57 @@ mapTool.showInMap(bM[:,:,1],laLR,loLR,R,resFile='resFig/cMap.jpg',name='c')
 for q in qLAll:
 	q['filename']=q.name('_')
 	q['para0']=obspy.UTCDateTime(q['time']).strftime('%Y:%m:%d-%H:%M:%S')
+	q['para1']= 'event'
 
 for q in qL:
 	q['filename']=q.name('_')
 	q['para0']=obspy.UTCDateTime(q['time']).strftime('%Y:%m:%d-%H:%M:%S')
+	q['para1']= 'event'
 
 for q in qLNew:
 	q['filename']=q.name('_')
 	q['para0']=obspy.UTCDateTime(q['time']).strftime('%Y:%m:%d-%H:%M:%S')
+	q['para1']= 'event'
 
 for q in qCCL:
 	q['filename']=q.name('_')
 	q['para0']=obspy.UTCDateTime(q['time']).strftime('%Y:%m:%d-%H:%M:%S')
+	q['para1']= 'event'
 
 for q in qCCLNew:
 	q['filename']=q.name('_')
 	q['para0']=obspy.UTCDateTime(q['time']).strftime('%Y:%m:%d-%H:%M:%S')
+	q['para1']= 'event'
 
 for q in qCCLNew2:
 	q['filename']=q.name('_')
 	q['para0']=obspy.UTCDateTime(q['time']).strftime('%Y:%m:%d-%H:%M:%S')
+	q['para1']= 'event'
 
-seism.QuakeL(qL).write('resFig/phaseTomo',quakeKeysIn='para0 la lo dep ml')
-seism.QuakeL(qLAll).write('resFig/phaseAll',quakeKeysIn='para0 la lo dep ml')
-seism.QuakeL(qLNew).write('resFig/phaseAllTomoReloc',quakeKeysIn='para0 la lo dep ml')
-seism.QuakeL(qCCLNew).write('resFig/phaseCC',quakeKeysIn='para0 la lo dep ml cc M S')
-seism.QuakeL(qCCLNew2).write('resFig/phaseCC_sel',quakeKeysIn='para0 la lo dep ml cc M S')
+seism.QuakeL(qL).write('resFig/phaseTomo',quakeKeysIn='para1 para0 la lo dep ml')
+seism.QuakeL(qLAll).write('resFig/phaseAll',quakeKeysIn='para1 para0 la lo dep ml')
+seism.QuakeL(qLNew).write('resFig/phaseTomoReloc',quakeKeysIn='para1 para0 la lo dep ml')
+seism.QuakeL(qCCLNew).write('resFig/phaseCC',quakeKeysIn='para1 para0 la lo dep ml cc M S')
+seism.QuakeL(qCCLNew2).write('resFig/phaseCC_sel',quakeKeysIn='para1 para0 la lo dep ml cc M S')
 
 pCount=0
 sCount=0
 for quake in qLAll:
+
+from matplotlib import pyplot as plt
+qL = seism.QuakeL('phase/phaseSCYN')
+qL0 = seism.QuakeL('phase/catalogSCYN')
+for q in qL0:
+	q['time']-=3600*8
+
+i0L,i1L,m0L,m1L=qL0.compare(qL,maxDt=120,maxDd=0.5)
+m0L=np.array(m0L)
+m1L=np.array(m1L)
+dm=m0L-np.array(m1L)
+plt.close()
+plt.figure(figsize=[5,5])
+plt.plot(np.array(m1L),dm,'.k')
+plt.ylim([-1.5,0])
+plt.xlim([0,10])
+plt.savefig('resFig/dm.pdf')
+#-0.76
