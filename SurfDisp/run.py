@@ -143,7 +143,7 @@ class run:
 		fvL = [key for key in self.fvDAvarage]
 		random.shuffle(fvL)
 		fvN = len(fvL)
-		fvn = int(fvN/50)
+		fvn = int(fvN/20)
 		fvTrain = fvL[fvn*2:]
 		fvTest  = fvL[fvn:fvn*2]
 		fvVaild = fvL[:fvn]
@@ -167,11 +167,11 @@ class run:
 		self.corrLValid.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=True,rThreshold=0.0,byAverage=False,\
 		set2One=True,move2Int=False,randMove=True)
-		self.corrLTrain(np.arange(10))
-		print(self.corrLTrain.t0L)
 		self.loadModel()
 		fcn.trainAndTest(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
 	   		outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=50,count0=200,w0=1)#w0=3
+		#fcn.trainAndTest(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
+	   	#	outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=50,count0=200,w0=1.5)#w0=3
 	def trainSq(self):
 		fvL = [key for key in self.fvDAvarage]
 		random.shuffle(fvL)
@@ -260,21 +260,26 @@ class run:
 		para       = config.para
 		N          = len(para['stationFileL'])
 		fvDAvarage = {}
-		fvDAvarage['models/prem']=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
+		fvDAvarage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
+		if 'modelFile' in para:
+			print('loadFile')
+			self.loadModel(para['modelFile'])
 		for i in range(N):
 			sta     = seism.StationList(para['stationFileL'][i])
 			sta.inR(para['lalo'])
+			print('sta num:',len(sta))
 			sta.set('oRemove', para['oRemoveL'][i])
 			sta.getInventory()
 			q       = seism.QuakeL(para['quakeFileL'][i])
 			self.fvDAvarage = fvDAvarage
 			self.stations = sta
+			q.set('sort','sta')
 			q.sort()
 			perN= self.config.para['perN']
 			for j in range(self.config.para['gpuIndex'],int(len(q)/perN),self.config.para['gpuN']):#self.config.para['gpuIndex']
 				corrL0  = para['dConfig'].quakeCorr(q[j*perN:min(len(q)-1,j*perN+perN)],sta,\
 	    				byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
-	    				minSNR=para['minSNRL'][i],isLoadFv=para['isLoadFvL'][i],\
+	    				minSNR=para['minSNRL'][i],isLoadFv=False,\
     					fvD=fvDAvarage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],\
     					resDir=para['eventDir'])
 				self.corrL  = d.corrL(corrL0,maxCount=para['maxCount'])
@@ -483,8 +488,8 @@ paraAll={ 'quakeFileL'  : ['../phaseLPickCEA'],\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 3,\
 					'maxIT':100,'nBatch':100,'smoothDV':80,'smoothG':160},\
 	'runDir'      : '../DS/1015_CEA160_all/',#_man/',\
-	'gpuIndex'    : 1,\
-	'gpuN'        : 2,\
+	'gpuIndex'    : 0,\
+	'gpuN'        : 1,\
 	'lalo'        :[38,54,110,134],#[20,34,96,108][]*******,\
 	'threshold'   :0.03,\
 	'minProb'     :0.5,\
@@ -868,6 +873,34 @@ paraAllO={ 'quakeFileL'  : ['../phaseLPickCEA'],\
 	'threshold'   :0.03,\
 	'minProb'     :0.5,\
 	'minP'        :0.7,\
+	'laL'         : [],\
+	'loL'         : [],\
+	'areasLimit'  :  3}
+
+paraAllONew={ 'quakeFileL'  : ['../phaseLPickCEA'],\
+    'stationFileL': ['../stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/rresStr_210411-205004_model.h5',
+    'isLoadFvL'   : [True],#False********\
+    'byRecordL'   : [False],\
+	'maxCount'    : 512*3,\
+    'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
+    'resDir'      : '/fastDir/results/20210408/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+    'perN'        : 1,\
+    'eventDir'    : '/HOME/jiangyr/eventSac/',\
+    'z'           : [0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,200,270,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+    'T'           : (16**np.arange(0,1.000001,1/49))*10,
+	'tSur'        : (16**np.arange(0,1.000001,1/24.5))*10,\
+    'surPara'     : { 'nxyz':[56,88,0], 'lalo':[56,70],#[40,60,0][55,108]\
+                    'dlalo':[0.8,0.8], 'maxN':800,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 3,\
+					'maxIT':100,'nBatch':100,'smoothDV':80,'smoothG':160},\
+	'runDir'      : '../DS/20210408_CEA160_all/',#_man/',\
+	'gpuIndex'    : 0,\
+	'gpuN'        : 1,\
+	'lalo'        :[38,54,110,134],#[-90,90,0,180],#[38,54,110,134],#[20,34,96,108][]*******,\
+	'threshold'   :0.03,\
+	'minProb'     :0.5,\
+	'minP'        :0.5,\
 	'laL'         : [],\
 	'loL'         : [],\
 	'areasLimit'  :  3}

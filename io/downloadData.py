@@ -12,6 +12,7 @@ from obspy import read, read_inventory
 from obspy.io.sac import SACTrace
 import numpy as np
 import matplotlib.pyplot as plt
+from glob import glob
 #%matplotlib inline
 #os.chdir("/Users/tongzhou/bp/coherence_measure/")
 curdir = os.path.abspath(".")
@@ -35,10 +36,13 @@ min_mag = 8.0
 max_mag = 10.0
 time_start = UTCDateTime("2021-03-04T00:00:00")
 timeL    = np.arange(-5,5)*86400+time_start.timestamp
+#timeL    = np.arange(-2,1)*86400+time_start.timestamp
+#timeL    = np.arange(1,5)*86400+time_start.timestamp
 time_end = UTCDateTime("2021-03-05T00:00:00")
 catalog = "ISC"
 
-client_list = ["GEONET"]
+#client_list = ["GEONET"]
+client_list = ["RESIF"]
 # network_list
 net_list = ["*"]
 # channel list
@@ -52,7 +56,7 @@ sta_minlon = -125
 center_lat = -37.5628
 center_lon = -179.4443
 #center_lon = -110  # west US 
-sta_radius = 10
+sta_radius = 20
 # station search time span
 time_before = 0
 time_after = 86400
@@ -61,28 +65,12 @@ record_s = 300
 record_e = 600
 
 
-# loop for events
-for time in timeL:
-    inv = Inventory('','')
-    origin_time = UTCDateTime(time)
-    for icl in client_list:
-        client = Client("GEONET")
-        for inet in net_list:
-            for ichan in channel_list:
-                try:
-                    inv += client.get_stations(network="*",station="*",starttime=origin_time+time_before,endtime=origin_time+time_after,
-                                  latitude=center_lat,longitude=center_lon,minradius=0,maxradius=sta_radius,
-                                  channel="*HZ",level="response")
-                except:
-                    print("no response for this network")
-                    continue
-    print(inv)
 
 pre_filt = [0.005, 0.01, 10, 20]   # pre-filter for remove response # I use this to avoid ringing effect
 output_resp = False
 output_type = 'VEL'
 resample_sr = 20
-channel_list=["BHZ","BHN","HHN","EHN","LHN","BHE","HHE","EHE","LHE"]
+channel_list=["BHZ","HHZ","EHZ","LHZ","BHN","HHN","EHN","LHN","BHE","HHE","EHE","LHE"]
 
 for time in timeL:
     inv = Inventory()
@@ -116,6 +104,11 @@ for time in timeL:
                 #print(origin_dep)
                 #record_time = origin_time + P_arrival[0].time
                 for ichan in sta.channels:
+                    filename=YMD+net.code+'.'+sta.code+'*'+ichan.code+".SAC"
+                    print('find',filename)
+                    if len(glob(filename))>0:
+                        print('done')
+                        continue
                     st += client.get_waveforms(net.code,sta.code, "*", ichan.code,origin_time+time_before, origin_time+time_after) # get waveform
                     print("st")
                     print(st)

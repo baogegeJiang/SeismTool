@@ -354,6 +354,24 @@ def QC(data,threshold=2.5,it=20):
     else:
         return QC(data[d<Threshold],threshold,it-1)
 
+def QC(data,threshold=2.5,it=20):
+    if it==0:
+        print('***********************************reach depest*******************')
+    if len(data)<6 or it==0:
+        return data.mean(),999,len(data)
+    #if len(data)<10:
+    #    return data.mean(),data.std(),len(data)
+    mData = np.median(data)
+    d = np.abs(data - mData)
+    lqr = stats.iqr(data)
+    Threshold = lqr*threshold
+    mData = np.mean(data[d<Threshold])
+    d = np.abs(data - mData)
+    if (d>Threshold).sum() ==0 :
+        return data[d<Threshold].mean(),data[d<Threshold].std(),len(data)
+    else:
+        return QC(data[d<Threshold],threshold,it-1)
+
 def rotate(rad,data):
     #RTZ
     rM = np.array([[np.sin(rad),np.cos(rad),0],\

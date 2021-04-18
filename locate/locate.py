@@ -6,11 +6,12 @@ import os
 from numba import jit
 
 class locator:
-    def __init__(self,staInfos,modelFile=os.path.dirname(__file__)+'/../data/iaspTaupMat'):
+    def __init__(self,staInfos,modelFile=os.path.dirname(__file__)+'/../data/iaspTaupMat',maxDT=30):
         self.staInfos=staInfos
         self.timeM=quickTaupModel(modelFile)
         self.maxErr=-1
-    def locate(self, quake,r=1,e=0.1,maxDT=30,isDel=False,maxErr=-1):
+        self.maxDT=30
+    def locate(self, quake,r=1,e=0.1,maxDT=-1,isDel=False,maxErr=-1):
         mulL=[40]*3+[20]*2+[10]*2+[8   ]*3+[5  ]*10+[3  ]*10
         adL =[1 ]*3+[1 ]*2+[1 ]*2+[0.75]*3+[0.5]*10+[0.1]*10
         #mulL=[40]*2+[20]*2+[10]*2+[8   ]*2+[5  ]*3+[3  ]*5
@@ -19,6 +20,8 @@ class locator:
         quake['dep']=10+10*np.random.rand(1)
         quake['time']=float(quake['time'])
         self.maxErr=maxErr
+        if maxDT<0:
+            maxDT=self.maxDT
         for i in range(len(quake)):
             record=quake.records[i]
             staInfo=self.staInfos[record['staIndex']]
@@ -193,10 +196,12 @@ class locator:
             v=np.zeros((3,3))
         return G,V,v,quake.calCover(self.staInfos,minCC=minCC)
 
-    def locateRef(self, quake,quakeRef,r=1,e=0.00001,maxDT=35,minCC=0.4):
+    def locateRef(self, quake,quakeRef,r=1,e=0.00001,maxDT=-1,minCC=0.4):
         mulL=[40]
         adL =[1]
         time=365*86400*100
+        if maxDT<0:
+            maxDT=self.maxDT
         #quake.loc[2]=10+10*np.random.rand(1)
         for i in range(3):
             quake['la'],quake['lo'],quake['dep']=\

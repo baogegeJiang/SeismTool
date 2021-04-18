@@ -130,7 +130,7 @@ class staTimeMat:
         return minTime, maxTime
 
     def getEarist(self, arrivals):
-        time=10000
+        time=100000
         for arrival in arrivals:
             time = min(time, arrival.time)
         return time

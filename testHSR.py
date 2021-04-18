@@ -11,6 +11,7 @@ from SeismTool.SurfDisp import fk
 from plotTool import figureSet
 from SeismTool.mapTool import mapTool as mt
 import mpl_toolkits.basemap as basemap
+from SeismTool.plotTool import figureSet as fs
 stations =  seism.StationList('hsrStd')
 
 #通过速度校正，前后分别叠加
@@ -23,7 +24,7 @@ stations = stations0[:1]+stations0[-1:]
 stations = stations0
 reload(hsr)
 h = hsr.hsr()
-
+fs.init(key='ZGKX')
 bSecL=np.arange(12)*4;eSecL=np.arange(12)*4+8
 #h.handleDays(stations,timeL,'../hsrRes/V3/',rotate=25)
 h.handleDays(stations,timeL,'../hsrRes/V11/',rotate=25,bSecL=bSecL,eSecL=eSecL,isPool=True)
@@ -43,6 +44,8 @@ for comp in [0,1,2]:
             h.showSpec(fL0L2,specAtL2,specBeL2,specAfL2,stations,head=head,workDir='../hsrRes/V6/fig/',maxF=20,v=3000)
 reload(hsr)
 h = hsr.hsr()
+version='V11'
+fversion ='8'#3
 FBeLSM=[[]for i in range(3)]
 FAfLSM=[[]for i in range(3)]
 SBeLSM=[[]for i in range(3)]
@@ -58,13 +61,13 @@ for comp in [0,1,2]:
         bSec=bSecL[j]
         eSec=eSecL[j]        
         fL0LS,specAtLS,specBeLS,specAfLS,FFAtLS,FFBeLS,FFAfLS,dTLS=\
-        h.loadStationsSpec(stations,'../hsrRes/V11/%d_%d/'%(bSec,eSec),comp=comp,isAdd=True,minDT=0,maxDT=100,dF=0.15,)
+        h.loadStationsSpec(stations,'../hsrRes/%s/%d_%d/'%(version,bSec,eSec),comp=comp,isAdd=True,minDT=0,maxDT=100,dF=0.075*3.2,isRemove=True,perN=6)
         fL0LN,specAtLN,specBeLN,specAfLN,FFAtLN,FFBeLN,FFAfLN,dTLN=\
-        h.loadStationsSpec(stations,'../hsrRes/V11/%d_%d/'%(bSec,eSec),comp=comp,isAdd=True,minDT=-100,maxDT=0,dF=0.15,)
+        h.loadStationsSpec(stations,'../hsrRes/%s/%d_%d/'%(version,bSec,eSec),comp=comp,isAdd=True,minDT=-100,maxDT=0,dF=0.075*3.2,isRemove=True,perN=6)
         head = 'N_%d_%d~%d'%(comp,bSec,eSec)
-        FBeLN,FAfLN,SBeLN,SAfLN,vLN=h.showSpec(fL0LS,specAtLN,specBeLS,specAfLN,stations,head=head,workDir='../hsrRes/V11/fig3/',maxF=20,v=3000,isPlot=False)
+        FBeLN,FAfLN,SBeLN,SAfLN,vLN=h.showSpec(fL0LS,specAtLN,specBeLS,specAfLN,stations,head=head,workDir='../hsrRes/%s/fig%s/'%(version,fversion),maxF=25,v=3000,isPlot=False)
         head = 'S_%d_%d~%d'%(comp,bSec,eSec)
-        FBeLS,FAfLS,SBeLS,SAfLS,vLS=h.showSpec(fL0LS,specAtLS,specBeLN,specAfLS,stations,head=head,workDir='../hsrRes/V11/fig3/',maxF=20,v=3000,isPlot=True)
+        FBeLS,FAfLS,SBeLS,SAfLS,vLS=h.showSpec(fL0LS,specAtLS,specBeLN,specAfLS,stations,head=head,workDir='../hsrRes/%s/fig%s/'%(version,fversion),maxF=25,v=3000,isPlot=False)
         FBeLNM[comp].append(FBeLN)
         FAfLNM[comp].append(FAfLN)
         SBeLNM[comp].append(SBeLN)
@@ -139,7 +142,10 @@ data = t31.Data()[:,0]
 h.plotERR(t3=t31,time=t0)
 reload(hsr)
 h = hsr.hsr()
-h.plotWS(data,time0=-50,head='real',fMax=10,delta=0.004,whiteL=[2.5,5,7.5])
+h.plotWS(data,time0=-50,head='real',fMax=15,delta=0.004,whiteL=[2.5,5,7.5,10,12.5])
+h.plotWS(data,time0=-50,head='realHigh',fMin=40,fMax=60,delta=0.004,whiteL=[50,45,55])
+h.plotWS(data,time0=-50,head='realHighMid',fMin=20,fMax=30,delta=0.004,whiteL=[20,25,30])
+h.plotWS(data,time0=-50,head='realHighMidMid',fMin=8,fMax=22,delta=0.004,whiteL=[10,15,20])
 h.plotWS(data,time0=-50,head='all',fMax=100,delta=0.004)
 reload(hsr)
 h = hsr.hsr()
@@ -246,12 +252,20 @@ for station in stations:
 
 reload(hsr)
 h = hsr.hsr()
+
 allSBeLSM=[[]for i in range(3)]
 allSAfLSM=[[]for i in range(3)]
 allvLSM=[[]for i in range(3)]
 allSBeLNM=[[]for i in range(3)]
 allSAfLNM=[[]for i in range(3)]
 allvLNM=[[]for i in range(3)]
+
+allSBeLSM1=[[]for i in range(3)]
+allSAfLSM1=[[]for i in range(3)]
+allvLSM1=[[]for i in range(3)]
+allSBeLNM1=[[]for i in range(3)]
+allSAfLNM1=[[]for i in range(3)]
+allvLNM1=[[]for i in range(3)]
 for comp in [0,1,2]:
     for j in range(len(bSecL)):
         bSec=bSecL[j]
@@ -260,9 +274,7 @@ for comp in [0,1,2]:
         h.loadStationsSpec(stations,'../hsrRes/V11/%d_%d/'%(bSec,eSec),comp=comp,isAdd=False,minDT=0,maxDT=100,dF=0.15,)
         fL0LN,specAtLN,specBeLN,specAfLN,FFAtLN,FFBeLN,FFAfLN,dTLN=\
         h.loadStationsSpec(stations,'../hsrRes/V11/%d_%d/'%(bSec,eSec),comp=comp,isAdd=False,minDT=-100,maxDT=0,dF=0.15,)
-        head = 'N_%d_%d~%d'%(comp,bSec,eSec)
         FBeLN,FAfLN,SBeLN,SAfLN,vLN=h.anSpec(fL0LS,specAtLN,specBeLS,specAfLN,stations,maxF=20,v=3000)
-        head = 'S_%d_%d~%d'%(comp,bSec,eSec)
         FBeLS,FAfLS,SBeLS,SAfLS,vLS=h.anSpec(fL0LS,specAtLS,specBeLN,specAfLS,stations,maxF=20,v=3000)
         allSBeLNM[comp].append(SBeLN)
         allSAfLNM[comp].append(SAfLN)
@@ -270,7 +282,20 @@ for comp in [0,1,2]:
         allSBeLSM[comp].append(SBeLS)
         allSAfLSM[comp].append(SAfLS)
         allvLSM[comp].append(vLS)
+        fL0LS,specAtLS,specBeLS,specAfLS,FFAtLS,FFBeLS,FFAfLS,dTLS=\
+        h.loadStationsSpec(stations,'../hsrRes/V11/%d_%d/'%(bSec,eSec),comp=comp,isAdd=False,minDT=0,maxDT=100,dF=0.15,)
+        fL0LN,specAtLN,specBeLN,specAfLN,FFAtLN,FFBeLN,FFAfLN,dTLN=\
+        h.loadStationsSpec(stations,'../hsrRes/V11/%d_%d/'%(bSec,eSec),comp=comp,isAdd=False,minDT=-100,maxDT=0,dF=0.15,)
+        FBeLN1,FAfLN1,SBeLN1,SAfLN1,vLN1=h.anSpec(fL0LS,specAtLN,specBeLS,specAfLN,stations,minF=9,maxF=10.2,avoidF=30,fmax=12,v=3000)
+        FBeLS1,FAfLS1,SBeLS1,SAfLS1,vLS1=h.anSpec(fL0LS,specAtLS,specBeLN,specAfLS,stations,minF=9,maxF=10.2,avoidF=30,fmax=12,v=3000)
+        allSBeLNM1[comp].append(SBeLN1)
+        allSAfLNM1[comp].append(SAfLN1)
+        allvLNM1[comp].append(vLN1)
+        allSBeLSM1[comp].append(SBeLS1)
+        allSAfLSM1[comp].append(SAfLS1)
+        allvLSM1[comp].append(vLS1)
 
 reload(hsr)
 h = hsr.hsr()
 h.plotSV2(allSBeLNM,allSAfLNM,allvLNM,allSBeLSM,allSAfLSM,allvLSM,bSecL1,eSecL1,np.arange(17)*40/80*0,workDir='../hsrRes/',head='plotSVReLa')
+h.plotSV2(allSBeLNM1,allSAfLNM1,allvLNM1,allSBeLSM1,allSAfLSM1,allvLSM1,bSecL1,eSecL1,np.arange(17)*40/80*0,workDir='../hsrRes/',head='plotSVReLa1')

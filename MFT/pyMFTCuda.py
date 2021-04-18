@@ -21,7 +21,7 @@ minF=cudaFunc.minF
 maxF=cudaFunc.maxF
 torch.set_default_tensor_type(tentype)
 convert=cudaFunc.convert
-maxStaN=20
+maxStaN=30
 isNum=False
 corrTorch=cudaFunc.torchcorrnn
 
@@ -225,8 +225,8 @@ def doMFT(staL,T3PSL,bTime, n, wM=np.zeros((2*maxStaN,86700*50)\
 def doMFTAll(staL,T3PSLL,bTime,n=86400*50,delta=0.02\
         ,minMul=4,MINMUL=8, winTime=0.4,minDelta=20*50, \
         locator=None, isParallel=False,\
-        NP=2,quakeRefL=None,maxCC=1,R=[-90,90,-180,180],\
-        maxDis=200,isUnique=True,isTorch=True,deviceL=['cuda:0'],\
+        quakeRefL=None,maxCC=1,R=[-90,90,-180,180],\
+        maxDis=200,isUnique=True,deviceL=['cuda:0'],\
         minChannel=8,mincc=0.4,secL=defaultSecL,staInfos=None,\
         maxThreshold=0.45):
     if not isParallel:
@@ -244,7 +244,7 @@ def doMFTAll(staL,T3PSLL,bTime,n=86400*50,delta=0.02\
                 winTime=winTime, minDelta=minDelta,locator=locator,\
                 tmpName=tmpName, quakeRef=quakeRef,\
                 maxCC=maxCC,R=R,maxDis=maxDis,deviceL=deviceL,\
-                minChannel=minChannel,mincc=mincc,staInfos=staInfos,maxThreshold=maxThreshold)
+                minChannel=minChannel,mincc=mincc,staInfos=staInfos,maxThreshold=maxThreshold,secL=secL)
             if i%20==0 and isUnique:
                 quakeL=uniqueQuake(quakeL)
         if isUnique:

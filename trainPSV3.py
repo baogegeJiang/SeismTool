@@ -1,10 +1,9 @@
 #python
 import argparse
 import matplotlib.pyplot as plt
-import obspy
 import math
 import scipy.io as sio
-import scipy
+from scipy import signal
 import numpy as np
 from numpy import cos, sin
 import os
@@ -13,6 +12,7 @@ from tensorflow.keras import backend as K
 import h5py
 import tensorflow as tf
 import logging
+from SeismTool.mathTool.mathFunc import getDetec
 import random
 import sys
 sys.path.append('/home/jiangyr/Surface-Wave-Dispersion/')
@@ -38,6 +38,24 @@ class modelPhase:
 def predict(model, X):
     return model.predict(processX(X))
 
+def randAdd(x,N=100,A=20):
+    L = x.shape[0]
+    C = x.shape[1]
+    for c in range(C):
+        I = np.array(random.sample(range(L),N))
+        x[I,c] += A*np.random.randn(N)
+def randomTest(model,loop,n=86400*50,Wn=[0.5/25,20/25]):
+    count = 0
+    b,a = signal.butter(4,Wn,'bandpass')
+    for i in range(loop):
+        x = np.random.randn(n,3)
+        randAdd(x)
+        x = signal.filtfilt(b,a,x,axis=0)
+        y = predictLongDataNorm(model, x, N=2000, indexL=range(750, 1250))
+        yL,iL=getDetec(y,minValue=0.5,minDelta=200)
+        count+=len(iL)
+        print(len(iL))
+    print(count,count/loop,'per loop')
 
 def predictLongData(model, x, N=2000, indexL=range(750, 1250)):
     if len(x) == 0:
@@ -65,7 +83,31 @@ def predictLongData(model, x, N=2000, indexL=range(750, 1250)):
                 outMat[loop-loop0, indexL].reshape([-1])
     return Y
 
-
+def predictLongDataNorm(model, x, N=2000, indexL=range(750, 1250)):
+    if len(x) == 0:
+        return np.zeros(0)
+    N = x.shape[0]
+    Y = np.zeros(N)
+    perN = len(indexL)
+    loopN = int(math.ceil(N/perN))
+    perLoop = int(1000)
+    inMat = np.zeros((perLoop, 2000, 1, 3))
+    for loop0 in range(0, int(loopN), int(perLoop)):
+        loop1 = min(loop0+perLoop, loopN)
+        for loop in range(loop0, loop1):
+            i = loop*perN
+            sIndex = min(max(0, i), N-2000)
+            if sIndex > 0:
+                inMat[loop-loop0, :, :, :] = processX(x[sIndex: sIndex+2000, :], normlize=True)\
+                .reshape([2000, 1, 3])
+        outMat = model.predict(inMat).reshape([-1, 2000])
+        for loop in range(loop0, loop1):
+            i = loop*perN
+            sIndex = min(max(0, i), N-2000)
+            if sIndex > 0:
+                Y[indexL[0]+sIndex: indexL[-1]+1+sIndex] = \
+                outMat[loop-loop0, indexL].reshape([-1])
+    return Y
 def processX(X, rmean=True, normlize=False, reshape=True,isNoise=False,num=2000):
     if reshape:
         X = X.reshape(-1, num, 1, 3)
@@ -181,10 +223,9 @@ def compY(tmpY,tmpY0,threshold=100, minY=0.2,returnDi=False):
     return P,R,F1,m,STD,rightN
 
 
-def getResFromFile(fileName,phase='p',threshold=100, minY=0.2):
-    data = sio.loadmat(fileName)
-    y0   = datap[phase+'y'+'0']
-    yout = datap['out'+phase+'y']
+def getResFromFile(data,phase='p',threshold=100, minY=0.2):
+    y0   = data[phase+'y'+'0']
+    yout = data['out'+phase+'y']
     return compY(yout,y0,threshold=threshold,minY=minY)
 
 def shuffle(l,d=100):
@@ -198,7 +239,7 @@ def shuffle(l,d=100):
 
 
 def train(modelFile, resFile, phase='p',validWN=10000,testWN=20000,\
-    validNN=5000,testNN=5000,inN=1000,trainWN=10000,trainNN=2000,\
+    validNN=5000,testNN=5000,inN=5000,trainWN=10000,trainNN=2000,\
     modelType='norm',\
     waveFile='/media/jiangyr/MSSD/waveforms_11_13_19.hdf5',\
     catalogFile1='data/metadata_11_13_19.csv'\
@@ -259,7 +300,7 @@ def train(modelFile, resFile, phase='p',validWN=10000,testWN=20000,\
         channelIndex=channelIndex,phase=phase,oIndex=-2,dtP=dtP,dtS=dtS)
     #xValid=processX(xValid,isNoise=False,num=dIndex)
     
-    increaseCount = 12
+    increaseCount = 6
     #K.set_value(model.optimizer.lr, 1e-6)
     for i in range(50000):
         catalogIn=random.sample(catalogTrain,inN)
@@ -297,13 +338,15 @@ def train(modelFile, resFile, phase='p',validWN=10000,testWN=20000,\
                         p,r,f1,m,s,num=compY(tmpY[:,:,:,channelIndex.tolist().index(cI)],\
                             yValid[:,:,:,channelIndex.tolist().index(cI)], threshold=\
                             threshold, minY=minY)
+                        if threshold ==25 and minY==0.5:
+                            F1=f1
                         logger.info('STEAD channel: %d % 3d : minY:%.2f P:\
                             %.4f R:%.4f F1:%.4f m:%.4f s:%.4f num: %7d'%(cI,threshold,minY,p,r,f1,m,s,num))
-            p,r,f1,m,s,num=compY(tmpY[:,:,:,0],yValid[:,:,:,0]\
-                ,threshold=20, minY=0.5)
+            #p,r,f1,m,s,num=compY(tmpY[:,:,:,0],yValid[:,:,:,0]\
+            #    ,threshold=25, minY=0.5)
             rms=model.evaluate(x=xValid, y=yValid,verbose=0)
             logger.info('vaild loss: %.9f'%rms)
-            rms-=p
+            rms-=F1
             logger.info('vaild rms: %.9f'%rms)
             logger.info('best rms: %.9f'%rms0)
             if rms >= rms0 and p > 0.45 :
@@ -313,7 +356,7 @@ def train(modelFile, resFile, phase='p',validWN=10000,testWN=20000,\
                     logger.info('over fit ,force to stop, set to best model')
                     break
             if rms < rms0 and p > 0.45 :
-                resCount = 50
+                resCount = 30
                 rms0 = rms
                 model0 = (model.get_weights())
                 logger.info('find a better model')
@@ -432,6 +475,7 @@ if __name__ == '__main__':
     parser.add_argument('--Num', '-N', type=int, help='number of JP phase')
     parser.add_argument('--modelType', '-m', type=str, help='isSoft')
     parser.add_argument('--plot','-P',type=bool, default=False, help='plot')
+    parser.add_argument('--random','-r',type=bool, default=False, help='random test')
     parser.add_argument('--figStrL','-f',type=str, default='ab', help='figStrL')
     parser.add_argument('--setting','-s',type=str, default='all', help='setting')
     args = parser.parse_args()
@@ -443,11 +487,12 @@ if __name__ == '__main__':
     NN=int(WN/5)
     modelType=args.modelType
     figStrL = args.figStrL
-    modelFile='model/%s_%s_%d_%d'%(modelType,phase,WN,NN)
     if args.setting=='all':
         resFile='resDir/res_%s_%s_%d_%d.mat'%(modelType,phase,WN,NN)
+        modelFile='model/%s_%s_%d_%d'%(modelType,phase,WN,NN)
     else:
         resFile='resDir/res_%s_%s_%d_%d_%s.mat'%(modelType,phase,WN,NN,args.setting)
+        modelFile='model/%s_%s_%d_%d_%s'%(modelType,phase,WN,NN,args.setting)
     logger=logging.getLogger(__name__)
     logger.info('doing train')
     logger.info('model type:%s'%modelType)
@@ -459,8 +504,19 @@ if __name__ == '__main__':
         for testSetting in ['STEAD','hinet']:
             resFileTmp = resFile[:-4]+'_%s.mat'%testSetting
             fileDir = resFile[:-4]+'/%s_'%testSetting
-            plotWave(sio.loadmat(resFileTmp),fileDir=fileDir,phase=phase,figStr=figStrL[i])
+            if not os.path.exists(os.path.dirname(fileDir)):
+                os.makedirs(os.path.dirname(fileDir))
+                print('plot in %s'%os.path.dirname(fileDir))
+            mat = sio.loadmat(resFileTmp)
+            P,R,F1,m,STD,rightN = getResFromFile(mat,phase=phase.split('_')[0],threshold=25, minY=0.5)
+            with open(fileDir+'testRes','w+') as f:
+                f.write('%.3f %.3f %.3f %.3f %.3f'%(P,R,F1,m*0.02,STD*0.02))
+            plotWave(mat,fileDir=fileDir,phase=phase.split('_')[0],figStr=figStrL[i])
             i+=1
+    elif args.random:
+        from tensorflow.keras.models import load_model
+        model=load_model(modelFile,compile=False)
+        randomTest(model,100)
     else:
         train(modelFile,resFile,trainWN=WN,trainNN=NN,phase=phase,\
         modelType=modelType,setting=args.setting)

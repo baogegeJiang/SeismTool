@@ -434,10 +434,6 @@ class Model:
         z  =  La.reshape([1,-1])*0+Z.reshape([-1,1])
         V= self.OutputGriddata(la,lo,z,isPer=isPer,P2=line)
         #print(V.shape)
-        if isPer and False:
-            for i in range(z.shape[0]):
-                V[i]/=V[i,np.isnan(V[i])==False].mean()
-            V-=1
         return la,lo,z,Dist,V
 
 def isNan(La,Lo,V,la,lo):

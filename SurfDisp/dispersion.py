@@ -1220,7 +1220,7 @@ class fv:
             self1.genInterp()
 
 
-def getFVFromPairFile(file,fvD={},quakeD={},isPrint=True):
+def getFVFromPairFile(file,fvD={},quakeD={},isPrint=True,isAll=False):
     with open(file) as f :
         lines = f.readlines()
     stat='next'
@@ -1312,6 +1312,9 @@ def getFVFromPairFile(file,fvD={},quakeD={},isPrint=True):
             std = np.zeros(fNum)
             stat= 'f'
             i =0
+            if isAll:
+                f   = [[]]*fNum
+                std = [[]]*fNum
             continue
 
         if stat=='f':
@@ -1327,6 +1330,10 @@ def getFVFromPairFile(file,fvD={},quakeD={},isPrint=True):
             v[i]=float(lineS[0])
             if len(lineS)>1:
                 std[i] = float(lineS[1])
+            if isAll:
+                v_prob=np.array([float(tmp)for tmp in lineS]).reshape([-1,2])
+                v[i]=v_prob[:,0]
+                std[i]=v_prob[:,1]
             i+=1
             if i ==fNum:
                 stat ='next'
@@ -1347,7 +1354,11 @@ def getFVFromPairFile(file,fvD={},quakeD={},isPrint=True):
                     continue
                 #if time > obspy.UTCDateTime(2009,1,1)+182*86400:
                 #    continue
-                fvD[key]=fv([f,v,std])
+                if isAll:
+                    fvD[key]=fv([f,v,std],mode='dis')
+                else:
+                    fvD[key]=fv([f,v,std])
+                
                 
                 continue
         if isPrint:
@@ -1459,8 +1470,8 @@ def getFVFromPairFileDis(file,fvD={},quakeD={},isPrint=True):
         if stat=='v':
             lineS = line.split()
             NS=len(lineS)
-            v.append([float(s) for s in lineS[:NS/2] ])
-            p.append([float(s) for s in lineS[NS/2:] ])
+            v.append([float(s) for s in lineS[0::2] ])
+            p.append([float(s) for s in lineS[1::2] ])
             i+=1
             if i ==fNum:
                 stat ='next'
@@ -1494,8 +1505,20 @@ def qcFvD(fvD):
     for key in keyL:
         fvD.pop(key)
 
+def qcFvL(fvL):
+    FVL = []
+    count = 0
+    for fv in fvL:
+        if len(fv.f)<5:
+            FVL.append(count)
+        count+=1
+    for fv in FVL[-1::-1]:
+        fvL.pop(fv)
 def averageFVL(fvL,minSta=5,threshold=2.5):
     fL =[]
+    qcFvL(fvL)
+    if len(fvL)<minSta:
+        return fv([np.array([-1]),np.array([-1]),np.array([10])])
     for FV in fvL:
         f = FV.f
         for F in f:
@@ -2226,7 +2249,7 @@ class corrL(list):
         return self.x, self.y,self.n, self.t0L
     def __str__(self):
         return '%d %s'%(len(self),str(self.timeDisKwarg))
-    def getTimeDis(self,iL,fvD={},T=[],sigma=2,√512,noiseMul=0,byT=False,\
+    def getTimeDis(self,iL,fvD={},T=[],sigma=2,maxCount=512,noiseMul=0,byT=False,\
         byA=False,rThreshold=0.1,byAverage=False,set2One=False,move2Int=False,\
         modelNameO='',noY=False,randMove=False):
         #print('sigma',sigma)
@@ -2421,7 +2444,6 @@ class corrL(list):
         self.deltaL     = np.array(deltaL)
         self.indexL     = np.array(indexL)
         self.fL         = np.array(fL)
-    @jit
     def getV(self,yout,isSimple=True,D=0.15,isLimit=False,isFit = False):
         #print(isSimple)
         if isSimple:
@@ -2441,9 +2463,9 @@ class corrL(list):
                 probM.append([])
                 for j in range(pos.shape[1]):
                     POS=np.where(yout[i,i0:i1,0,j]>0.5)[0]+i0
-                    time= self.t0L[i]+pos*self.deltaL[i]
+                    time= self.t0L[i]+POS*self.deltaL[i]
                     vM[-1].append(self.dDisL[i]/time)
-                    probM[-1].append(yout[i,pos,0,j])
+                    probM[-1].append(yout[i,POS,0,j])
             for i in range(pos.shape[0]):
                 for j in range(pos.shape[1]):
                     prob[i,j] = yout[i,pos[i,j],0,j]
@@ -2628,7 +2650,7 @@ class corrL(list):
         '''
         if len(iL) ==0:
             iL=self.iL
-        for i in range(v.shape[0]):
+        for i in range(len(v)):
             index = iL[i]
             corr  = self[index]
             sta0,sta1 = corr.getStaName()
@@ -2665,11 +2687,11 @@ class corrL(list):
                 for ii in vIndex:
                     f.write('%f\n'%(1/T[ii]))
                 for ii in vIndex:
-                    for j in range(prob[i][ii]):
+                    for j in range(len(prob[i][ii])):
                         if prob[i][ii][j]>minProb:
                             f.write('%f '%v[i][ii][j])
                             f.write('%f '%prob[i][ii][j])
-                        f.write('\n')
+                    f.write('\n')
     def saveVAllSq(self,v,prob,T,iL=[],stations=[], minProb= 0.7,resDir ='models/predict/'):
         '''
         if len(iL) ==0:
@@ -2843,7 +2865,7 @@ class corrL(list):
             print('calV')
             v[i0:i1],prob[i0:i1],vM,probM=self.getV(Y,isSimple=isSimple,\
                 D=D,isLimit=isLimit,isFit=isFit)
-            self.saveVAll(vM,probM,T,self.indexL,stations,resDir =resDir,minProb=minProb)
+            self.saveVAll(vM,probM,T,self.iL,stations,resDir =resDir,minProb=minProb)
             #v0[i0:i1],prob0[i0:i1]=self.getV(y)
         self.saveV(v,prob,T, np.arange(N),stations,resDir =resDir,minProb=minProb)
         if isPlot:
@@ -2862,7 +2884,7 @@ class corrL(list):
             dv = np.abs(v-v0)
             dvO = v-v0
             plt.close()
-            for i in range(dv.shape[0]):
+            for i in range(len(dv)):
                 indexL = validL(dv[i],prob[i],minProb=minProb,minV=-1,maxV=2)
                 if np.random.rand()<0.1:
                         print('validL: ',indexL)
@@ -2875,7 +2897,7 @@ class corrL(list):
             plt.ylabel('f/Hz')
             plt.savefig(fileName+'.jpg',dpi=300)
             plt.close()
-            for i in range(dv.shape[0]):
+            for i in range(len(dv)):
                 indexL = validL(dv[i],prob[i],minProb=minProb,minV=-1,maxV=2)
                 if np.random.rand()<0.1:
                         print('validL: ',indexL)

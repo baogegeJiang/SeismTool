@@ -17,8 +17,10 @@ from ..io.sacTool import staTimeMat
 from ..mapTool.mapTool import readFault,plotTopo,faultL
 import mpl_toolkits.basemap as basemap
 import torch
+from obspy import taup
+taupModel=taup.TauPyModel(model='iasp91')
 maxA=2e19
-os.environ["MKL_NUM_THREADS"] = "8"
+os.environ["MKL_NUM_THREADS"] = "32"
 @jit
 def isZeros(a):
     new = a.reshape([-1,10,a.shape[-1]])
@@ -81,6 +83,7 @@ def predictLongData(model, x, N=2000, indexL=range(750, 1250),dIndex=2000,dec=1)
         X = x[i0:i1].reshape([-1,dIndex,1,3])
         XSTD = X.reshape([X.shape[0],-1,10,3]).std(axis=2,keepdims=True)
         sum0 = (XSTD==0).sum(axis=(1,2,3))
+        X/=X.std(axis=(1,2,3),keepdims=True)+np.finfo(x.dtype).eps
         Y = model.predict(X)
         zerosCount+=(sum0>5).sum()
         Y[sum0>5]*=0
@@ -156,7 +159,7 @@ class sta(object):
         else:
             pass
     def predict(self,modelL=None, staTimeM=None,\
-     mode='mid', isClearData=False,maxD=80,decPre=1):
+     mode='mid', isClearData=False,maxD=80,decPre=1,maxDTime=2):
         self.timeL = list()
         self.vL = list()
         self.mode = mode
@@ -173,15 +176,17 @@ class sta(object):
             minValueL=[0.6, 0.6]
         minDeltaL=[500, 750]
         for i in range(len(modelL)):
-            tmpL = getDetec(predictLongData(modelL[i], self.data.Data(),\
-             indexL=indexLL[i],dec=decPre), minValue=minValueL[i], minDelta =\
+            y = predictLongData(modelL[i], self.data.Data(),\
+             indexL=indexLL[i],dec=decPre)
+            #print(y.max(),y.std(),len(y))
+            tmpL = getDetec(y, minValue=minValueL[i], minDelta =\
               minDeltaL[i])
             print(ctime(),'find',len(tmpL[0]))
             self.timeL.append(tmpL[0])
             self.vL.append(tmpL[1])
         self.pairD = self.getPSPair(maxD=maxD)
         self.isPick = np.zeros(len(self.pairD))
-        self.orignM = self.convertPS2orignM(staTimeM,maxD=maxD)
+        self.orignM = self.convertPS2orignM(staTimeM,maxD=maxD,maxDTime=maxDTime)
         if isClearData:
             self.clearData()
 
@@ -271,7 +276,40 @@ class sta(object):
     def resample(self,resampleN):
         self.data.resample(resampleN)
         return self
-        
+    def pickQuake(self,quake,modelL,bSec=-10,eSec=10,bCount=-3000,eCount=3000):
+        deg = quake.dist(self.sta)/111.19
+        dep = self.sta['dep']/1000+quake['dep']
+        timeL=[0,0]
+        proL=[-1,-1]
+        pTime0= self.getEarliest(taupModel.get_travel_times(dep, deg, \
+                ['p', 'P', 'PP', 'pP','Pn']))+quake['time']
+        sTime0= self.getEarliest(taupModel.get_travel_times(dep, deg, \
+                ['s', 'S', 'SS', 'sS','Sn']))+quake['time']
+        time0L = [pTime0,sTime0]
+        for i in range(2):
+            time0= time0L[i]
+            bTime=time0+bCount*self.data.Delta()
+            eTime=time0+eCount*self.data.Delta()
+            bIndex=int((time0+bSec-bTime)/self.data.Delta())
+            eIndex=int((time0+eSec-bTime)/self.data.Delta())
+            if self.data.bTime<bTime and self.data.eTime>eTime:
+                data = self.data.Data(bTime=bTime,eTime=eTime)
+                if len(data)>4000:
+                    y = predictLongData(modelL[i], data,indexL =range(275, 775))
+                    yMax = y[bIndex:eIndex].max()
+                    proL[i]=yMax
+                    if yMax>=0.5:
+                        timeL[i]=(y[bIndex:eIndex].argmax()+bIndex)*self.data.Delta()+bTime
+        return timeL+proL
+
+    def getEarliest(self,arrivals):
+        time=10000000
+        if len(arrivals)==0:
+            print('no phase')
+            return 0
+        for arrival in arrivals:
+            time = min(time, arrival.time)
+        return time
 def argMax2D(M):
     maxValue = np.max(M)
     maxIndex = np.where(M==maxValue)
@@ -292,8 +330,8 @@ def associateSta(staL, aMat, staTimeML, timeR=30, minSta=3, maxDTime=3, N=1, \
             continue
         startTime = min(startTime, staTmp.data.bTime)
         endTime = max(endTime, staTmp.data.eTime)
-    startSec = int(startTime.timestamp-90)
-    endSec = int(endTime.timestamp+30)
+    startSec = int(startTime.timestamp-3600)
+    endSec = int(endTime.timestamp+3600)
     if N==1:
         quakeL=QuakeL()
         __associateSta(quakeL, staL, \
@@ -382,7 +420,6 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                                         tmpStackM[int(timeT-sec0+dt), laIndex, loIndex]=1
                                     '''
                 stackM[2*timeN: 3*timeN, :, :] += tmpStackM[2*timeN: 3*timeN, :, :]
-
             stackL = stackM.max(axis=(1,2))
             peakL, peakN = tool.getDetec(stackL, minValue=minSta, minDelta=timeR)
 
@@ -460,7 +497,7 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                                     quake.Append(Record(staIndex=staIndex, pTime=pTime, sTime=sTime, pProb=pProb, sProb=sProb))
                     if locator != None and len(quake)>=3:
                         try:
-                            quake,res=locator.locate(quake,maxDT=25)
+                            quake,res=locator.locate(quake)
                             print(quake['time'],quake.loc(),res)
                         except:
                             print('wrong in locate')
@@ -506,16 +543,17 @@ self,modelL=None, staTimeM=None,\
 def getStaL(staInfos, staTimeML=[], modelL=[],\
     date=obspy.UTCDateTime(0),taupM=tool.quickTaupModel(),\
      mode='mid',isPre=True,f=[2, 15],R=[-90,90,\
-    -180,180],maxD=80,f_new=[-1,-1],delta0=0.02,resampleN=-1,\
-    isClearData=False,decPre=1):
+    -380,380],maxD=80,f_new=[-1,-1],delta0=0.02,resampleN=-1,\
+    isClearData=False,decPre=1,maxDTime=2):
     staL=[None for i in range(len(staInfos))]
     threads = list()
     for i in range(len(staInfos)):  
-        print(ctime(),'process on sta: ',date,i)
+        print(ctime(),'process on sta: ',date,i,staInfos[i])
         staL[i]=sta(staInfos[i], date,
             f, taupM,R=R,delta0=delta0)
         staL[i].filt(f_new)
         staL[i].resample(resampleN)
+        #print(ctime(),'processed on sta: ',staL[i].data)
     if not isPre:
         return staL
     for i in range(len(staInfos)):
@@ -525,8 +563,18 @@ def getStaL(staInfos, staTimeML=[], modelL=[],\
             staTimeM=None
         print(ctime(),'predict on sta: ',date,i)
         staL[i].predict(modelL, staTimeM, mode,\
-            maxD=maxD,isClearData=isClearData,decPre=decPre)
+            maxD=maxD,maxDTime=maxDTime,isClearData=isClearData,decPre=decPre)
     return staL
+def getForQuake(staL,quakes,modelL,**kwargs):
+    for quake in quakes:
+        for count in range(len(staL)):
+            sta = staL[count]
+            if len(sta.data)==3:
+                pTime,sTime,pProb,sProb = sta.pickQuake(quake,modelL,**kwargs)
+                if pTime > 0 :
+                    quake.records.append(Record(staIndex=count,pTime=pTime,sTime=sTime,pProb=pProb,sProb=sProb))
+                    print(quake['time'],count,pTime,sTime,pProb,sProb)
+
 
 def getStaQuick(staInfos,date,f,taupM,R,delta0,f_new,resampleN):
     for i in range(len(staInfos)):  
@@ -630,9 +678,9 @@ def plotRes(staL, quake, filename=None):
             color=1
         #print(staIndex,pTime,sTime)
         st=quake['time']-10
-        et=sTime+10
+        et=sTime+40
         if sTime==0:
-            et=pTime+30
+            et=pTime+60
         pD=(pTime-quake['time'])
         if pTime ==0:
             pD = ((sTime-quake['time'])/1.73)
@@ -716,20 +764,20 @@ def plotQuakeL(staL,quakeL,laL,loL,outDir='output/',filename='',vModel=None,isPe
             staLa.append(sta.loc[0])
             staLo.append(sta.loc[1])
     #staLa,staLo = staL.loc()
-    staX,staY=m(np.array(staLo),np.array(staLa))
+    staX,staY=m(np.array(staLo)%360,np.array(staLa))
     m.plot(staX,staY,'b^',markersize=4,alpha=0.2)
     eLa= []
     eLo=[]
     for quake in quakeL:
         eLa.append(quake['la'])
         eLo.append(quake['lo'])
-    eX,eY=m(np.array(eLo),np.array(eLa))
+    eX,eY=m(np.array(eLo)%360,np.array(eLa))
     #m.etopo()
     for fault in faultL:
         if fault.inR(laL+loL):
             fault.plot(m,markersize=0.3)
     m.plot(eX,eY,'ro',markersize=0.5)
-    parallels = np.arange(0.,90,3)
+    parallels = np.arange(-90,90,3)
     m.drawparallels(parallels,labels=[False,True,True,False])
     meridians = np.arange(10.,360.,3)
     plt.gca().yaxis.set_ticks_position('right')
@@ -738,7 +786,7 @@ def plotQuakeL(staL,quakeL,laL,loL,outDir='output/',filename='',vModel=None,isPe
     plt.savefig(filename,dpi=300)
     plt.close()
 
-def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=False,rL=[]):
+def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=False,rL=[],R0=[]):
     dayIndex = int(quakeL[-1]['time']/86400)
     Ymd = obspy.UTCDateTime(dayIndex*86400).strftime('%Y%m%d')
     if len(filename)==0:
@@ -768,7 +816,7 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=Fa
         plotTopo(m,laL+loL)
     #sc=m.scatter(eX,eY,c=dep,s=((ml*0+1)**2)*0.3/3,vmin=-5,vmax=50,cmap='gist_rainbow')#Reds
     #sc=m.scatter(eX,eY,c=dep,s=((ml*0+1)**2)*0.3/3,vmin=-5,vmax=50,cmap='jet')
-    eh=m.plot(eX,eY,'.r',markersize=0.3,alpha=1)
+    eh=m.plot(eX,eY,'.r',markersize=0.01,alpha=1,linewidth=0.01)
     staLa= []
     staLo=[]
     for sta in staInfos:
@@ -796,6 +844,12 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=Fa
         plt.arrow(x[0],y[0],x[1]-x[0],y[1]-y[0],color='b')
         plt.text(x[0],y[0],R.name,ha='left',va='bottom',c='b',size=12,weight='bold')
         plt.text(x[1],y[1],R.name+'\'',ha='right',va='top',c='b',size=12,weight='bold')
+    R=R0
+    if len(R)>0:
+        la = [R[0],R[0],R[1],R[1],R[0]]
+        lo = [R[2],R[3],R[3],R[2],R[2]]
+        x,y=m(lo,la)
+        plt.plot(x,y,color='r',linewidth=1)
     plt.savefig(filename,dpi=300)
 
     plt.close()

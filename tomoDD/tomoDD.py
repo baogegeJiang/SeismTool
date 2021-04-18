@@ -15,14 +15,13 @@ from SeismTool.plotTool import figureSet as fs
 
 
 cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
-cmapRWB = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/rwb.cpt')
+cmapRWB = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/rwb2.cpt')
 faultL = mt.readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
-def setMap(m):
-    
-    parallels = np.arange(0.,90,3)
-    m.drawparallels(parallels,labels=[False,True,True,False])
-    meridians = np.arange(10.,360.,3)
-    m.drawmeridians(meridians,labels=[True,False,False,True])
+def setMap(m,posL=[False,True,True,False]):
+    parallels = np.arange(0.,90,4)
+    m.drawparallels(parallels,labels=posL)
+    meridians = np.arange(10.,360.,4)
+    m.drawmeridians(meridians,labels=posL)
     
     plt.gca().yaxis.set_ticks_position('left')
 
@@ -187,10 +186,10 @@ def preMod(R,nx=8,ny=8,nz=12,filename='abc'):
         vp=np.array([2   , 4,  5,    5.6,5.88,  6.2,    6.4, 6.42, 6.45, 6.8,7.0,    7.75, 7.76,8.2])
         #vs=[2.4,2.67, 3.01,  4.10, 4.24, 4.50, 5.00, 5.15, 6.00,6.1]
         z =         [-150, -5, 0,      5,  10,   15,      20,  25,   30,  35, 40,     50,   60,  200]
-        vp=np.array([2   , 4,  5,    5.88,  6.2,    6.4,  6.45,  7.0,    7.75, 7.76,8.2])
+        #vp=np.array([2   , 4,  5,    5.88,  6.2,    6.4,  6.45,  7.0,    7.75, 7.76,8.2])
         #vs=[2.4,2.67, 3.01,  4.10, 4.24, 4.50, 5.00, 5.15, 6.00,6.1]
-        z =         [-150, -5, 2.5,    7.5,    12,      20,   30,   40,     50,   60,  200]
-        vs=vp/1.71
+        #z =         [-150, -5, 2.5,    7.5,    12,      20,   30,   40,     50,   60,  200]
+        #vs=vp/1.71
         x=np.zeros(nx)
         y=np.zeros(ny)
         #z=[-150,-2, 0, 5,10, 15,25, 35, 50, 60,80, 500]
@@ -487,25 +486,27 @@ def analyDTM(dTM,resFile):
     h,x,y=np.histogram2d(pL,pCCL,bins)
     h=h.transpose()
     h/=h.sum(axis=1,keepdims=True)
-    plt.pcolor(x[:-1]*0.5+x[1:]*0.5,y[:-1]*0.5+y[1:]*0.5,h,norm=colors.LogNorm(vmin=h[h!=0].min()*2, vmax=h.max()))
+    #plt.pcolor(x[:-1]*0.5+x[1:]*0.5,y[:-1]*0.5+y[1:]*0.5,h,norm=colors.LogNorm(vmin=h[h!=0].min()*2, vmax=h.max()))
+    plt.pcolor(x[:-1]*0.5+x[1:]*0.5,y[:-1]*0.5+y[1:]*0.5,h)
     cbar=plt.colorbar()
     cbar.set_label('density')
     plt.xlabel('dTime/s')
     plt.ylabel('cc (P phase)')
-    fs.setABC('(a)')
+    fs.setABC('(a)',c='w')
     plt.subplot(2,1,2)
     #plt.hist2d(sL,sCCL,bins)
     h,x,y=np.histogram2d(sL,sCCL,bins)
     h=h.transpose()
     h/=h.sum(axis=1,keepdims=True)
-    plt.pcolor(x[:-1]*0.5+x[1:]*0.5,y[:-1]*0.5+y[1:]*0.5,h, norm=colors.LogNorm(vmin=h[h!=0].min()*2, vmax=h.max()))
+    #plt.pcolor(x[:-1]*0.5+x[1:]*0.5,y[:-1]*0.5+y[1:]*0.5,h, norm=colors.LogNorm(vmin=h[h!=0].min()*2, vmax=h.max()))
+    plt.pcolor(x[:-1]*0.5+x[1:]*0.5,y[:-1]*0.5+y[1:]*0.5,h)
     #plt.colorbar()
     cbar=plt.colorbar()
     cbar.set_label('density')
     plt.xlabel('dTime/s')
     plt.ylabel('cc (S phase)')
     fig.tight_layout()
-    fs.setABC('(b)')
+    fs.setABC('(b)',c='w')
     plt.savefig(resFile,dpi=300)
 
 def getReloc(quakeL,filename='abc'):
@@ -581,8 +582,9 @@ class Model(Model0):
     def plot(self,resDir,doDense='True'):
         if not os.path.exists(resDir):
             os.makedirs(resDir)
+        ABC='aaaabcdefghijklmnopqrst'
         for i in range(self.zN):
-            name0='v/(km/s)'
+            name0='$v$/(km/s)'
             plt.close()
             z= self.z[i]
             if i <self.zN-1:
@@ -590,12 +592,13 @@ class Model(Model0):
             else:
                 z1 = self.z[i]+100
             req = {'minDep':z,'maxDep':z1}
-            fig=plt.figure()
+            fig=plt.figure(figsize=(1.6,2.6))
             m = basemap.Basemap(llcrnrlat=self.la[2],urcrnrlat=self.la[-3],llcrnrlon=self.lo[2],\
             urcrnrlon=self.lo[-3])
             la,lo,v=self.denseLaLoGrid(self.v[:,:,i].copy(),dIndex=2,doDense=doDense,N=500)
             #la,lo,v = [self.la,self.lo,self.v[:,:,i]] 
             if isinstance(v,type(None)):
+                plt.savefig('%s/%s_%.1f.eps'%(resDir,self.mode,z),dpi=300)
                 plt.close()
                 print('no enough data in depth:',z)
                 continue
@@ -603,11 +606,14 @@ class Model(Model0):
             x,y=m(lo,la)
             if self.mode in ['dVp','dVs','dVpr','dVsr']:
                 cmapRWB.set_bad('#A9A9A9', 0)
-                m.pcolormesh(x,y,v,vmin=-0.05,vmax=0.05,cmap=cmapRWB,shading='flat')
-                name0='dv/v0'
+                c=m.pcolormesh(x,y,v,vmin=-0.05,vmax=0.05,cmap=cmapRWB,shading='flat',rasterized=True)
+                #cmapRWB
+                name0='d$v$/$v$0'
+                pos ='HBDZKXPer'
             else:
                 cmap.set_bad('#A9A9A9', 0)
-                m.pcolormesh(x,y,v,cmap=cmap,shading='flat')
+                c=m.pcolormesh(x,y,v,cmap=cmap,shading='flat',rasterized=True)
+                pos ='HBDZKX'
             R =self.R
             plt.gca().set(facecolor='#A9A9A9')
             for fault in faultL:
@@ -617,18 +623,22 @@ class Model(Model0):
                 pL=self.quakeL0.paraL(req =req)
                 eX,eY,=m(np.array(pL['lo']),np.array(pL['la']))
                 #ml,dep=[np.array(pL['ml']),np.array(pL['dep'])]
-                plt.plot(eX,eY,'.k',markersize=0.3)
+                plt.plot(eX,eY,'.r',markersize=0.01,linewidth=0.01)
             if len(self.quakeL)>0:
                 pL=self.quakeL.paraL(req =req)
                 eX,eY,=m(np.array(pL['lo']),np.array(pL['la']))
                 #ml,dep=[np.array(pL['ml']),np.array(pL['dep'])]
-                plt.plot(eX,eY,'.r',markersize=0.3)
-            setMap(m)
-            cbar=plt.colorbar()
-            cbar.set_label(name0)
-            plt.title('%s depth: %.1f km'%(self.mode,z))
+                plt.plot(eX,eY,'.k',markersize=0.01,linewidth=0.01)
+            setMap(m,posL=[True,False,True,False])
+            #plt.gca().yaxis.set_ticks_position('left')
+            #plt.gca().xaxis.set_ticks_position('top')
+            #cbar=plt.colorbar()
+            #cbar.set_label(name0)
+            #plt.title('%s depth: %.1f km'%(self.mode,z))
+            plt.title('%s ${z}$=%.1f km'%(ABC[i],z),y=-0.5)
             fig.tight_layout()
-            plt.savefig('%s/%s_%.1f.jpg'%(resDir,self.mode,z),dpi=300)
+            fs.setColorbar(c,label=name0,pos=pos)
+            plt.savefig('%s/%s_%.1f.eps'%(resDir,self.mode,z),dpi=300)
 
 class model:
     def __init__(self,workDir,quakeL=[],quakeL0=[],isSyn=False,isDWS=False,minDWS=-1,R=[-90,90,-180,180],vR=''):
@@ -725,7 +735,64 @@ def diff(quakeL0,quakeL1,filename):
     plt.ylabel('vertical difference/km')
     plt.savefig(filename,dpi=300)
 
+def plotDistPS(quakes,staInfos,filename,markersize=0.03):
+    pDist,pTime,sDist,sTime=quakes.dis_time(staInfos)
+    plt.close()
+    plt.figure(figsize=(3,3))
+    plt.plot(pDist,pTime,'.b',markersize=markersize)
+    plt.plot(sDist,sTime,'.r',markersize=markersize)
+    plt.xlim([0,250])
+    plt.ylim([0,60])
+    plt.xlabel('distance/km')
+    plt.ylabel('time/s')
+    plt.savefig(filename,dpi=300)
 
+def plotDistPSFreq(quakes,staInfos,filename,markersize=0.03):
+    pDist,pTime,sDist,sTime=quakes.dis_time(staInfos)
+    plt.close()
+    plt.figure(figsize=(7,3))
+    plt.subplot(1,2,1)
+    plt.hist2d(pDist,pTime,bins=(np.arange(0,250,1),np.arange(0,60,0.1)))
+    plt.xlabel('distance/km')
+    plt.ylabel('time/s')
+    fs.setABC('(a)',c='w')
+    cax=fs.getCAX(size="7%", pad="30%")
+    plt.colorbar(label='count', cax=cax, orientation="horizontal")
+    plt.subplot(1,2,2)
+    plt.hist2d(sDist,sTime,bins=(np.arange(0,250,1.5),np.arange(0,60,0.3)))
+    plt.xlabel('distance/km')
+    plt.ylabel('time/s')
+    fs.setABC('(b)',c='w')
+    cax=fs.getCAX(size="7%", pad="30%")
+    plt.colorbar(label='count', cax=cax, orientation="horizontal")
+    plt.savefig(filename,dpi=300)
+
+def plot1D(filename):
+    vp =  np.array([ float(tmp)  for tmp in    '4 5 5.5 5.8 5.91 6.1 6.3 6.5 6.7 8.0 8.6 9.0'.split()])
+        #vs=[2.4,2.67, 3.01,  4.10, 4.24, 4.50, 5.00, 5.15, 6.00,6.1]
+    z =  [ float(tmp)  for tmp in    '-150.0000 -2.0000 0.0000 5.0000 10.0000 15.0000 25.0000 35.0000 50.0000 60.0000 80.0000 500.0000'.split()]
+    vs=vp/1.71
+    Z  = []
+    VP = []
+    VS = []
+    for i in range(len(vp)):
+        VP.append(vp[i])
+        VS.append(vs[i])
+        Z.append(z[i])
+        if i != len(vp)-1:
+            VP.append(vp[i])
+            VS.append(vs[i])
+            Z.append(z[i+1])
+    plt.close()
+    plt.figure(figsize=[3,3])
+    plt.plot(VP,Z,'k')
+    plt.plot(VS,Z,'--k')
+    plt.xlim([2,9])
+    plt.ylim([70,-3])
+    plt.xlabel('v/(km/s)')
+    plt.ylabel('z/km')
+    plt.savefig(filename,dpi=300)
+    plt.close()
 '''
 def calDT(quake0,quake1,waveform0,waveform1,staInfos,bSec0=-2,eSec0=3,\
     bSec1=-3,eSec1=4,delta=0.02,minC=0.6,maxD=0.3,minSameSta=5):

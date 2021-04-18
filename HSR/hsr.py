@@ -1,3 +1,4 @@
+from re import L
 from ..io import seism
 import numpy as np
 from obspy import UTCDateTime
@@ -8,6 +9,7 @@ from multiprocessing import pool
 import matplotlib
 from plotTool import figureSet
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
+from matplotlib import gridspec
 #matplotlib.rcParams['font.family']='Simhei'
 class hsr:
     def __init__(self,f0=3.2,fmax=50,fL0=np.arange(0,50,0.02)):
@@ -17,7 +19,7 @@ class hsr:
     def findFF(self,T3,comp=2):
         spec,fL=T3.getSpec(comp=comp)
         return self.FindFF(spec,fL)
-    def FindFF(self,spec,fL,minF=2.7,maxF=3.6,avoidF=-1,fmax=49,reS=False,mul=1):
+    def FindFF(self,spec,fL,minF=2.7,maxF=3.6,avoidF=-1,fmax=49,reS=False,mul=1,minMul=-1):
         N=fmax/self.f0
         df0=(fL[1]-fL[0])
         df=df0/N
@@ -36,6 +38,8 @@ class hsr:
             if s>=S:
                 S=s
                 FF0=FF
+        if s<minMul*np.real(spec).std()*2**0.5:
+            FF0=-1
         if  reS:
             return FF0,S
         return FF0*mul
@@ -311,7 +315,7 @@ class hsr:
             FFAf   =np. concatenate(FFAf,axis=0)
         return fL0,specAt,specBe,specAf,FFAt,FFBe,FFAf,dT
 
-    def loadStationsSpec(self,stations,workDir,comp=2,isAdd=False,minDT=-100,maxDT=100,dF=0.1,bandStr=''):
+    def loadStationsSpec(self,stations,workDir,comp=2,isAdd=False,minDT=-100,maxDT=100,dF=0.1,bandStr='',**kwags):
         dTL     = []
         fL0L    = []
         specAtL = []
@@ -332,39 +336,43 @@ class hsr:
             FFBeL   .append( FFBe)
             FFAfL   .append( FFAf)
             if isAdd and len(fL0L[-1])>0:
-                fL0L[-1]= fL0L[-1][0:1]
+                fL0L[-1]= fL0L[-1][0:kwags['perN']]
                 specAtL[-1]=self.add(fL0,specAtL[-1],FFAtL[-1],dTL[-1],\
-                    minDT=minDT,maxDT=maxDT,minFF=3.2-dF,maxFF=3.2+dF,F0=FFAtL[-1],dF0=0.08)
+                    minDT=minDT,maxDT=maxDT,minFF=3.2-dF,maxFF=3.2+dF,F0=FFAtL[-1],dF0=0.075*3.2,**kwags)
                 specBeL[-1]=self.add(fL0,specBeL[-1],FFBeL[-1],dTL[-1],\
-                    minDT=minDT,maxDT=maxDT,minFF=3.2-dF,maxFF=3.2+dF,F0=FFAtL[-1],dF0=0.08)
+                    minDT=minDT,maxDT=maxDT,minFF=3.2-dF,maxFF=3.2+dF,F0=FFAtL[-1],dF0=0.075*3.2,**kwags)
                 specAfL[-1]=self.add(fL0,specAfL[-1],FFAfL[-1],dTL[-1],\
-                    minDT=minDT,maxDT=maxDT,minFF=3.2-dF,maxFF=3.2+dF,F0=FFAtL[-1],dF0=0.08)
+                    minDT=minDT,maxDT=maxDT,minFF=3.2-dF,maxFF=3.2+dF,F0=FFAtL[-1],dF0=0.075*3.2,**kwags)
         return fL0L,specAtL,specBeL,specAfL,FFAtL,FFBeL,FFAfL,dTL
-    def add(self,fL0,spec,FF,dT,minDT=-100,maxDT=100,minFF=3.0,maxFF=3.3,F0=[],dF0=-1):
-        res = fL0[0:1]*0
-        count=0
+    def add(self,fL0,spec,FF,dT,minDT=-100,maxDT=100,minFF=3.0,maxFF=3.3,F0=[],dF0=-1,isRemove=False,perN=1):
+        res = fL0[0:perN]*0
+        count= np.zeros(perN).reshape([-1,1])
         maxSum=0
         for i in range(len(spec)):
+            index = int(i/len(spec)*perN)
             if FF[i]<minFF or FF[i]>maxFF:
                 continue
             if dT[i]<minDT or dT[i]>maxDT:
                 continue
             if len(F0)>0 and np.abs(FF[i]-F0[i])>dF0:
                 continue
-            res += spec[i:i+1]
+            if isRemove:
+                E = np.abs(self.calE(N=8,L=25,v=25*FF[i],f=fL0[0]).reshape([1,-1]))
+                E[E<1]=1
+                spec[i:i+1]/= E
+            res[index:index+1] += spec[i:i+1]
             maxSum = spec[i:i+1].max()
-            count+=1
+            count[index]+=1
         print('add',count,'maxSum',maxSum)
         return res/count
     def showSpec(self,fL0L,specAtL,specBeL,specAfL,stations,head='',workDir='',maxF=20,v=3000,isPlot=True):
         n= np.arange(1,10)
-        fBe = v/(v-80)*3.2*n*25/32
-        fAf = v/(v+80)*3.2 *n*25/32
         FBeL = []
         FAfL = []
         SBeL=[]
         SAfL=[]
         vL =[]
+
         for i in range(len(stations)):
             specAt = specAtL[i]
             specBe = specBeL[i]
@@ -374,19 +382,27 @@ class hsr:
             station = stations[i]
             staName = station.name('.')+'_'+head+'_v=%d'%v
             filename = workDir+'/'+ staName+'.eps'
-            plt.close()
-            plt.figure(figsize=[0.75,0.75])
             figureSet.init()
-            FBe,SBe= self.FindFF(specBe[0],fL0L[0][0,:],minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
-            FAf,SAf = self.FindFF(specAf[0],fL0L[0][0,:],minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
-            fBeL = FBe*n
-            fAfL = FAf*n
-            V = (FBe+FAf)/(FBe-FAf)*80
-            FBeL.append(FBe)
-            FAfL.append(FAf)
-            SBeL.append(SBe)
-            SAfL.append(SAf)
-            vL.append(V)
+            plt.close()
+            plt.figure(figsize=[2.5,1.5])
+            FBeL.append([])
+            FAfL.append([])
+            SBeL.append([])
+            SAfL.append([])
+            vL.append([])
+            for index in range(len(specBe)):
+                FBe,SBe= self.FindFF(specBe[index],fL0L[0][0,:],minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1,minMul=1)
+                FAf,SAf = self.FindFF(specAf[index],fL0L[0][0,:],minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1,minMul=1)
+                fBeL = FBe*n
+                fAfL = FAf*n
+                V = (FBe+FAf)/(FBe-FAf+0.000001)*80
+                if FBe<0 or FAf<0:
+                    V=-10
+                FBeL[-1].append(FBe)
+                FAfL[-1].append(FAf)
+                SBeL[-1].append(SBe)
+                SAfL[-1].append(SAf)
+                vL[-1].append(V)
             if not isPlot:
                 continue
             '''
@@ -399,10 +415,12 @@ class hsr:
             for f in fAfL:
                 plt.plot([f,f],[-1,2000],'-.r',linewidth=0.3)     
             '''    
-            for i in range(len(specAt)):
+            for i in range(len(specAt)*0+1):
                 hAt=plt.plot(fL0L[i][i,:],specAt[i],'k',linewidth=0.5)
                 hBe=plt.plot(fL0L[i][i,:],specBe[i],'b',linewidth=0.5)
                 hAf=plt.plot(fL0L[i][i,:],specAf[i],'r',linewidth=0.5)
+            if not np.isinf(vL[-1][0]):
+                figureSet.setABC('Fbe:%.3f FAf:%.3f V:%d'%(FBeL[-1][0],FAfL[-1][0],int(vL[-1][0])))
             #plt.legend((hAt,hBe,hAf),['at','before','after'])
             plt.xlim([0,maxF])
             #plt.ylim([-1,800])
@@ -415,7 +433,7 @@ class hsr:
             plt.savefig(filename,dpi=300)
             plt.close()
         return FBeL,FAfL,SBeL,SAfL,vL
-    def anSpec(self,fL0L,specAtL,specBeL,specAfL,stations,maxF=20,v=3000):
+    def anSpec(self,fL0L,specAtL,specBeL,specAfL,stations,minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,v=3000):
         n= np.arange(1,10)
         fBe = v/(v-80)*3.2*n*25/32
         fAf = v/(v+80)*3.2 *n*25/32
@@ -431,8 +449,10 @@ class hsr:
                 specAf = specAfL[i][j:j+1]
                 if len(specAt)==0:
                     continue
-                FBe,SBe= self.FindFF(specBe[0],fL0L[0][0,:],minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
-                FAf,SAf = self.FindFF(specAf[0],fL0L[0][0,:],minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
+
+                FBe,SBe= self.FindFF(specBe[0],fL0L[0][0,:],minF=minF,maxF=maxF,avoidF=avoidF,fmax=fmax,reS=True,mul=1)
+                #print(specAf.size,fL0L[0].size)
+                FAf,SAf = self.FindFF(specAf[0],fL0L[0][0,:],minF=minF,maxF=maxF,avoidF=avoidF,fmax=fmax,reS=True,mul=1)
                 fBeL = FBe*n
                 fAfL = FAf*n
                 V = (FBe+FAf)/(FBe-FAf)*80
@@ -500,6 +520,22 @@ class hsr:
     def getSacs(self,sacsL,disL0,dist):
         index = np.abs(np.abs(distL0)-np.abs(dist)).argmin()
         return sacsL[index],distL0[indexL]
+    def realMS(self,X,minX=-1,maxX=30000,minNum=3,maxStd=30000):
+        M = X[:,0]*0
+        S = X[:,0]*0
+        for i in range(len(X)):
+            x = X[i]
+            x = x[x>minX]
+            x = x[x<maxX]
+            if len(x)<minNum:
+                M[i]=-300
+                S[i]=0
+            else:
+                M[i]= x.mean()
+                S[i]= x.std()
+                if x.std()>maxStd:
+                    M[i]= -100000
+        return M,S 
     def plotFV(self,FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL,eSecL,dTimeL,workDir,head='',marker='.',strL='ab'):
         for comp in range(3):
             FBeLNL = np.array(FBeLNM[comp])
@@ -510,17 +546,25 @@ class hsr:
             vLSL = np.array(vLSM[comp])
             midSecL = (eSecL+bSecL)/2
             plt.close()
-            plt.figure(figsize=[1,1])
             figureSet.init()
+            plt.figure(figsize=[3,3])
             plt.subplot(2,1,1)
             plt.ylim([4,6])
             plt.xlim([-5000,5000])
             for i in range(len(dTimeL)):
                 dTime=dTimeL[i]
+                '''
                 plt.plot((midSecL-dTime)*80,FBeLNL[:,i],marker+'b')
                 plt.plot((midSecL-dTime)*80,FAfLNL[:,i],marker+'r')
                 plt.plot((-midSecL+dTime)*80,FBeLSL[:,i],marker+'b')
                 plt.plot((-midSecL+dTime)*80,FAfLSL[:,i],marker+'r')
+                '''
+                #print(FBeLNL[:,i].shape,*self.realMS(FBeLNL[:,i],minX=3,maxX=6,minNum=3),marker=marker,color='b')
+                #print(((midSecL-dTime)*80).shape)
+                plt.errorbar((midSecL-dTime)*80,*self.realMS(FBeLNL[:,i],minX=3,maxX=6,minNum=4),fmt=marker+'b',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
+                plt.errorbar((midSecL-dTime)*80,*self.realMS(FAfLNL[:,i],minX=3,maxX=6,minNum=4),fmt=marker+'r',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
+                plt.errorbar((-midSecL+dTime)*80,*self.realMS(FBeLSL[:,i],minX=3,maxX=6,minNum=4),fmt=marker+'b',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
+                plt.errorbar((-midSecL+dTime)*80,*self.realMS(FAfLSL[:,i],minX=3,maxX=6,minNum=4),fmt=marker+'r',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
             #plt.xlim([-60,60])
             plt.ylabel('f/Hz')
             figureSet.setABC('(%s)'%strL[0],[0.01,0.98],c='k')
@@ -528,8 +572,12 @@ class hsr:
             plt.ylim([0,5000])
             for i in range(len(dTimeL)):
                 dTime=dTimeL[i]
+                '''
                 plt.plot((midSecL-dTime)*80,vLNL[:,i],marker+'k')
                 plt.plot((-midSecL+dTime)*80,vLSL[:,i],marker+'k')
+                '''
+                plt.errorbar((midSecL-dTime)*80,*self.realMS(vLNL[:,i],minX=1500,maxX=5000,minNum=4,maxStd=2000),fmt=marker+'k',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
+                plt.errorbar((-midSecL+dTime)*80,*self.realMS(vLSL[:,i],minX=1500,maxX=5000,minNum=4,maxStd=2000),fmt=marker+'k',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
             plt.xlim([-5000,5000])
             plt.xlabel('distance/m')
             plt.ylabel('v/(m/s)')
@@ -600,7 +648,8 @@ class hsr:
             beSS=(SBeLSL).reshape([-1]).tolist()
             afNS=(SAfLNL).reshape([-1]).tolist()
             afSS=(SAfLSL).reshape([-1]).tolist()
-            pc=plt.hist2d(beNT+beST+afNT+afST,beNS+beSS+afNS+afSS,range=[[-50,50],[0,1]],cmap='bwr')
+            #pc=plt.hist2d(beNT+beST+afNT+afST,beNS+beSS+afNS+afSS,range=[[-50,50],[0,1]],cmap='bwr')
+            pc=plt.hist2d(beNT+beST+afNT+afST,beNS+beSS+afNS+afSS,range=[[-50,50],[0,1]],cmap='jet')
             cb=plt.colorbar()
             cb.set_label('count')
             plt.ylabel(compL[comp]+'/All')
@@ -711,30 +760,30 @@ class hsr:
         FAf,SAf= self.FindFF(afS,afF,minF=4.6,maxF=5.4,avoidF=3.2,fmax=9,reS=True,mul=1)
         print(FBe,FAf,(FBe+FAf)/(FBe-FAf)*80)
         plt.close()
-        plt.figure(figsize=[6,1.5])
+        plt.figure(figsize=[5,5])
         figureSet.init()
-        plt.subplot(1,3,1)
+        plt.subplot(3,1,1)
         plt.plot(f,np.abs(RAf),'r',linewidth=0.5)
         plt.plot(f,np.abs(RBe),'b',linewidth=0.5)
-        plt.xlabel('f/Hz')
+        #plt.xlabel('f/Hz')
         plt.ylabel('Amplitude')
         plt.xlim([0,20])
         figureSet.setABC('(a)',[0.01,0.98],c='k')
-        plt.subplot(1,3,2)
+        plt.subplot(3,1,2)
         plt.plot(f[10:],np.abs(ERAf[10:]),'r',linewidth=0.5)
         plt.plot(f[10:],np.abs(ERBe[10:]),'b',linewidth=0.5)
-        plt.xlabel('f/Hz')
-        #plt.ylabel('Amplitude')
+        #plt.xlabel('f/Hz')
+        plt.ylabel('Amplitude')
         plt.xlim([0,20])
         figureSet.setABC('(b)',[0.01,0.98],c='k')
-        plt.subplot(1,3,3)
+        plt.subplot(3,1,3)
         N = int(20*t3.delta*len(afF))
         N=-1
         plt.plot(afF,np.abs(afS)/np.abs(afS[:N]).max(),'r',linewidth=0.3)
         plt.plot(beF,np.abs(beS)/np.abs(beS[:N]).max(),'b',linewidth=0.3)
         plt.plot(atF,np.abs(atS)/np.abs(atS[:N]).max(),'k',linewidth=0.3)
         plt.xlabel('f/Hz')
-        #plt.ylabel('Amplitude')
+        plt.ylabel('Amplitude')
         plt.xlim([0,20])
         figureSet.setABC('(c)',[0.01,0.98],c='k')
         plt.savefig('../hsrRes/ERR%s.eps'%head,dpi=300)
@@ -759,33 +808,36 @@ class hsr:
         plt.xlim([0,20])
         plt.savefig('../hsrRes/ERL%s.pdf'%head)
         plt.close()
-    def plotWS(self,data,time0=-40,head='test',delta=0.01,fMax=10,xlim=[-40,40],whiteL=[]):
+    def plotWS(self,data,time0=-40,head='test',delta=0.01,fMin=0,fMax=10,xlim=[-40,40],whiteL=[]):
         figureSet.init()
+        fMax+=0.5
         #head = '1.567142294544028521e+09'
         plt.close()
-        fig=plt.figure(figsize=[6,4])
+        fig=plt.figure(figsize=[4,4])
         fig.tight_layout()
-        plt.subplot(2,1,1)
-        plt.plot(np.arange(len(data))*delta+time0,data,'k',linewidth=0.5)
+        specs=gridspec.GridSpec(2, 1,height_ratios=[1,3])
+        ax0 = fig.add_subplot(specs[0])
+        #plt.subplot(2,1,1)
+        ax0.plot(np.arange(len(data))*delta+time0,data,'k',linewidth=0.5)
         #plt.plot(timeL,rBe,'b',linewidth=0.5)
         #plt.xlabel('t/s')
         plt.ylabel('D/count')
         plt.xlim(xlim)
         figureSet.setABC('(a)',[0.01,0.98])
-        plt.subplot(2,1,2)
+        ax1 = fig.add_subplot(specs[1])
         N=int(8/delta)
         dataS,TL,FL=SFFT(data,delta,10,N)
-        pc=plt.pcolormesh(TL+time0,FL[:int(N*fMax*delta)],np.log(np.abs(dataS[:int(N*fMax*delta)])/np.std(dataS[:int(N*fMax*delta)]).max(axis=0,keepdims=True)+1e-3),cmap='hot')
+        pc=ax1.pcolormesh(TL+time0,FL[:int(N*fMax*delta)],np.log(np.abs(dataS[:int(N*fMax*delta)])/np.std(dataS[:int(N*fMax*delta)]).max(axis=0,keepdims=True)+1e-3),cmap='hot',shading='gouraud')
         for white in whiteL:
-            plt.plot(TL+time0,(TL+time0)*0+white,'-.k',linewidth=0.5)
+            ax1.plot(TL+time0,(TL+time0)*0+white,'-.k',linewidth=0.5)
         plt.xlabel('t/s')
         plt.ylabel('f/Hz')
         plt.xlim(xlim)
-        plt.ylim([0,fMax])
+        plt.ylim([fMin,fMax-0.5])
         figureSet.setABC('(b)',[0.01,0.98],c='w')
         ax=plt.gca()
         ax_divider = make_axes_locatable(ax)
-        cax = ax_divider.append_axes("bottom", size="7%", pad="60%")
+        cax = ax_divider.append_axes("bottom", size="7%", pad="25%")
         cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
         cbar.set_label('log(A)')
         #plt.tight_layout()

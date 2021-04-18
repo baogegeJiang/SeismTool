@@ -14,6 +14,7 @@ from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from ..plotTool import figureSet as fs
 
 cmap = cpt2cm(os.path.dirname(__file__)+'/../data/temperatureInv')
+cmapNoGreen = cpt2cm(os.path.dirname(__file__)+'/../data/no_green.cpt').reversed()
 cmapTemp = cpt2cm(os.path.dirname(__file__)+'/../data/temperature')
 
 volcano=np.loadtxt(os.path.dirname(__file__)+'/../data/volcano')
@@ -62,8 +63,8 @@ def getZInR(la0,lo0,z0,R,laN=500,loN=500):
     lo,la=np.meshgrid(lo,la)
     return la,lo,z
 def getZInLine(la0,lo0,z0,line,laN=500,loN=500):
-    la=np.arange(line.xyL[0][0],line.xyL[1][0],(line.xyL[1][0]-line.xyL[0][0])/laN)
-    lo=np.arange(line.xyL[0][1],line.xyL[1][1],(line.xyL[1][1]-line.xyL[0][1])/loN)
+    la=np.arange(laN)/(laN-1)*(line.xyL[1][0]-line.xyL[0][0])+line.xyL[0][0]#(line.xyL[0][0],line.xyL[1][0],(line.xyL[1][0]-line.xyL[0][0])/laN)
+    lo=np.arange(loN)/(loN-1)*(line.xyL[1][1]-line.xyL[0][1])+line.xyL[0][1]#np.arange(line.xyL[0][1],line.xyL[1][1],(line.xyL[1][1]-line.xyL[0][1])/loN)
     z=interp.interpn((la0,lo0),z0,np.concatenate([la.reshape([-1,1]),lo.reshape([-1,1])],axis=-1),method='linear')
     return la,lo,z
 def plotTopo(m,R,topo='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd',laN=800,loN=800,cptfile='wiki-2.0.cpt',vmax=5000,vmin=0,isColorbar=True):#'cpt17.txt'):
@@ -432,8 +433,7 @@ def plotDep(qL,R,filename):
 def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
     paraL = qL.paraL(['la','lo','dep','ml','time'],req={'R':R})
     plt.close()
-    fig=plt.figure(figsize=[4,2.5])
-    sFig=fig
+    fig=plt.figure(figsize=[2.7,1.6])
     ax=plt.gca()
     ax_divider = make_axes_locatable(ax)
     if isTopo:
@@ -441,27 +441,37 @@ def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
         la,lo,z=getZInLine(la0,lo0,z0,R)
         laLo = np.array([la.tolist(),lo.tolist()]).transpose()
         l = R.l(laLo)
-        Tax = ax_divider.append_axes("top", size="50%", pad="10%")
-        Tax.plot(l,z/1000,'k')
+        Tax = ax_divider.append_axes("top", size="50%", pad="20%")
+        Tax.plot(l,z/1000,'k',linewidth=0.3)
         #Tax.set_xlabel('Distance/km')
-        Tax.set_ylabel('Topo/km')
+        Tax.set_ylabel('T/km')
         Tax.set_ylim([0,6])
         Tax.set_xlim([0,R.L])
         Tax.set_xticks([])
         Tax.text(10,6,R.name,ha='left',va='bottom',c='r',size=10,weight='bold')
         Tax.text(R.L,6,R.name+'\'',ha='right',va='bottom',c='r',size=10,weight='bold')
         #Tax.set_aspect(5)
-    timeL = (np.array(paraL['time'])-np.array(paraL['time']).min())/86400
+    #timeL = (np.array(paraL['time'])-np.array(paraL['time']).min())/86400
     laLo = np.array([paraL['la'],paraL['lo']]).transpose()
     l = R.l(laLo)
     if not isinstance(vModel,type(None)):
         la,lo,z,Dist,V= vModel.outputP2(R.xyL,isPer=isPer,line=R)
         Dist = R.l(np.array([la[0].tolist(),lo[0].tolist()]).transpose())
-        pc=ax.pcolormesh(Dist,z,V,vmin=-np.abs(V).max(),vmax=np.abs(V).max(),cmap=cmap,rasterized=True)
+        if isPer:
+            pc=ax.pcolormesh(Dist,z,V,vmin=+np.abs(V).max(),vmax=-np.abs(V).max(),cmap=cmapNoGreen,rasterized=True)
+        else:
+            if vModel.mode == 'vp':
+                vmax = 8
+                vmin = 4
+            if vModel.mode == 'vs':
+                vmax = 8/1.7
+                vmin = 4/1.7
+            pc=ax.pcolormesh(Dist,z,V,vmin=vmin,vmax=vmax,cmap='jet_r',rasterized=True)
+        #print(V.max(),V.min())
         #position=fig.add_axes([0.15, 0.05, 0.7, 0.03])
         #cbar=fig.colorbar(pc,fraction=0.046, pad=0.04)
         # add an axes above the main axes.
-        cax = ax_divider.append_axes("bottom", size="7%", pad="80%")
+        cax = ax_divider.append_axes("bottom", size="10%", pad="155%")
         #cb2 = fig.colorbar(im2, cax=cax2, orientation="horizontal")
         cbar=fig.colorbar(pc, cax=cax, orientation="horizontal")
         # change tick position to top. Tick position defaults to bottom and overlaps
@@ -475,15 +485,16 @@ def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
         else:
             cbar.set_label('V (km/s)')
     #pc=plt.scatter(l,paraL['dep'],s=1,c=timeL*0,cmap='gist_rainbow')#((np.array(paraL['ml'])*0+1)**2)*0.3/3
-    pc=ax.plot(l,paraL['dep'],'.k',markersize=0.3)
+    pc=ax.plot(l,paraL['dep'],'.k',markersize=0.01,linewidth=0.01)
     #cbar=fig.colorbar(pc, orientation="horizontal",fraction=0.046, pad=0.04)
     #cbar.set_label('time from the first earthquake')
     ax.set_xlabel('Distance/km')
-    ax.set_ylabel('Depth/km')
+    ax.set_ylabel('Z/km')
     ax.set_ylim([70,-10])
     ax.set_xlim([0,R.L])
     ax.set_aspect(1)
-    ax.set(facecolor='#A9A9A9')
+    if not isinstance(vModel,type(None)):
+        ax.set(facecolor='#A9A9A9')
     fig.tight_layout()
     plt.savefig(filename,dpi=300)
     plt.close()
@@ -508,7 +519,7 @@ def showInMap(v,laL,loL,R,resFile,name='res',abc=''):
     #cmap = co.copy(cm.get_cmap(plt.rcParams['image.cmap']))
     cmap.set_bad('y', 0)
     #pc=m.pcolormesh(x,y,V,cmap=cmap,shading='gouraud')
-    pc=m.pcolormesh(x,y,V,cmap=cmap)
+    pc=m.pcolormesh(x,y,V,cmap=cmap,rasterized=True)
     if len(abc)>0:
         fs.setABC(abc)
     #cbar=fig.colorbar(pc,orientation="horizontal")

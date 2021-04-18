@@ -62,7 +62,7 @@ for date in date0.timestamp + dateL*86400:
 		staL = detecQuake.getStaL(staInfos,date=date,f=f_0,isPre=False,f_new=f_1)
 		bTime=pyMFTCuda.preStaL(staL,date,deviceL=deviceL)
 	count+=1
-	dayQuakeL=pyMFTCuda.doMFTAll(staL,T3PSLL,bTime,quakeRefL=templateL,staInfos=staInfos,minChannel=minChannel,minMul=minMul,MINMUL=MINMUL,winTime=winTime,locator=locate.locator(staInfos),maxThreshold=maxThreshold,maxCC=maxCC)
+	dayQuakeL=pyMFTCuda.doMFTAll(staL,T3PSLL,bTime,quakeRefL=templateL,staInfos=staInfos,minChannel=minChannel,minMul=minMul,MINMUL=MINMUL,winTime=winTime,locator=locate.locator(staInfos),maxThreshold=maxThreshold,maxCC=maxCC,delta=0.02*decN)
 	quakeCCL+=dayQuakeL
 	if len(dayQuakeL)>0:
 		seism.saveSacs(staL, dayQuakeL, staInfos,\

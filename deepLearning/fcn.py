@@ -24,12 +24,15 @@ from numba import jit
 from .node_cell import ODELSTMR
 # this module is to construct deep learning network
 def defProcess():
-    config = tf.ConfigProto()
-    config.gpu_options.per_process_gpu_memory_fraction = 0.4
-    config.gpu_options.allow_growth = True
-    session =tf.Session(config=config)
-    K.set_session(session)
-
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    #tf.config.experimental.set_memory_growth(gpus[0], True)
+    tf.config.experimental.set_virtual_device_configuration(gpus[0],[tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5000*2)])
+    #config = tf.compat.v1.ConfigProto()
+    #config.gpu_options.per_process_gpu_memory_fraction = 0.4
+    #config.gpu_options.allow_growth = False
+    #session =tf.compat.v1.Session(config=config)
+    #K.set_session(session)
+defProcess()
 class LayerNormalization(Layer):
     """Layer Normalization Layer.
     
@@ -137,9 +140,9 @@ def rightRateNp(yinPos,youtPos,yinMax,youtMax,maxD=0.03,K=np, minP=0.5):
     hitCount= K.sum((d<threshold)*(yinMax>0.5)*(youtMax>minP))
     return hitCount/count
 '''
+globalFL = [0]
 
-
-def printRes_old(yin, yout):
+def printRes_old(yin, yout,resL=globalFL,isUpdate=False):
     #       0.01  0.8  0.36600 0.9996350
     strL   = 'maxD   minP hitRate rightRate F old'
     strfmt = '\n%5.3f %3.1f %7.5f %7.5f %7.5f'
@@ -152,6 +155,8 @@ def printRes_old(yin, yout):
             hitRate,rightRate,F = rateNp(\
                 yinPos,youtPos,yinMax,youtMax,maxD=maxD,minP=minP)
             strL += strfmt%(maxD, minP, hitRate, rightRate,F)
+            if maxD == 0.02 and minP==0.5 and (not np.isnan(F)) and isUpdate:
+                resL.append(F)
     print(strL)
     return strL
 
@@ -568,8 +573,19 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
     for threshold in [0.5,0.7,0.8]:
         corrLValid.plotPickErro(yout,tTrain,fileName=outputDir+'erro_valid.jpg',\
             threshold=threshold)
+        #resStr+= printRes(yTest, yout[:,:,level:level+1])+'\n'
+    resStr += '\n valid part\n'
+    for level in range(yout.shape[-2]):
+        print('level: %d'%(len(model.config.featureL)\
+            -yout.shape[-2]+level+1))
+        resStr +='\nlevel: %d'%(len(model.config.featureL)\
+            -yout.shape[-2]+level+1)
+        resStr+= printRes_old(yTest, yout[:,:,level:level+1])+'\n'
     xTest, yTest, tTest =corrLTest(np.arange(showCount))
     yout=model.predict(xTest)
+    for threshold in [0.5,0.7,0.8]:
+        corrLTest.plotPickErro(yout,tTrain,fileName=outputDir+'erro_test.jpg',\
+                threshold=threshold)
     resStr += '\n test part\n'
     for level in range(yout.shape[-2]):
         print('level: %d'%(len(model.config.featureL)\
@@ -577,7 +593,6 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
         resStr +='\nlevel: %d'%(len(model.config.featureL)\
             -yout.shape[-2]+level+1)
         resStr+= printRes_old(yTest, yout[:,:,level:level+1])+'\n'
-        #resStr+= printRes(yTest, yout[:,:,level:level+1])+'\n'
     head = outputDir+'resStr_'+\
         obspy.UTCDateTime(time.time()).strftime('%y%m%d-%H%M%S')
     with open(head+'.log','w') as f:
@@ -588,10 +603,7 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
         sigma = sigmaL[i]
         trainTestLoss = trainTestLossL[i]
         np.savetxt('%s_sigma%.3f_loss'%(head,sigma),np.array(trainTestLoss))
-    for threshold in [0.5,0.7,0.8]:
-        corrLTest.plotPickErro(yout,tTrain,fileName=outputDir+'erro_test.jpg',\
-                threshold=threshold)
-    model.save(head+'_model')
+    model.save(head+'_model.h5')
     iL=np.arange(0,showCount,showD)
     for level in range(-1,-model.config.deepLevel-1,-1):
         model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
@@ -660,7 +672,7 @@ def trainAndTestSq(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tT
     for threshold in [0.5,0.7,0.8]:
         corrLTest.plotPickErro(yout,tTrain,fileName=outputDir+'erro_test.jpg',\
                 threshold=threshold)
-    model.save(head+'_model')
+    model.save(head+'_model',save_format='h5')
     iL=np.arange(0,showCount,showD)
     for level in range(-1,-model.config.deepLevel-1,-1):
         model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
@@ -751,6 +763,18 @@ class fcnConfig:
             self.featureL      = [64,128,256,512,256*3,256*3,1028,1028]
             self.featureL      = [32,48,86,64*3,128,256,128*3,512]
             self.featureL      = [16,32,48,64,128,64*3,256,512,1024]
+            self.featureL      = [24,48,96,128,256,384,512,1024,2048]
+            self.featureL      = [16,32,64,96,192,256,384,512,1024]
+            self.featureL      = [24,48,64,96,128,192,256,384,512]
+            self.featureL      = [24,48,64,96,128,192,256,256,384]
+            self.featureL      = [16,32,48,64,96,128,198,256,256]
+            self.featureL      = [16,32,48,64,96,128,198,256,256]
+            self.featureL      = [12,24,32,48,64,96,128,198,256]
+            self.featureL      = [8,16,24,32,48,64,96,128,198]
+            self.featureL      = [8,12,16,24,32,48,64,96,128]
+            self.featureL      = [6,8,12,16,24,36,48,64,96]
+            self.featureL      = [8,12,16,24,36,48,64,96,128]
+            self.featureL      = [6,8,12,16,24,32,48,64,96]
             self.strideL       = [(2,1),(4,1),(4,1),(4,1),(4,1),(4,1),(6,1),\
             (4,1),(2,1),(2,1),(2,1)]
             self.strideL       = [(2,1),(3,1),(2,1),(4,1),(2,1),(4,1),(2,1),\
@@ -770,6 +794,8 @@ class fcnConfig:
             self.activationL  = ['relu','relu','relu','relu','relu',\
             'relu','relu','relu','relu','relu','relu']
             self.activationL  = ['relu','relu']+['swish' for i in range(5)]+['relu','relu']
+            #self.activationL  = ['relu','relu','relu','relu','relu',\
+            #'relu','relu','relu','relu','relu','relu']
             self.poolL        = [AveragePooling2D,AveragePooling2D,MaxPooling2D,\
             AveragePooling2D,AveragePooling2D,MaxPooling2D,MaxPooling2D,AveragePooling2D,\
             MaxPooling2D,AveragePooling2D,MaxPooling2D]
@@ -836,7 +862,7 @@ class fcnConfig:
             self.featureL      = [12,24,32,64,128,192,192*3]
             self.featureL      = [12,24,32,64,128,192,192*3]
             self.featureL      = [12,24,48,96,120,144,192]
-            self.featureL      = [16,32,48,96,192,96*4,96*6]
+            self.featureL      = [16,32,64,128,256,128*4,128*8]
             #self.featureL      = [6,12,24,48,96,192,288]
             self.strideL       = [(2,1),(2,1),(2,1),(2,1),(5,1),(5,1),(5,1)]
             #self.kernelL       = [(4,1),(4,1),(4,1),(4,1),(10,1),(10,1),(10,1),\
@@ -877,7 +903,7 @@ class fcnConfig:
             self.featureL      = [4*6,8*5,16*4,32*3,64*2,192*1,192*3*1]#old setting
             self.featureL      = [8*4,16*3,16*5,32*4,64*3,64*5,192*3*1]#
             self.featureL      = [12*4,24*3,48*2,48*3,96*2,120*2,192]
-            self.featureL      = [12*6,24*4,48*3,48*3,96*2,120*4,192*4]
+            self.featureL      = [12*6,24*4,48*4,96*4,128*3,256*3,512*2]
             #self.featureL      = [16,32,48,96,192,96*3,96*4]
             #self.featureL      = [6,12,24,48,96,192,288]
             self.strideL       = [(2,1),(2,1),(2,1),(2,1),(5,1),(5,1),(5,1)]
@@ -1024,7 +1050,8 @@ class model(Model):
         XYT = xyt(x,y,t)
         self.trainByXYT(XYT,**kwarg)
     def trainByXYT(self,XYT,N=2000,perN=200,batchSize=None,xTest='',\
-        yTest='',k0 = 1e-6,t='',count0=3):
+        yTest='',k0 = 1e-6,t='',count0=3,resL=globalFL):
+        resL.append(0)
         if k0>1:
             K.set_value(self.optimizer.lr, k0)
         indexL = range(len(XYT))
@@ -1053,12 +1080,25 @@ class model(Model):
                         'sigma: ',XYT.timeDisKwarg['sigma'],\
                         'w: ',self.config.lossFunc.w, \
                         'no sampleRate:', 1 - np.sign(sampleDone).mean(),\
-                        'sampleTimes',sampleDone.mean())
-                    resStr+='\n %d train loss : %f valid loss :%f'%(i,lossTrain,lossTest)
+                        'sampleTimes',sampleDone.mean(),'last F:',resL[-1],'min Loss:',lossMin)
+                    resStr+='\n %d train loss : %f valid loss :%f F: %f'%(i,lossTrain,lossTest,resL[-1])
+                    lossTest-=resL[-1]
                     trainTestLoss.append([i,lossTrain,lossTest])
+                    if i%30==0 and i>10:
+                        youtTrain = 0
+                        youtTest  = 0
+                        youtTrain = self.predict(xTrain)
+                        youtTest  = self.predict(xTest)
+                        for level in range(youtTrain.shape[-2]):
+                            print('level',len(self.config.featureL)\
+                                -youtTrain.shape[-2]+level+1)
+                            resStr +='\nlevel: %d'%(len(self.config.featureL)\
+                                -youtTrain.shape[-2]+level+1)
+                            resStr+='\ntrain '+printRes_old(yTrain, youtTrain[:,:,level:level+1])
+                            resStr+='\ntest '+printRes_old(yTest, youtTest[:,:,level:level+1],isUpdate=True)
                     if lossTest >= lossMin:
                         count -= 1
-                    if lossTest > 3*lossMin:
+                    if lossTest > 3*lossMin and lossMin>0:
                         self.set_weights(w0)
                         #count = count0
                         print('reset to smallest')
@@ -1071,19 +1111,7 @@ class model(Model):
                         break
                     #print(self.metrics)
                     
-                    if i%30==0 and i>10:
-                        youtTrain = 0
-                        youtTest  = 0
-                        youtTrain = self.predict(xTrain)
-                        youtTest  = self.predict(xTest)
-                        for level in range(youtTrain.shape[-2]):
-                            print('level',len(self.config.featureL)\
-                                -youtTrain.shape[-2]+level+1)
-                            resStr +='\nlevel: %d'%(len(self.config.featureL)\
-                                -youtTrain.shape[-2]+level+1)
-                            resStr+='\ntrain '+printRes_old(yTrain, youtTrain[:,:,level:level+1])
-                            resStr+='\ntest '+printRes_old(yTest, youtTest[:,:,level:level+1])
-            if i%50==0:
+            if i%100==0:
                 print('learning rate: ',self.optimizer.lr)
                 K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.95)
             if i>10 and i%50==0:

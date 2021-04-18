@@ -26,7 +26,8 @@ def convertFileLst(fileName):
             f.write('\n')
 
 class filePath:
-    himaComp= {'E':'3','N':'2','Z':'1'}
+    hima2Comp= {'E':'3','N':'2','Z':'1'}
+    hima3Comp= {'E':'2','N':'1','Z':'0'}
     def __init__(self,himaFile='fileLst_New'):
         self.himaDir = {}
         if os.path.exists(himaFile):
@@ -50,12 +51,14 @@ class filePath:
         timeL = np.arange(time0,time1,3600).tolist()
         timeL.append(time1)
         fileL = []
-        for staDir in staDirL:
-            for time in timeL:
+        for time in timeL:
+            for staDir in staDirL:
                 tmpL = self.getFile(net,sta,comp,time,staDir,nameMode= nameMode)
                 for tmp in tmpL:
                     if tmp not in fileL:
                         fileL.append(tmp)
+                if len(tmpL)>0:
+                    break
         return fileL
     def getFile(self,net,sta,comp,time,staDir,nameMode=''):
         if not isinstance(time,UTCDateTime):
@@ -66,15 +69,21 @@ class filePath:
             return self.getFileFunc[nameMode](net,sta,comp,time,staDir)
         if nameMode =='hima':
             pattern = '%s/%s.*.%s.m'%(staDir,time.strftime('R%j.01/%H/%y.%j')\
-                ,filePath.himaComp[comp[-1]])
-        elif nameMode in ['GS','NM']:
+                ,filePath.hima2Comp[comp[-1]])
+        if nameMode =='hima23':
+            pattern0 = '%s/%s.*.%s.m'%(staDir,time.strftime('R%j.01/%H/%y.%j')\
+                ,filePath.hima2Comp[comp[-1]])
+            pattern1 = '%s/%s???????.%s.SAC'%(staDir,time.strftime('%Y%j/%H')\
+                ,filePath.hima3Comp[comp[-1]])
+            return glob(pattern0)+glob(pattern1)
+        if nameMode in ['GS','NM']:
             pattern = '%s/%s/%s.%s.%s.%s.SAC'%(staDir,time.strftime('%Y%m/'),\
                 net,sta,time.strftime('%Y%m%d'),comp)
-        elif nameMode == 'YP':
+        if nameMode == 'YP':
             #staDir/2009/R304/NE67.2009.304.00.00.00.BHZ.sac
             pattern = '%s/%s/%s.%s.*%s.sac'%(staDir,time.strftime('%Y/R%j'),sta,\
                 time.strftime('%Y.%j'),comp)
-        elif nameMode == 'CEA':
+        if nameMode == 'CEA':
             if True:
                 time = time+8*3600
                 pattern = '%s/%s/%s*%s.sac'%(staDir,time.strftime('%Y/%j'),sta,comp)
@@ -82,29 +91,29 @@ class filePath:
             #staDir/2009/R304/NE67.2009.304.00.00.00.BHZ.sac
             #2010/001/ANQ.2009365160003.AH.00.D.BHN.sac
                 pattern = '%s/%s/%s*%s.sac'%(staDir,time.strftime('%Y/%j'),sta,comp)
-        elif nameMode == 'CEAO':
+        if nameMode == 'CEAO':
             time = time+8*3600
             pattern = '%s/%s/%s*%s.sac'%(staDir,time.strftime('%Y%m%d/'),sta,comp)
-        elif nameMode =='YNSC':
+        if nameMode =='YNSC':
             pattern='%s/%s/%s/%s/%s.D/%s.%s.00.%s.D.%s.%s'\
             %(staDir,time.strftime('%Y'),net,sta,comp,net,sta,comp,\
                 time.strftime('%Y'),time.strftime('%j'))
-        elif nameMode =='XU':
+        if nameMode =='XU':
             sta = sta.split('_')[0]
             pattern='%s/%s/%s*%s.sac'\
             %(staDir,sta,time.strftime('%Y/%Y%m%d/%Y%m%d'),comp)
-        elif nameMode =='RDH':
+        if nameMode =='RDH':
             sta = sta.split('_')[0]
             #2000015_220000_090be_1_2.msd
             pattern='%s/%s/%s%s.msd'\
             %(staDir,sta,time.strftime('%Y%j_%H0000_*'),filePath.himaComp[comp[-1]])
-        elif nameMode =='RD':
+        if nameMode =='RD':
             sta = sta.split('_')[0]
             #2000015_220000_090be_1_2.msd
             pattern='%s/%s/%s.%s.00.DN%s.%s.SAC'\
             %(staDir,sta,net,sta,comp[-1],time.strftime('%Y%m%d'))
-        elif nameMode =='xinxilan':
-            pattern='%s/%s/%s.%s.10.%s.SAC'\
+        if nameMode =='xinxilan':
+            pattern='%s/%s/%s.%s.*.%s.SAC'\
             %(staDir,time.strftime('%Y%m%d'),net,sta,comp)
             #print(pattern)
         return glob(pattern)
@@ -115,32 +124,38 @@ class filePath:
         if nameMode in self.getStaDirLFunc:
             return self.getStaDirLFunc[nameMode](net,sta)
         if nameMode in ['GS','NM']:
-            staDirL = ['/media/jiangyr/shanxidata21/nmSacData/'+net+\
+            return ['/media/jiangyr/shanxidata21/nmSacData/'+net+\
             '.'+sta+'/']
         if nameMode == 'YP':
-            staDirL = ['/media/commonMount/data2/NECESSARRAY_SAC/NEdata*/%s/'%sta]
+            return ['/media/commonMount/data2/NECESSARRAY_SAC/NEdata*/%s/'%sta]
         if nameMode == 'CEA':
-            staDirL = ['/net/CEA/CEA1s/CEA/%s/%s/'%(net,sta),'/net/CEA/CEA1s/CEA_old/%s/%s/'%(net,sta)]
+            return ['/net/CEA/CEA1s/CEA/%s/%s/'%(net,sta),'/net/CEA/CEA1s/CEA_old/%s/%s/'%(net,sta)]
         staName = net + ' ' + sta
         if nameMode == 'CEAO':
-            staDirL = ['/net/CEA/CEA_*/']
-        if staName in self.himaDir:
-            staDirL = self.himaDir[staName]
+            return ['/net/CEA/CEA_*/']
+        if nameMode=='hima' :
+            if staName in self.himaDir:
+                return self.himaDir[staName]
+        if nameMode=='hima23' :
+            if staName in self.himaDir:
+                return self.himaDir[staName]+['/HOME/jiangyr/hima3_sac/%s/'%sta]
+            else:
+                return ['/HOME/jiangyr/hima3_sac/%s/'%sta]
         if nameMode =='YNSC':
             if net =='YN':
-                staDirL = ['/net/CEA/CEA0/net_yn/']
-                staDirL = ['/media/commonMount/CEA0/net_yn/']
+                return ['/net/CEA/CEA0/net_yn/']
+                return ['/media/commonMount/CEA0/net_yn/']
             elif net == 'SC':
-                staDirL = ['/net/CEA/CEA1/net_sc/']
-                staDirL = ['/media/commonMount/CEA1/net_sc/']
+                return ['/net/CEA/CEA1/net_sc/']
+                return ['/media/commonMount/CEA1/net_sc/']
         if nameMode =='XU':
-            staDirL = ['/HOME/jiangyr/YNSCMOVE/']
+            return ['/HOME/jiangyr/YNSCMOVE/']
         if nameMode =='RDH':
-            staDirL=['/HOME/jiangyr/XA_HSR_DATA/201908DX_BB/MSD/']
+            return ['/HOME/jiangyr/XA_HSR_DATA/201908DX_BB/MSD/']
         if nameMode =='RD':
-            staDirL =['/HOME/jiangyr/XA_HSR_DATA/201908DX/sac/']
+            return ['/HOME/jiangyr/XA_HSR_DATA/201908DX/sac/']
         if nameMode =='xinxilan':
-            staDirL =['/home/jiangyr/Surface-Wave-Dispersion/xinxilan2/']
+            return ['/home/jiangyr/Surface-Wave-Dispersion/xinxilan2/']
             #staDirL =['/media/jiangyr/YNSCMOVE/sac']
         return staDirL
     

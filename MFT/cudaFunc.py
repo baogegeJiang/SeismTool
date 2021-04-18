@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from scipy import signal
 '''
 this module is designed to calculate correlation and weak-max by torch
 '''
@@ -7,12 +8,11 @@ this module is designed to calculate correlation and weak-max by torch
 tentype=torch.cuda.HalfTensor
 torch.set_grad_enabled(False)#*******
 dtype=torch.float16
+torch.float16
 nptype=np.float16
 nptypeO=np.float32
 minF=0.0##1e-7
 maxF=5e4
-minFT=torch.tensor(minF)
-maxFT=torch.tensor(maxF)
 convert=2e-3
 isHalf=False
 if not isHalf:
@@ -106,14 +106,53 @@ def torchcorrnn(a,b):
     aT=aT.pow(2)
     bT[0,0,:]=1
     ac=torch.nn.functional.conv1d(aT,bT)
-    ac=torch.where(ac==0,torch.tensor(1,dtype=dtype),ac)
-    ac=torch.rsqrt(ac+minF)
-    c*=ac
+    #print(ac.shape)
+    #ac=torch.where(ac==0,torch.tensor(1,dtype=aT.dtype,device=ac.device),ac)
+    ac[ac==0]=1
+    #ac=torch.rsqrt(ac+minF)
+    c*=torch.rsqrt(ac)
     #c=torch.where(torch.isnan(c),torch.tensor(-1000.0,dtype=dtype),c)
     #c=torch.where(torch.isinf(c),torch.tensor(-1000.0,dtype=dtype),c)
     return c[0,0,:],c[0,0,c[0,0,:]!=0].mean().cpu().numpy(),\
             c[0,0,c[0,0,:]!=0].std().cpu().numpy()
-
+def torchcorrnp(a,b):
+    '''
+    directly calculate cross-correlation based on torch.nn.functional.conv1d
+    '''
+    tb=np.linalg.norm(b)
+    if tb !=0:
+        b=b*(1/tb)
+    c=np.correlate(a,b,'valid')
+    #signal.correlate()
+    a=a**2
+    b[:]=1
+    ac=np.correlate(a,b,'valid')
+    #print(ac.shape)
+    ac=ac**0.5
+    c/=ac
+    c[np.isnan(c)]=-1000
+    #c=torch.where(torch.isnan(c),torch.tensor(-1000.0,dtype=dtype),c)
+    #c=torch.where(torch.isinf(c),torch.tensor(-1000.0,dtype=dtype),c)
+    return c,c.mean(),c.std()
+def torchcorrns(a,b):
+    '''
+    directly calculate cross-correlation based on torch.nn.functional.conv1d
+    '''
+    tb=np.linalg.norm(b)
+    if tb !=0:
+        b=b*(1/tb)
+    c=signal.correlate(a,b,'valid','direct')
+    #signal.correlate()
+    a=a**2
+    b[:]=1
+    ac=signal.correlate(a,b,'valid','direct')
+    #print(ac.shape)
+    ac=ac**0.5
+    c/=ac
+    c[np.isnan(c)]=-1000
+    #c=torch.where(torch.isnan(c),torch.tensor(-1000.0,dtype=dtype),c)
+    #c=torch.where(torch.isinf(c),torch.tensor(-1000.0,dtype=dtype),c)
+    return c,c.mean(),c.std()
 def torchcorrnnNorm(a,b):
     '''
     directly calculate cross-correlation based on torch.nn.functional.conv1d
