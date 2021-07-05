@@ -1,3 +1,4 @@
+from re import L
 from torch.utils.data import Dataset, DataLoader
 
 class Reader(Dataset):
@@ -46,3 +47,14 @@ class TomoCal(Reader):
                 continue
             resL.append(self.func(eL[i],eL[j],T3L[i],T3L[j], *self.args,**self.kwargs) )
         return  resL
+
+class hander(Dataset):
+    def __init__(self, h,L):
+        #定义好 image 的路径
+        self.h =h
+        self.L = L
+    def __getitem__(self, index):
+        self.h.handleDay(*self.L[index])
+        return 0
+    def __len__(self):
+        return len(self.L)

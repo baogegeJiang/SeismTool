@@ -17,8 +17,11 @@ import random
 import sys
 sys.path.append('/home/jiangyr/Surface-Wave-Dispersion/')
 from SeismTool import deepLearning,io
-from SeismTool.io import sacTool
+from SeismTool.io import sacTool,seism
 from SeismTool.plotTool import figureSet as fs
+
+seism.printDetail=False
+
 genModel0 = deepLearning.fcn.genModel0 
 os.environ["MKL_NUM_THREADS"] = "32"
 fileDir='/home/jiangyr/accuratePickerV3/testNew/'

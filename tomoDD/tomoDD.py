@@ -12,8 +12,9 @@ import os
 from scipy import interpolate,stats
 import matplotlib.colors as colors
 from SeismTool.plotTool import figureSet as fs
+from scipy import interpolate as interp
 
-
+figType='eps'
 cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
 cmapRWB = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/rwb2.cpt')
 faultL = mt.readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
@@ -27,6 +28,7 @@ def setMap(m,posL=[False,True,True,False]):
 
 #from cudaFunc import  torchcorrnn as xcorr
 SPRatio=0.5
+SPRatio=1
 wkdir='TOMODD'
 def preEvent(quakeL,staInfos,filename='abc',R=[-90,90,-180,180]):
     if filename=='abc':
@@ -42,7 +44,7 @@ def preEvent(quakeL,staInfos,filename='abc',R=[-90,90,-180,180]):
                 Y=getYmdHMSj(UTCDateTime(quake['time']))
                 f.write("%s  %s%02d   %.4f   %.4f    % 7.3f % 5.2f   0.15    0.51  % 5.2f   % 8d %1d\n"%\
                     (Y['Y']+Y['m']+Y['d'],Y['H']+Y['M']+Y['S'],int(quake['time']*100)%100,\
-                        (R[0]+R[1])/2+i/10e5,(R[2]+R[3])/2+i/10e5,max(0,quake['dep']),ml,1,i,0))
+                        (R[0]+R[1])/2+i/10e5,(R[2]+R[3])/2+i/10e5,max(-30,quake['dep']),ml,1,i,0))
                 continue
             if quake['ml']!=None :
                 if quake['ml']>-2:
@@ -50,7 +52,7 @@ def preEvent(quakeL,staInfos,filename='abc',R=[-90,90,-180,180]):
             Y=getYmdHMSj(UTCDateTime(quake['time']))
             f.write("%s  %s%02d   %.4f   %.4f    % 7.3f % 5.2f   0.15    0.51  % 5.2f   % 8d %1d\n"%\
                 (Y['Y']+Y['m']+Y['d'],Y['H']+Y['M']+Y['S'],int(quake['time']*100)%100,\
-                    quake['la'],quake['lo'],max(0,quake['dep']),ml,1,i,0))
+                    quake['la'],quake['lo'],max(-30,quake['dep']),ml,1,i,0))
 
 def preABS(quakeL,staInfos,filename='abc',isNick=True,notTomo=False,R=[-90,90,-180,180]):
     if filename=='abc':
@@ -105,7 +107,7 @@ def preSta(staInfos,filename='abc',isNick=True):
             f.write('%s %7.4f %8.4f %.0f\n'\
                 %(staName,staInfo['la'],staInfo['lo'],staInfo['dep']))
 
-def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
+def preDTCC_old(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
     perCount=500,filename='abc',isNick=True,minDP=3/0.7,R=[-90,90,-180,180]):
     if filename=='abc':
         filename='%s/input/dt.cc'%wkdir
@@ -171,7 +173,124 @@ def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
                             staName,dt,maxC*maxC*SPRatio,'S'))
                         countL[i]+=1
                         countL[j]+=1
-
+def preDTCC(quakeL,staInfos,dTM,maxD=0.5,minSameSta=5,minPCC=0.75,minSCC=0.75,\
+    perCount=500,filename='abc',isNick=True,minDP=3/0.7,R=[-90,90,-180,180]):
+    if filename=='abc':
+        filename='%s/input/dt.cc'%wkdir
+    N=len(quakeL)
+    countL=np.zeros(N)
+    with open(filename,'w+') as f:
+        for i in range(len(quakeL)):
+            print(i)
+            quake0 = quakeL[i]
+            if not quake0.inR(R):
+                continue
+            indexL0=quake0.staIndexs()
+            time0=quake0['time']
+            if countL[i]>perCount:
+                continue
+            jL=np.arange(i+1,len(quakeL))
+            #np.random.shuffle(jL) 
+            strLP = []
+            ccLP  = []
+            jLP   = []
+            strLS = []
+            ccLS  = []
+            jLS   = []
+            for j in jL:
+                quake1=quakeL[j]
+                if dTM[i][j]==None:
+                    continue
+                if not quake1.inR(R):
+                    continue
+                if quake0.distaz(quake1).getDelta()>maxD:
+                    continue
+                indexL1=quake1.staIndexs()
+                time1=quakeL[j]['time']
+                sameIndexL =[]
+                for I in indexL0:
+                    if I in indexL1:
+                        sameIndexL.append(I)
+                if len(sameIndexL)<minSameSta:
+                    continue                  
+                for dtD in dTM[i][j]:
+                    dt,maxC,staIndex,phaseType=dtD
+                    if maxC>2:
+                        continue
+                    w = 3
+                    if maxC < 0.7:
+                        dt = 0
+                        w  = 1
+                    if maxC < 0.6:
+                        w  = 0.5
+                    if maxC < 0.5:
+                        w  = 0.2
+                    if maxC < 0.4:
+                        w  = 0.1
+                    if np.abs(dt)>0.3:
+                        dt = 0
+                        w  = 0.5
+                    index0 = indexL0.index(staIndex)
+                    index1 = indexL1.index(staIndex)
+                    if isNick:
+                        staName=staInfos[staIndex]['nickName']
+                    else:
+                        staName=staInfos[staIndex]['sta']
+                    if phaseType==1 and maxC>minPCC:
+                        if np.abs(quake0.records[index0]['pTime']-time0)<minDP:
+                            continue
+                        if np.abs(quake1.records[index1]['pTime']-time1)<minDP:
+                            continue
+                        dt=quake0.records[index0]['pTime']-time0-(quake1.records[index1]['pTime']-time1+dt)
+                        strLP.append("% 9d % 9d %s %8.3f %6.4f %s\n"%(i,j,\
+                            staName,dt,w*maxC,'P'))
+                        ccLP.append(maxC)
+                        jLP.append(j)
+                    if phaseType==2 and maxC>minSCC:
+                        if np.abs(quake0.records[index0]['sTime']-time0)<minDP*1.7:
+                            continue
+                        if np.abs(quake1.records[index1]['sTime']-time1)<minDP*1.7:
+                            continue
+                        dt=quake0.records[index0]['sTime']-time0-(quake1.records[index1]['sTime']-time1+dt)
+                        strLS.append("% 9d % 9d %s %8.3f %6.4f %s\n"%(i,j,\
+                            staName,dt,w*maxC*SPRatio,'S'))
+                        ccLS.append(maxC)
+                        jLS.append(j)
+            perCountTmp = int((perCount-countL[i])*0.5)
+            count=0
+            for ii in (-np.array(ccLP)).argsort():
+                count+=1
+                f.write(strLP[ii])
+                countL[i]+=1
+                countL[jLP[ii]]+=1
+                if count>=perCountTmp:
+                    break
+                if ccLP[ii]<0.7:
+                    if count>=perCountTmp*0.5:
+                        break
+                if ccLP[ii]<0.55:
+                    if count>=perCountTmp*0.3:
+                        break
+                if ccLP[ii]<0.45:
+                    if count>=perCountTmp*0.2:
+                        break
+            count=0
+            for ii in (-np.array(ccLS)).argsort():
+                count+=1
+                f.write(strLS[ii])
+                countL[i]+=1
+                countL[jLS[ii]]+=1
+                if count>=perCountTmp:
+                    break
+                if ccLS[ii]<0.7:
+                    if count>=perCountTmp*0.5:
+                        break
+                if ccLS[ii]<0.55:
+                    if count>=perCountTmp*0.3:
+                        break
+                if ccLS[ii]<0.45:
+                    if count>=perCountTmp*0.2:
+                        break
 
 def preMod(R,nx=8,ny=8,nz=12,filename='abc'):
     if filename=='abc':
@@ -186,6 +305,9 @@ def preMod(R,nx=8,ny=8,nz=12,filename='abc'):
         vp=np.array([2   , 4,  5,    5.6,5.88,  6.2,    6.4, 6.42, 6.45, 6.8,7.0,    7.75, 7.76,8.2])
         #vs=[2.4,2.67, 3.01,  4.10, 4.24, 4.50, 5.00, 5.15, 6.00,6.1]
         z =         [-150, -5, 0,      5,  10,   15,      20,  25,   30,  35, 40,     50,   60,  200]
+        vp=np.array([2   , 4,  5,    5.88,      6.4, 6.45, 7.0,    7.75, 7.76, 8.0,8.2])
+        z =         [-150, -5, 0,    10,         20,   30,  40,     50,   65,   80,200]
+        vs=vp/1.71
         #vp=np.array([2   , 4,  5,    5.88,  6.2,    6.4,  6.45,  7.0,    7.75, 7.76,8.2])
         #vs=[2.4,2.67, 3.01,  4.10, 4.24, 4.50, 5.00, 5.15, 6.00,6.1]
         #z =         [-150, -5, 2.5,    7.5,    12,      20,   30,   40,     50,   60,  200]
@@ -468,7 +590,7 @@ def analyDTM(dTM,resFile):
     pCCL=[]
     sL=[]
     sCCL=[]
-    bins=[np.arange(-1,1,0.02),np.arange(0.6,1,0.03),]
+    bins=[np.arange(-1,1,0.02),np.arange(0.5,1,0.03),]
     for event in dTM:
         for pair in event:
             if isinstance(pair,type(None)):
@@ -508,7 +630,47 @@ def analyDTM(dTM,resFile):
     fig.tight_layout()
     fs.setABC('(b)',c='w')
     plt.savefig(resFile,dpi=300)
+def analyDTM4Quake(dTM,resFile,quakeL,minCC=-1,maxD=1000):
+    plt.close()
+    countQL = np.zeros(len(dTM))
+    countRL = np.zeros(len(dTM))
+    maxD*=110
+    for i in range(len(dTM)):
+        print(i)
+        for j in range(len(dTM)):
+            if not isinstance(dTM[i][j],type(None)):
+                if quakeL[i].dist(quakeL[j])>maxD:
+                    continue
+                cc = np.array(dTM[i][j]).reshape([-1,4])[:,1]
+                cc = cc[cc>minCC]
+                if len(cc)>0:
+                    countQL[i]+=1
+                    countQL[j]+=1
+                    countRL[i]+=len(cc)
+                    countRL[j]+=len(cc)
+    countQL[countQL<4]=0.01#np.nan
+    countRL[countRL<8]=0.01#np.nan
+    paraL = quakeL.paraL()
+    plt.figure(figsize=[8,25])
+    plt.subplot(4,1,1)
+    plt.scatter(paraL['lo'],paraL['la'],c=np.log(countQL)/np.log(10),s=0.3)
+    plt.colorbar()
+    plt.subplot(4,1,2)
+    plt.scatter(paraL['lo'],paraL['la'],c=np.log(countRL)/np.log(10),s=0.3)
+    plt.colorbar()
+    plt.subplot(4,1,3)
+    plt.hist(countQL)
+    plt.subplot(4,1,4)
+    plt.hist(countRL)
+    print('countQ > 5',(countQL>4).sum())
+    print('countR > 10',(countRL>8).sum())
+    plt.savefig(resFile,dpi=300)
 
+
+
+
+
+            
 def getReloc(quakeL,filename='abc'):
     if filename=='abc':
         filename='%s/tomoDD.reloc'%wkdir
@@ -583,6 +745,7 @@ class Model(Model0):
         if not os.path.exists(resDir):
             os.makedirs(resDir)
         ABC='aaaabcdefghijklmnopqrst'
+        ABC='aaaabcdafgbcdefmnopqrst'
         for i in range(self.zN):
             name0='$v$/(km/s)'
             plt.close()
@@ -604,15 +767,24 @@ class Model(Model0):
                 continue
             #x,y=m(*np.meshgrid(lo,la))
             x,y=m(lo,la)
-            if self.mode in ['dVp','dVs','dVpr','dVsr']:
+            if self.mode in ['dVp','dVs','dVpr','dVsr','dVpM','dVsM']:
                 cmapRWB.set_bad('#A9A9A9', 0)
-                c=m.pcolormesh(x,y,v,vmin=-0.05,vmax=0.05,cmap=cmapRWB,shading='flat',rasterized=True)
+                if 'M' not in self.mode:
+                    c=m.pcolormesh(x,y,v,vmin=-0.05,vmax=0.05,cmap=cmapRWB,shading='flat',rasterized=True)
+                    pos ='HBDZKXPer'
+                else:
+                    V = np.abs(v[np.isnan(v)==False]).max()
+                    c=m.pcolormesh(x,y,v,vmin=-V,vmax=V,cmap=cmap,shading='flat',rasterized=True)
+                    pos ='HBDZKX'
                 #cmapRWB
                 name0='d$v$/$v$0'
-                pos ='HBDZKXPer'
+                #pos ='HBDZKXPer'
             else:
                 cmap.set_bad('#A9A9A9', 0)
-                c=m.pcolormesh(x,y,v,cmap=cmap,shading='flat',rasterized=True)
+                V = np.abs(v[np.isnan(v)==False])
+                VM = V.mean()
+                dV = min(np.abs(V-VM).max(),VM*0.15)
+                c=m.pcolormesh(x,y,v,vmin=VM-dV,vmax=VM+dV,cmap=cmap,shading='flat',rasterized=True)
                 pos ='HBDZKX'
             R =self.R
             plt.gca().set(facecolor='#A9A9A9')
@@ -623,12 +795,12 @@ class Model(Model0):
                 pL=self.quakeL0.paraL(req =req)
                 eX,eY,=m(np.array(pL['lo']),np.array(pL['la']))
                 #ml,dep=[np.array(pL['ml']),np.array(pL['dep'])]
-                plt.plot(eX,eY,'.r',markersize=0.01,linewidth=0.01)
+                plt.plot(eX,eY,'.r',markersize=0.1,linewidth=0.01)
             if len(self.quakeL)>0:
                 pL=self.quakeL.paraL(req =req)
                 eX,eY,=m(np.array(pL['lo']),np.array(pL['la']))
                 #ml,dep=[np.array(pL['ml']),np.array(pL['dep'])]
-                plt.plot(eX,eY,'.k',markersize=0.01,linewidth=0.01)
+                plt.plot(eX,eY,'.k',markersize=0.1,linewidth=0.01)
             setMap(m,posL=[True,False,True,False])
             #plt.gca().yaxis.set_ticks_position('left')
             #plt.gca().xaxis.set_ticks_position('top')
@@ -638,7 +810,7 @@ class Model(Model0):
             plt.title('%s ${z}$=%.1f km'%(ABC[i],z),y=-0.5)
             fig.tight_layout()
             fs.setColorbar(c,label=name0,pos=pos)
-            plt.savefig('%s/%s_%.1f.eps'%(resDir,self.mode,z),dpi=300)
+            plt.savefig('%s/%s_%.1f.%s'%(resDir,self.mode,z,figType),dpi=300)
 
 class model:
     def __init__(self,workDir,quakeL=[],quakeL0=[],isSyn=False,isDWS=False,minDWS=-1,R=[-90,90,-180,180],vR=''):
@@ -681,6 +853,12 @@ class model:
             self.vp.v[self.pDWS.v<minDWS]=np.nan
             self.vs.v[self.sDWS.v<minDWS]=np.nan
             self.modelL+=[self.pDWS,self.sDWS]
+        if not isSyn:
+            dVpM = self.vp.v/dianXiVp(zL).reshape([1,1,-1])-1
+            dVsM = self.vs.v/dianXiVs(zL).reshape([1,1,-1])-1
+            self.dVpM=Model(loN,laN,zN,loL,laL,zL,dVpM,'dVpM',quakeL=quakeL,quakeL0=quakeL0,R=R)
+            self.dVsM=Model(loN,laN,zN,loL,laL,zL,dVsM,'dVsM',quakeL=quakeL,quakeL0=quakeL0,R=R)
+            self.modelL += [self.dVpM,self.dVsM]
         if isSyn:
             realFile = workDir + '../Syn/MOD'
             with open(realFile) as f:
@@ -747,19 +925,21 @@ def plotDistPS(quakes,staInfos,filename,markersize=0.03):
     plt.ylabel('time/s')
     plt.savefig(filename,dpi=300)
 
-def plotDistPSFreq(quakes,staInfos,filename,markersize=0.03):
+def plotDistPSFreq(quakes,staInfos,filename,*argv):
     pDist,pTime,sDist,sTime=quakes.dis_time(staInfos)
     plt.close()
     plt.figure(figsize=(7,3))
     plt.subplot(1,2,1)
-    plt.hist2d(pDist,pTime,bins=(np.arange(0,250,1),np.arange(0,60,0.1)))
+    #plt.hist2d(pDist,pTime,bins=(np.arange(0,250,1),np.arange(0,60,0.1)))
+    plt.hist2d(pDist,pTime,bins=(np.arange(0,500,1),np.arange(0,120,0.1)))
     plt.xlabel('distance/km')
     plt.ylabel('time/s')
     fs.setABC('(a)',c='w')
     cax=fs.getCAX(size="7%", pad="30%")
     plt.colorbar(label='count', cax=cax, orientation="horizontal")
     plt.subplot(1,2,2)
-    plt.hist2d(sDist,sTime,bins=(np.arange(0,250,1.5),np.arange(0,60,0.3)))
+    #plt.hist2d(sDist,sTime,bins=(np.arange(0,250,1.5),np.arange(0,60,0.3)))
+    plt.hist2d(sDist,sTime,bins=(np.arange(0,500,1.5),np.arange(0,120,0.3)))
     plt.xlabel('distance/km')
     plt.ylabel('time/s')
     fs.setABC('(b)',c='w')
@@ -854,3 +1034,47 @@ def calDT(quake0,quake1,waveform0,waveform1,staInfos,bSec0=-2,eSec0=3,\
                 dT.append([dt,maxC1,staIndex,2])
     return dT
 '''
+data=np.array([
+[-500,	4.808,	2.849,	2.508],
+[0.05,	4.808,	2.849,	2.508],
+[2.05,	5.157,	3.059,	2.561],
+[4.05,	5.482,	3.244,	2.616],
+[6.05,	5.761,	3.396,	2.668],
+[8.05,	5.847,	3.442,	2.685],
+[10.05,	6.101,	3.575,	2.740],
+[12.05,	6.094,	3.571,	2.738],
+[14.05,	6.062,	3.554,	2.732],
+[16.05,	5.999,	3.522,	2.718],
+[18.05,	5.898,	3.468,	2.696],
+[20.05,	5.863,	3.450,	2.689],
+[22.05,	5.899,	3.469,	2.697],
+[24.05,	5.965,	3.503,	2.711],
+[26.05,	5.956,	3.499,	2.709],
+[28.05,	5.948,	3.494,	2.707],
+[30.05,	5.981,	3.512,	2.715],
+[32.05,	6.082,	3.564,	2.737],
+[34.05,	6.234,	3.642,	2.774],
+[36.05,	6.434,	3.744,	2.825],
+[38.05,	6.669,	3.864,	2.888],
+[40.05,	6.940,	4.003,	2.964],
+[42.05,	7.214,	4.144,	3.045],
+[44.05,	7.444,	4.263,	3.118],
+[46.05,	7.593,	4.342,	3.166],
+[48.05,	7.693,	4.394,	3.197],
+[50.05,	7.773,	4.436,	3.221],
+[52.05,	7.815,	4.457,	3.232],
+[54.05,	7.843,	4.469,	3.239],
+[56.05,	7.894,	4.495,	3.255],
+[58.05,	7.906,	4.501,	3.259],
+[60.05,	7.875,	4.485,	3.248],
+[62.05,	7.902,	4.500,	3.258],
+[64.05,	7.873,	4.486,	3.249],
+[66.05,	7.890,	4.495,	3.255],
+[68.05,	7.861,	4.481,	3.246],
+[70.05,	7.830,	4.464,	3.236],
+[700.05,	7.830,	4.464,	3.236]])
+z=data[:,0]
+vp=data[:,1]
+vs= data[:,2]
+dianXiVp=interp.interp1d(z,vp)
+dianXiVs=interp.interp1d(z,vs)

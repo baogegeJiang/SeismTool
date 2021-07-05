@@ -134,7 +134,7 @@ class Fault:
             if isDip and len(dipLaL)>0:
                 plt.plot(dipLoL,dipLaL,cmd0,markersize=markersize,alpha=alpha)
 
-def readFault(filename):
+def readFault(filename,maxD=10000):
     faultL=[]
     strikeD={'N':0,'NNE':pi/8*1,'NE':pi/8*2,'NEE':pi/8*3,'E':pi/8*4\
     ,'SEE':pi/8*5,'SE':pi/8*6,'SSE':pi/8*7,'S':pi/8*8,'SSW':pi/8*9,\
@@ -174,8 +174,15 @@ def readFault(filename):
                             else:
                                 pass
             if line[0]!='>' and line[0]!='#':
-                faultL[-1].laL.append(float(line[1]))
-                faultL[-1].loL.append(float(line[0]))
+                la = float(line[1])
+                lo = float(line[0])
+                if len(faultL[-1].laL)>0:
+                    dLa = faultL[-1].laL[-1]-la
+                    dLo = faultL[-1].loL[-1]-lo
+                    if (dLa**2+dLo**2)**0.5>maxD:
+                        continue
+                faultL[-1].laL.append(la)
+                faultL[-1].loL.append(lo)
     for fault in faultL:
         fault.update()
     return faultL
@@ -430,7 +437,7 @@ def plotDep(qL,R,filename):
     plt.savefig(filename,dpi=300)
     plt.close()
 
-def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
+def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False,vM=''):
     paraL = qL.paraL(['la','lo','dep','ml','time'],req={'R':R})
     plt.close()
     fig=plt.figure(figsize=[2.7,1.6])
@@ -444,28 +451,30 @@ def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
         Tax = ax_divider.append_axes("top", size="50%", pad="20%")
         Tax.plot(l,z/1000,'k',linewidth=0.3)
         #Tax.set_xlabel('Distance/km')
-        Tax.set_ylabel('T/km')
+        Tax.set_ylabel('$T$/km')
         Tax.set_ylim([0,6])
         Tax.set_xlim([0,R.L])
         Tax.set_xticks([])
-        Tax.text(10,6,R.name,ha='left',va='bottom',c='r',size=10,weight='bold')
-        Tax.text(R.L,6,R.name+'\'',ha='right',va='bottom',c='r',size=10,weight='bold')
+        Tax.text(10,6,'$'+R.name+'$',ha='left',va='bottom',c='r',size=8)
+        Tax.text(R.L,6,'$'+R.name+'$\'',ha='right',va='bottom',c='r',size=8)
         #Tax.set_aspect(5)
     #timeL = (np.array(paraL['time'])-np.array(paraL['time']).min())/86400
     laLo = np.array([paraL['la'],paraL['lo']]).transpose()
     l = R.l(laLo)
     if not isinstance(vModel,type(None)):
-        la,lo,z,Dist,V= vModel.outputP2(R.xyL,isPer=isPer,line=R)
+        if vM!='':
+            vM = vM(vModel.z)
+        la,lo,z,Dist,V= vModel.outputP2(R.xyL,isPer=isPer,line=R,vM=vM)
         Dist = R.l(np.array([la[0].tolist(),lo[0].tolist()]).transpose())
         if isPer:
             pc=ax.pcolormesh(Dist,z,V,vmin=+np.abs(V).max(),vmax=-np.abs(V).max(),cmap=cmapNoGreen,rasterized=True)
         else:
             if vModel.mode == 'vp':
-                vmax = 8
-                vmin = 4
+                vmax = 8#7.8
+                vmin = 4#4.5#4
             if vModel.mode == 'vs':
-                vmax = 8/1.7
-                vmin = 4/1.7
+                vmax = 8/1.7#7.8/1.7
+                vmin = 4/1.7#4.5/1.7#4
             pc=ax.pcolormesh(Dist,z,V,vmin=vmin,vmax=vmax,cmap='jet_r',rasterized=True)
         #print(V.max(),V.min())
         #position=fig.add_axes([0.15, 0.05, 0.7, 0.03])
@@ -478,18 +487,18 @@ def plotDepV2(qL,R,filename,isPer=False,vModel=None,isTopo=False):
         # the image.
         #cax2.xaxis.set_ticks_position("top")
         if isPer:
-            if vModel.mode == 'vp':
-                cbar.set_label('dVp/V0')
-            else:
-                cbar.set_label('dVs/V0')
+            if 'p' in vModel.mode  :
+                cbar.set_label('$dVp/V_0$')
+            elif 's' in vModel.mode:
+                cbar.set_label('$dVs/V_0$')
         else:
-            cbar.set_label('V (km/s)')
+            cbar.set_label('$V$ (km/s)')
     #pc=plt.scatter(l,paraL['dep'],s=1,c=timeL*0,cmap='gist_rainbow')#((np.array(paraL['ml'])*0+1)**2)*0.3/3
-    pc=ax.plot(l,paraL['dep'],'.k',markersize=0.01,linewidth=0.01)
+    pc=ax.plot(l,paraL['dep'],'.k',markersize=0.1,linewidth=0.01)
     #cbar=fig.colorbar(pc, orientation="horizontal",fraction=0.046, pad=0.04)
     #cbar.set_label('time from the first earthquake')
     ax.set_xlabel('Distance/km')
-    ax.set_ylabel('Z/km')
+    ax.set_ylabel('$Z$/km')
     ax.set_ylim([70,-10])
     ax.set_xlim([0,R.L])
     ax.set_aspect(1)

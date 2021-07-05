@@ -16,6 +16,7 @@ from ..mathTool.mathFunc_bak import R as mathR
 from . import parRead
 from SeismTool.plotTool import figureSet as fs
 dm = 0
+printDetail=True
 comp3='RTZ'
 comp33=[]
 cI33=[]
@@ -189,7 +190,7 @@ class Dist:
 	def inR(self,lalo):
 		if isinstance(lalo,mathR):
 			return lalo.isIn(self.loc()[:2])
-		if self['la']<lalo[0] or self['la']>lalo[1] or self['lo']<lalo[2] or self['lo']>lalo[3]:
+		if self['la']<=lalo[0] or self['la']>lalo[1] or self['lo']<=lalo[2] or self['lo']>lalo[3]:
 			return False
 		return True
 
@@ -325,6 +326,11 @@ class StationList(list):
 		self.header = []
 		lines = []
 		nameL = []
+		for sta in self:
+			staName = ''
+			for uniqueKey in uniqueKeys:
+				staName += sta[uniqueKey]
+			nameL.append(staName)
 		for fileName in glob(fileName):
 			with open(fileName,'r') as staFile:
 				lines += staFile.readlines()
@@ -591,6 +597,38 @@ class Quake(Dist):
 				q,res=req['locator'].locate(self)
 				if res>req['maxRes'] and self['dep']>50:
 					return False
+		if 'minSNR' in req:
+			T3L = self.loadSacs(req['staInfos'],req['matDir'],f=req['f'])
+			count=0
+			allCount =0
+			for i in range(len(self.records)):
+				record = self.records[i] 
+				allCount +=1
+				if record['pTime']>0:
+					T3 = T3L[i]
+					dataAt = T3.Data(record['pTime']-0,record['pTime']+3)
+					dataBe = T3.Data(record['pTime']-9,record['pTime']-3)
+					if len(dataAt)!=0 and len(dataBe)!=0:
+						snr = np.abs(dataAt).max()/np.abs(dataBe).max()
+						#print('snr %.2f not enough count %d %d'%(snr,count,allCount))
+						if snr<req['minSNR']:
+							count+=1
+							#print('snr %.2f not enough count %d %d'%(snr,count,allCount))
+							record['pTime']=0
+							record['sTime']=0
+					else:
+						record['pTime']=0
+						record['sTime']=0
+			print('snr count %d %d'%(allCount,count))
+			self.removeZeros()
+			if 'minN' in req:
+				if len(self.records)<req['minN']:
+					return False
+			if 'minCover' in req and 'staInfos' in req:
+				if self.calCover(req['staInfos'])<req['minCover']:
+					return False
+		
+				
 		return True
 	def __setitem__(self,key,value):
 		super().__setitem__(key,value)
@@ -602,6 +640,12 @@ class Quake(Dist):
 		if key=='num':
 			return len(self.records)
 		return super().__getitem__(key) 
+	def removeZeros(self):
+		records = []
+		for record in self.records:
+			if record['pTime']>0 or record['sTime']>0:
+				records.append(record)
+		self.records = records
 	def saveSacs(self,staL, staInfos, matDir='output/'\
 	,bSec=-10,eSec=40,dtype=np.float32):
 		eventDir = matDir+'/'+self['filename'].split('.mat')[0]+'/'
@@ -1203,12 +1247,16 @@ class QuakeL(list):
 						f.write('*%s\n'%recordKeysIn)
 					f.write('%s\n'%record)
 	def select(self,req):
+		count =0
+		count0 = 0
 		for index in range(len(self)-1,-1,-1):
+			count0+=1
 			quake = self[index]
 			if not quake.select(req):
 				self.pop(index)
 			else:
-				print('find ', quake)
+				count+=1
+				print('find %d in %d'%(count,count0), quake)
 		#quakes = self.copy()
 		#self.clear()
 		#for i in index:
@@ -1435,9 +1483,12 @@ def mergeSacByName(sacFileNames, **kwargs):
 			#print('end merge')
 			std=sacM.std()
 			if std>para['maxA']:
+				#if printDetail:
 				print('#####too many noise std : %f#####'%std)
 				sacM=None
 			else:
+				if printDetail:
+					print('#####not too many noise std : %f#####'%std)
 				pass
 		except:
 			print('wrong merge')
@@ -1642,7 +1693,6 @@ class Trace3(obspy.Stream):
 			tmpN =min(n,new[i].data.size)
 			data[:tmpN,i]=new[i].data[:n]
 		return data
-
 	def copy(self,*args,**kwargs):
 		new=Trace3(super().copy(*args,**kwargs))
 		new.compStr =self.compStr
@@ -1686,14 +1736,16 @@ class Trace3(obspy.Stream):
 			self[i]=adjust(self[i],*argv,**kwargs)
 	def rotate(self,theta=0):
 		#RTZ,theta
+		if theta ==0:
+			return self
 		rad = theta/180*np.pi
 		bTime,eTime=self.getTimeLim()
-		print('data')
+		#print('data')
 		Data= self.Data()
-		print('data done')
-		print('math rotate')
+		#print('data done')
+		#print('math rotate')
 		Data = rotate(rad,Data)
-		print('math rotate Done' )
+		#print('math rotate Done' )
 		T3New=[Trace(Data[:,i])for i in range(3)]
 		for t3 in T3New:
 			t3.stats.starttime = bTime
@@ -1729,7 +1781,11 @@ class Trace3(obspy.Stream):
 			pass
 		else:
 			pass
-
+	def get(self,key):
+		for t in self:
+			if key in t.stats['sac']:
+				return t.stats['sac'][key]
+		return None
 
 def checkSacFile(sacFileNamesL):
 	if len(sacFileNamesL)==0:

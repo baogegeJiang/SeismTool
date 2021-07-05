@@ -12,8 +12,12 @@ R.config.para['resDir']='/fastDir/results/20210412/'
 R.config.para['modelFile']= '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_210411-205004_model.h5'
 run.d.saveFvD(R.fvAvGet,'/fastDir/results/20210417V2_average/')
 run.d.plotFVM(R.fvMGet,R.fvAvGet,resDir='resFig/DS/pait_plot0417/',isDouble=True)
-run.d.plotFVL(R.fvAvGet,filename=='resFig/DS/pait_plot0417/average.jpg')
+run.d.plotFVL(R.fvAvGet,filename='resFig/DS/pait_plot0417/average.jpg')
 R.config.para['minP']=0.7
+R.loadRes()
+run.d.plotFVM(R.fvMGet,R.fvAvGet,resDir='resFig/DS/pait_plot0417_0.7/',isDouble=True)
+run.d.plotFVL(R.fvAvGet,filename='resFig/DS/pait_plot0417_0.7/average.jpg')
+R.loadRes()
 R.getAreas()
 R.areasLimit()
 R.config.para['runDir']='../DS/20210408_CEA160_all/'

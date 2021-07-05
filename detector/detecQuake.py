@@ -4,8 +4,6 @@ import os
 from glob import glob
 import matplotlib.pyplot as plt
 from multiprocessing import Process, Manager
-import threading
-import time
 from time import ctime
 import math
 from numba import jit
@@ -14,7 +12,7 @@ from ..io import tool
 from ..io.seism import getTrace3ByFileName,Quake,QuakeL,Record,QuakeCC,RecordCC,t0,t1
 from ..io.sacTool import staTimeMat
 
-from ..mapTool.mapTool import readFault,plotTopo,faultL
+from ..mapTool.mapTool import plotTopo,faultL
 import mpl_toolkits.basemap as basemap
 import torch
 from obspy import taup
@@ -163,7 +161,7 @@ class sta(object):
         self.timeL = list()
         self.vL = list()
         self.mode = mode
-        indexLL = [range(275, 775), range(275, 775)]
+        indexLL = [range(275, 1700), range(275, 1700)]
         if mode=='norm':
             minValueL=[0.5,0.5]
         if mode=='high':
@@ -316,7 +314,7 @@ def argMax2D(M):
     return maxIndex[0][0], maxIndex[1][0]
 
 def associateSta(staL, aMat, staTimeML, timeR=30, minSta=3, maxDTime=3, N=1, \
-    isClearData=False, locator=None, maxD=80,taupM=tool.quickTaupModel()):
+    isClearData=False, locator=None, maxD=80,**kwargs):
     timeN = int(timeR)*2
     startTime = obspy.UTCDateTime(2100, 1, 1)
     endTime = obspy.UTCDateTime(1970, 1, 1)
@@ -337,7 +335,7 @@ def associateSta(staL, aMat, staTimeML, timeR=30, minSta=3, maxDTime=3, N=1, \
         __associateSta(quakeL, staL, \
             aMat, staTimeML, startSec, \
             endSec, timeR=timeR, minSta=minSta,\
-             maxDTime=maxDTime,locator=locator,maxD=maxD)
+             maxDTime=maxDTime,locator=locator,maxD=maxD,**kwargs)
         return quakeL
     for i in range(len(staL)):
         staL[i].clearData()
@@ -364,12 +362,13 @@ def associateSta(staL, aMat, staTimeML, timeR=30, minSta=3, maxDTime=3, N=1, \
     
 
 def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
-    timeR=30, minSta=3, maxDTime=3, locator=None,maxD=80,\
-    taupM=tool.quickTaupModel()):
+    timeR=30, minSta=3, maxDTime=3, locator=None,maxD=80,maxDA=-1,\
+    taupM=tool.quickTaupModel(),halfMaxDTime=0,loopN=2):
     typeO = np.int16#in maxD determined Range, if the max station cound is small than 125,use np.int8 else
     #,Using np.int16
-
     print('start', startSec, endSec)
+    if maxDA<0:
+        maxDA = maxD
     laN = aMat.laN
     loN = aMat.loN
     staN = len(staL)
@@ -377,17 +376,21 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
     stackM = np.zeros((timeN*3, laN, loN),typeO)
     tmpStackM=np.zeros((timeN*3+3*maxDTime, laN, loN),typeO)
     stackL = np.zeros(timeN*3)
-    staMinTimeL=np.ones(staN)*0
     quakeCount=0
-    dTimeL=np.arange(-maxDTime, maxDTime+1)
-    for loop in range(2):
+    dTimeL  =np.arange(-maxDTime, maxDTime+1)
+    dTimeLA =np.arange(-maxDTime, maxDTime+1)*0+2
+    if halfMaxDTime>0:
+        dTimeL  =np.arange(-maxDTime-halfMaxDTime, maxDTime+1+halfMaxDTime)
+        dTimeLA = dTimeL*0+2
+        dTimeLA[:halfMaxDTime]=1
+        dTimeLA[-halfMaxDTime:]=1
+    for loop in range(loopN):
         staOrignMIndex = np.zeros((staN, laN, loN), dtype=int)
-        staMinTimeL=np.ones(staN)*0
         count=0
         for sec0 in range(startSec-3*timeN, endSec+3*timeN, timeN):
             count=count+1
-            if count%10==0:
-                print(ctime(),'process:',(sec0-startSec)/(endSec-startSec)*100,'%  find:',len(quakeL))
+            if count%5==0:
+                print(ctime(),'process:',(sec0-startSec)/(endSec-startSec)*100,' find:',len(quakeL))
             stackM[0:2*timeN, :, :] = stackM[timeN:, :, :]
             stackM[2*timeN:, :, :] = stackM[0:timeN, :, :]*0
             tmpStackM=tmpStackM*0
@@ -397,6 +400,8 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                 tmpStackM=tmpStackM*0
                 for laIndex in range(laN):
                     for loIndex in range(loN):
+                        if staTimeML[staIndex].minTimeD[laIndex,loIndex] > maxDA:
+                            continue
                         if len(staL[staIndex].orignM[laIndex][loIndex])>0:
                             index0=staOrignMIndex[staIndex, laIndex, loIndex]
                             for index in range(index0, len(staL[staIndex].orignM[laIndex][loIndex])):
@@ -413,16 +418,15 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                                     staOrignMIndex[staIndex, laIndex, loIndex] = index
                                     if pTime * sTime ==0:
                                         continue
-                                    tmpStackM[int(timeT-sec0)+dTimeL, laIndex, loIndex]=\
-                                    tmpStackM[int(timeT-sec0)+dTimeL, laIndex, loIndex]*0+1
+                                    tmpStackM[round(timeT-sec0)+dTimeL, laIndex, loIndex]=\
+                                    np.max([tmpStackM[round(timeT-sec0)+dTimeL, laIndex, loIndex],dTimeLA],axis=0)
                                     '''
                                     for dt in range(-maxDTime, maxDTime+1):
                                         tmpStackM[int(timeT-sec0+dt), laIndex, loIndex]=1
                                     '''
                 stackM[2*timeN: 3*timeN, :, :] += tmpStackM[2*timeN: 3*timeN, :, :]
             stackL = stackM.max(axis=(1,2))
-            peakL, peakN = tool.getDetec(stackL, minValue=minSta, minDelta=timeR)
-
+            peakL, peakN = tool.getDetec(stackL, minValue=minSta*dTimeLA.max(), minDelta=timeR)
             for peak in peakL:
                 if peak > timeN and peak <= 2*timeN:
                     time = peak + sec0
@@ -433,8 +437,7 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                         time=time, randID=quakeCount)
                     for staIndex in range(staN):
                         isfind=0
-                        if staTimeML[staIndex].minTimeS[laIndex,loIndex]\
-                        -staTimeML[staIndex].minTimeP[laIndex,loIndex] > maxD:
+                        if staTimeML[staIndex].minTimeD[laIndex,loIndex] > maxD:
                             continue
                         if len(staL[staIndex].orignM[laIndex][loIndex]) != 0:
                             for index in range(staOrignMIndex[staIndex, laIndex, loIndex], -1, -1):
@@ -497,22 +500,26 @@ def __associateSta(quakeL, staL, aMat, staTimeML, startSec, endSec, \
                                     quake.Append(Record(staIndex=staIndex, pTime=pTime, sTime=sTime, pProb=pProb, sProb=sProb))
                     if locator != None and len(quake)>=3:
                         try:
-                            quake,res=locator.locate(quake)
+                            quake,res=locator.locate(quake,isDel=True,maxErr=4)
                             print(quake['time'],quake.loc(),res)
                         except:
                             print('wrong in locate')
                         else:
-                            pass
+                            if res > 10:
+                                continue
                     quakeL.append(quake)
     return quakeL
 
-def getStaTimeL(staInfos, aMat,taupM=tool.quickTaupModel()):
+def getStaTimeL(staInfos, aMat,taupM=tool.quickTaupModel(),**kwarg):
     #manager=Manager()
     #staTimeML=manager.list()
     staTimeML=list()
+    count =0
     for staInfo in staInfos:
+        print(count,staInfo)
         loc=staInfo.loc()[:2]
-        staTimeML.append(staTimeMat(loc, aMat, taupM=taupM))
+        staTimeML.append(staTimeMat(loc, aMat, taupM=taupM,**kwarg))
+        count+=1
     return staTimeML
 
 def getSta(staL,i, staInfo, date, modelL, staTimeM, loc, \
@@ -548,7 +555,7 @@ def getStaL(staInfos, staTimeML=[], modelL=[],\
     staL=[None for i in range(len(staInfos))]
     threads = list()
     for i in range(len(staInfos)):  
-        print(ctime(),'process on sta: ',date,i,staInfos[i])
+        print(ctime(),'process on sta: ',i,date,staInfos[i])
         staL[i]=sta(staInfos[i], date,
             f, taupM,R=R,delta0=delta0)
         staL[i].filt(f_new)
@@ -561,7 +568,7 @@ def getStaL(staInfos, staTimeML=[], modelL=[],\
             staTimeM=staTimeML[i]
         else:
             staTimeM=None
-        print(ctime(),'predict on sta: ',date,i)
+        print(ctime(),'predict on sta: ',i,date)
         staL[i].predict(modelL, staTimeM, mode,\
             maxD=maxD,maxDTime=maxDTime,isClearData=isClearData,decPre=decPre)
     return staL
@@ -816,7 +823,7 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=Fa
         plotTopo(m,laL+loL)
     #sc=m.scatter(eX,eY,c=dep,s=((ml*0+1)**2)*0.3/3,vmin=-5,vmax=50,cmap='gist_rainbow')#Reds
     #sc=m.scatter(eX,eY,c=dep,s=((ml*0+1)**2)*0.3/3,vmin=-5,vmax=50,cmap='jet')
-    eh=m.plot(eX,eY,'.r',markersize=0.01,alpha=1,linewidth=0.01)
+    eh=m.plot(eX,eY,'.r',markersize=0.3,alpha=1,linewidth=0.01)
     staLa= []
     staLo=[]
     for sta in staInfos:

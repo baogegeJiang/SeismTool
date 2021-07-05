@@ -26,7 +26,7 @@ from .node_cell import ODELSTMR
 def defProcess():
     gpus = tf.config.experimental.list_physical_devices('GPU')
     #tf.config.experimental.set_memory_growth(gpus[0], True)
-    tf.config.experimental.set_virtual_device_configuration(gpus[0],[tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5000*2)])
+    tf.config.experimental.set_virtual_device_configuration(gpus[0],[tf.config.experimental.VirtualDeviceConfiguration(memory_limit=6000)])
     #config = tf.compat.v1.ConfigProto()
     #config.gpu_options.per_process_gpu_memory_fraction = 0.4
     #config.gpu_options.allow_growth = False
@@ -863,6 +863,7 @@ class fcnConfig:
             self.featureL      = [12,24,32,64,128,192,192*3]
             self.featureL      = [12,24,48,96,120,144,192]
             self.featureL      = [16,32,64,128,256,128*4,128*8]
+            self.featureL      = [16,24,32,48,64,96,128]
             #self.featureL      = [6,12,24,48,96,192,288]
             self.strideL       = [(2,1),(2,1),(2,1),(2,1),(5,1),(5,1),(5,1)]
             #self.kernelL       = [(4,1),(4,1),(4,1),(4,1),(10,1),(10,1),(10,1),\

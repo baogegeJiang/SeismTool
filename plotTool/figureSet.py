@@ -3,7 +3,7 @@ from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 fontsize0=7
 styleD={}
 styleD['HBDZKX']={'font.size': 8, 'font.family': 'sans-serif','font.sans-serif':'Times New Roman',"mathtext.fontset" : "custom"}
-styleD['ZGKX']={'font.size': 7, 'font.family': 'sans-serif','font.sans-serif':'Arial'}
+styleD['ZGKX']={'font.size': 7, 'font.family': 'sans-serif','font.sans-serif':'Arial',"mathtext.fontset" : "custom"}
 def init(key='ZGKX'):
     plt.switch_backend('pgf')
     plt.rcParams['pgf.texsystem'] ='pdflatex'
@@ -38,6 +38,9 @@ def setColorbar(pc,label='',key='ZGKX',pos='bottom'):
     elif pos in ['HBDZKXPer']:
         cax = ax_divider.append_axes('bottom', size="3%", pad="2%")
         cbar=plt.colorbar(pc, cax=cax, orientation="horizontal",ticks=[-0.03,0,0.03])
+    if pos in ['ZGKX']:
+        cax = ax_divider.append_axes('bottom', size="7%", pad="3%")
+        cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
         #plt.xticks([])
     if len(label)>0:
         cbar.set_label(label)

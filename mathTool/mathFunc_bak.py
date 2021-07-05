@@ -322,17 +322,20 @@ class Model:
                 v[i,j,:] = interpolate.interp1d(self.z,vTmp[i,j])(z)
         v[v<0]=np.nan
         return v
-    def OutputGriddata(self,la,lo,z,isPer=False,vR='',P2='',maxH=300):
+    def OutputGriddata(self,la,lo,z,isPer=False,vR='',P2='',maxH=300,vM=''):
         V = self.v.copy()
         if vR !='':
             out  = outR(vR,self.la,self.lo)
         if isPer:
-            for i in range(V.shape[-1]):
-                v= V[:,:,i]
-                if vR!='':
-                    v[out]=np.nan
-                V[:,:,i]/=v[np.isnan(v)==False].mean()
-            V-=1
+            if vM=='':
+                for i in range(V.shape[-1]):
+                    v= V[:,:,i]
+                    if vR!='':
+                        v[out]=np.nan
+                    V[:,:,i]/=v[np.isnan(v)==False].mean()
+                V-=1
+            else:
+                V = V/vM.reshape([1,1,-1])-1
         V = V.reshape([-1])
         Lo,La,Z = np.meshgrid(self.lo,self.la,self.z)
         vaild = (np.isnan(V)==False)
@@ -420,7 +423,7 @@ class Model:
         lo  = np.arange(self.lo[dIndex],self.lo[-dIndex],dLo)
         la,lo=np.meshgrid(la,lo)
         return la,lo,self.Output2D(la,lo,Per)
-    def outputP2(self,P2,N=100,isPer=False,line=''):
+    def outputP2(self,P2,N=100,isPer=False,line='',vM=''):
         La = P2[0][0]+(P2[1][0]-P2[0][0])/N*np.arange(N+1)
         Lo = P2[0][1]+(P2[1][1]-P2[0][1])/N*np.arange(N+1)
         dist= DistAz(P2[0][0],P2[0][1],P2[1][0],P2[1][1]).getDelta()* 111.19
@@ -432,7 +435,7 @@ class Model:
         la = La.reshape([1,-1])+Z.reshape([-1,1])*0
         lo = Lo.reshape([1,-1])+Z.reshape([-1,1])*0
         z  =  La.reshape([1,-1])*0+Z.reshape([-1,1])
-        V= self.OutputGriddata(la,lo,z,isPer=isPer,P2=line)
+        V= self.OutputGriddata(la,lo,z,isPer=isPer,P2=line,vM=vM)
         #print(V.shape)
         return la,lo,z,Dist,V
 

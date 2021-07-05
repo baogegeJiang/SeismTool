@@ -80,9 +80,10 @@ class locator:
             for i in  nvalidL:
                 rIndex=rIndexL[i]
                 if phaseL[i]=='p':
-                    quake[rIndex][1]=0
+                    quake.records[rIndex]['pTime']=0
                 if phaseL[i]=='s':
-                    quake[rIndex][2]=0   
+                    quake.records[rIndex]['sTime']=0
+            quake.removeZeros() 
         dTime=dTime[validL]
         gM=gM[validL,1:5]
         wL=wL[validL]

@@ -1,3 +1,4 @@
+from numpy.core.numerictypes import find_common_type
 import obspy
 from obspy import UTCDateTime
 from ..mathTool.distaz import DistAz
@@ -58,9 +59,12 @@ class areaMat:
                 subarea.quakeL.sort()
     def select(self,maxN=100,reqLess={},reqMore={}):
         quakeL=QuakeL()
+        COUNT=0
         #qL.select(req={'minN':10,'minCover':0.8,'locator':locator(staInfos),'maxRes':1.5})
         for subareaL in self.subareas:
             for subarea in subareaL:
+                print('doing',subarea.returnR())
+                print('###########find',COUNT)
                 N = len(subarea.quakeL)
                 if N >maxN:
                     subarea.quakeL=QuakeL(subarea.quakeL[-min(maxN*2,N):])
@@ -70,6 +74,7 @@ class areaMat:
                 count=0
                 for q in subarea.quakeL[-1::-1]:
                     count+=1
+                    COUNT+=1
                     quakeL.append(q)
                     if count>=maxN:
                         break   
@@ -93,12 +98,12 @@ class areaMat:
         return self.__class__(traces=self.subareas[max(0, i):max(0, j):k])
         
 class staTimeMat:
-    def __init__(self, loc, aMat, taupM=TauPyModel(model="iasp91")):
+    def __init__(self, loc, aMat, taupM=TauPyModel(model="iasp91"),**kwargs):
         self.loc=loc
         minTimeP, maxTimeP = self.getMatTime(aMat, taupM=taupM, \
-             phaseL=['p', 'P', 'Pn'])
+             phaseL=['p', 'P', 'Pn'],**kwargs)
         minTimeS, maxTimeS = self.getMatTime(aMat, taupM=taupM, \
-             phaseL=['s', 'S', 'Sn'])
+             phaseL=['s', 'S', 'Sn'],**kwargs)
         self.minTimeP = minTimeP
         self.minTimeS = minTimeS
         self.maxTimeP = maxTimeP
@@ -107,7 +112,7 @@ class staTimeMat:
         self.maxTimeD = maxTimeS-maxTimeP
 
     def getMatTime(self, aMat, taupM=TauPyModel(model="iasp91"), \
-     phaseL=['P']):
+     phaseL=['P'],MAXDIS=1e10):
         minTime = np.zeros((aMat.laN, aMat.loN))
         maxTime = np.zeros((aMat.laN, aMat.loN))
         for i in range(aMat.laN):

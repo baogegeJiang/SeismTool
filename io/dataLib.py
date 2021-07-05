@@ -28,14 +28,14 @@ def convertFileLst(fileName):
 class filePath:
     hima2Comp= {'E':'3','N':'2','Z':'1'}
     hima3Comp= {'E':'2','N':'1','Z':'0'}
-    def __init__(self,himaFile='fileLst_New'):
+    def __init__(self,himaFile='../fileLst_New'):
         self.himaDir = {}
         if os.path.exists(himaFile):
             with open(himaFile, 'r') as f:
                 lines = f.readlines()
             for line in lines:
                 elements = line.split()
-                staName = elements[0] + ' ' +elements[1]
+                staName = elements[1]
                 self.himaDir[staName] = elements[2:]
         self.InventoryD={}
         self.getStaDirLFunc={}
@@ -59,6 +59,16 @@ class filePath:
                         fileL.append(tmp)
                 if len(tmpL)>0:
                     break
+        if nameMode == 'hima23':
+            haveM = False
+            for file in fileL:
+                if file[-1]=='m':
+                    haveM = True
+                    break
+            if haveM:
+                for file in fileL:
+                    if file[-1]=='C':
+                        fileL.pop(file)
         return fileL
     def getFile(self,net,sta,comp,time,staDir,nameMode=''):
         if not isinstance(time,UTCDateTime):
@@ -130,7 +140,7 @@ class filePath:
             return ['/media/commonMount/data2/NECESSARRAY_SAC/NEdata*/%s/'%sta]
         if nameMode == 'CEA':
             return ['/net/CEA/CEA1s/CEA/%s/%s/'%(net,sta),'/net/CEA/CEA1s/CEA_old/%s/%s/'%(net,sta)]
-        staName = net + ' ' + sta
+        staName =  sta
         if nameMode == 'CEAO':
             return ['/net/CEA/CEA_*/']
         if nameMode=='hima' :

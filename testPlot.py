@@ -209,6 +209,26 @@ if 'tomoQuake' in doL:
         f.write('input: event:%d p: %d s:%d\n'%qL.analy())
         f.write('reloc: event:%d p: %d s:%d\n'%qLNew.analy())
 
+if 'reSyn' in doL:
+    qL=seism.QuakeL('phase_bak/SCYNTOMOSort')
+    qLNew=seism.QuakeL('phase_bak/SCYNTomoRelocV5')
+    nameL = qLNew.paraL(['filename'])['filename']
+    count=0
+    for q in qL:
+        if q['filename'] in nameL:
+            qTmp = qLNew[nameL.index(q['filename'])]
+            q['la']=qTmp['la']
+            q['lo']=qTmp['lo']
+            q['dep']=qTmp['dep']
+        else:
+            q['dep']=-30
+            print(q)
+            count+=1
+    print(count)
+    tomoDir = '/HOME/jiangyr/detecQuake/output/outputVSCYNdoV40/tomoDD_bak/input/'
+    R=[-90,90,-180,180]
+    tomoDD.preEvent(qL,staInfos,tomoDir+'/event.dat',R=R)
+
 if 'line' in doL:
     qL=seism.QuakeL('phase_bak/SCYNTOMOSort')
     qLNew=seism.QuakeL('phase_bak/SCYNTomoRelocV5')
@@ -218,13 +238,13 @@ if 'line' in doL:
     loL=[97,109]
     R = laL+loL
     NL=np.array([[30,102],[33,102],[33,106],[30,106],[27,104.5],[24,103],[23,100],[24,99],[27,100],[30,102]])
+    #NL=np.array([[30,102],[33,102],[33,106],[30,104.5],[27,104],[24,103],[23,100],[24,99],[27,100],[30,102]])
     
-    #mL=tomoDD.model(tomoDir+'/../inversion/',qLNew,[],isDWS=True,minDWS=2,R=R,vR=NL)
-    #mL.plot(figDir+'/real/',['vp','vs'])
+    mL=tomoDD.model(tomoDir+'/../inversion/',qLNew,[],isDWS=True,minDWS=2,R=R,vR=NL)
+    mL.plot(figDir+'/real/',['vp','vs'])
     mLSyn=tomoDD.model(tomoDir+'/../Syn/Vel/',isSyn=True,isDWS=True,minDWS=3)
     mLSyn.plot(figDir+'/syn/',nameL=['dVp','dVs','dVpr','dVsr'],doDense=False)
-    '''
-    mLSyn.plot(figDir+'/syn/',nameL=['dVp','dVs','dVpr','dVsr'],doDense=False)
+    #mLSyn.plot(figDir+'/syn/',nameL=['dVp','dVs','dVpr','dVsr'],doDense=False)
     RL=[]
     pL0 = np.array([[33,103],[30,106]])
     RL.append(mathFunc_bak.Line(pL0,20,name='A'))
@@ -239,16 +259,24 @@ if 'line' in doL:
     RL.append(mathFunc_bak.Line(pL0,20,name='E'))
     pL0 = np.array([[28,102.7],[25,102.71]])
     RL.append(mathFunc_bak.Line(pL0,20,name='F'))
-    detecQuake.plotQuakeLDis(staInfos,qLNew,laL,loL,filename=figDir+'resFig/tomoQuakeWithLine.eps',isTopo=True,rL=RL)
-    detecQuake.plotQuakeLDis(staInfos,qCCLNew2,laL,loL,filename        =figDir+'resFig/ccQuakeWithLine.eps',isTopo=True,rL=RL)
-    for r in  RL:
+    pL0 = np.array([[21,103],[29,103]])
+    RL.append(mathFunc_bak.Line(pL0,20,name='G'))
+    pL0 = np.array([[23,102.75],[28,102.75]])
+    RL.append(mathFunc_bak.Line(pL0,20,name='H'))
+    #detecQuake.plotQuakeLDis(staInfos,qLNew,laL,loL,filename=figDir+'resFig/tomoQuakeWithLine.eps',isTopo=True,rL=RL)
+    #detecQuake.plotQuakeLDis(staInfos,qCCLNew2,laL,loL,filename        =figDir+'resFig/ccQuakeWithLine.eps',isTopo=True,rL=RL)
+    #RL=[]
+    for r in  RL[:0]:
         mapTool.plotDepV2(qLNew,r,figDir+'resFig/dep%sRelaP.eps'%r.name,vModel=mL.vp,isPer=True,isTopo=True)
         mapTool.plotDepV2(qLNew,r,figDir+'resFig/dep%sRelaS.eps'%r.name,vModel=mL.vs,isPer=True,isTopo=True)
         mapTool.plotDepV2(qLNew,r,figDir+'resFig/dep%sP.eps'%r.name,vModel=mL.vp,isPer=False,isTopo=True)
         mapTool.plotDepV2(qLNew,r,figDir+'resFig/dep%sS.eps'%r.name,vModel=mL.vs,isPer=False,isTopo=True)
+        #mapTool.plotDepV2(qLNew,r,figDir+'resFig/dep%sRelaPM.eps'%r.name,vModel=mL.vp,isPer=True,isTopo=True,vM=tomoDD.dianXiVp)
+        #mapTool.plotDepV2(qLNew,r,figDir+'resFig/dep%sRelaSM.eps'%r.name,vModel=mL.vs,isPer=True,isTopo=True,vM=tomoDD.dianXiVs)
+        #mapTool.plotDepV2(qLNew,r,figDir+'resFig/dep%sP.eps'%r.name,vModel=mL.vp,isPer=False,isTopo=True)
+        #mapTool.plotDepV2(qLNew,r,figDir+'resFig/dep%sS.eps'%r.name,vModel=mL.vs,isPer=False,isTopo=True)
         #mapTool.plotDepV2(qCCLNew2,r,figDir+'resFig/dep%sRelaPCC.eps'%r.name,vModel=mL.vp,isPer=True,isTopo=True)
         #mapTool.plotDepV2(qCCLNew2,r,figDir+'resFig/dep%sRelaSCC.eps'%r.name,vModel=mL.vs,isPer=True,isTopo=True)
-    '''
 if 'lineCC' in doL:
     #qL=seism.QuakeL('phase_bak/SCYNTOMOSort')
     qLNew=seism.QuakeL('phase_bak/SCYNTomoRelocV5')
