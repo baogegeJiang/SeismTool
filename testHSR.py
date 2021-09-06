@@ -1,3 +1,4 @@
+from re import U
 from mathTool.mathFunc import rotate
 from HSR.hsr import handleDay
 import os
@@ -9,24 +10,46 @@ from matplotlib import pyplot as plt
 import numpy as np
 from SeismTool.HSR import hsr
 from SeismTool.SurfDisp import fk
+from obspy.core import utcdatetime
 from plotTool import figureSet
 from SeismTool.mapTool import mapTool as mt
 from SeismTool.mathTool.mathFunc_bak import Line
 import mpl_toolkits.basemap as basemap
 from SeismTool.plotTool import figureSet as fs
+stationsXT =  seism.StationList('../stations/2021XTTest')
+t0 = UTCDateTime(2021,7,15,8,35,13)+358
+T3L = [seism.Trace3(seism.getTrace3ByFileName(station.\
+    getFileNames(int(t0.timestamp/86400)*86400),freq=[0.5, 40],delta0=0.005)) for station in stationsXT]
+for i in range(3):
+    data =  T3L[0].Data(t0-15,t0+35)[:,i]
+    h = hsr.hsr()
+    h.plotWS(data,time0=-25,head='rotate_%d'%i,fMax=50,delta=0.005,whiteL=[],isSpec=True,xlim=[-20,20])
+#################
+
 stations =  seism.StationList('hsrStd')
-pL = [[stations[1]['la'],stations[1]['lo']],[stations[-1]['la'],stations[-1]['lo']]]
+stations0 =  seism.StationList('../stations/XA.Loc.201908.txt1')
+stations0.set('net','XA')
+stations0.set('compBase','BH')
+stations0.set('nameMode','RD')
+pL = [[stations0[1]['la'],stations0[1]['lo']],[stations0[-1]['la'],stations0[-1]['lo']]]
 line = Line(pL,H=1000)
-DL = np.array([ line.l([station['la'],station['lo']])for station in stations])
-DL = DL-DL[0]
-DL*=1000
+
 T0=1.567129671405785799e+09
 T0 =1.567174409828289032e+09
 T0=1.567141351420457602e+09
 NS=1
-T3L = [seism.Trace3(seism.getTrace3ByFileName(station.\
+T3L0 = [seism.Trace3(seism.getTrace3ByFileName(station.\
     getFileNames(int(T0/86400)*86400),freq=[0.5, 40],delta0=0.01)) for station in stations]
 reload(hsr)
+T3L=[]
+stations = seism.StationList()
+for i in range(len(T3L0)):
+    if len(T3L0[i])>0:
+        T3L.append(T3L0[i])
+        stations.append(stations0[i])
+DL = np.array([ line.l([station['la'],station['lo']])for station in stations])
+DL = DL-DL[0]
+DL*=1000
 h= hsr.hsr(fL0=np.arange(4.5,5.5,0.005),uL=np.arange(1,10000,50))
 T0=1.567141733064932823e+09
 T0=1.567129671405785799e+09
@@ -48,14 +71,14 @@ specAfL = np.abs(np.array(specAfLL)).mean(axis=0)
 h.plotUSpec(3.2,specBeL,'testUSpecBeM.jpg',f0=3.2)
 h.plotUSpec(3.2,specAfL,'testUSpecAfM.jpg',f0=3.2)
 reload(hsr)
-h= hsr.hsr(fL0=np.arange(4.7,5.3,0.002),uL=np.arange(1000,10000,50))
-specBeLN,specAfLN,specBeLS,specAfLS= h.handleDayUSpec(stations,T0,comp=0,rotate=25,bSec=20,eSec=28,T3L=T3L,DL=DL,maxDV=1.5)
+h= hsr.hsr(fL0=np.arange(4.95,5.05,0.01),uL=np.arange(1000000,2000000,10000))
+specBeLN,specAfLN,specBeLS,specAfLS= h.handleDayUSpec(stations,T0,comp=0,rotate=25,bSec=30,eSec=40,T3L=T3L,DL=DL,maxDV=1.5)
 h.plotUSpec(3.2,specBeLN,'testUSpecBeN.jpg',f0=3.2)
 h.plotUSpec(3.2,specAfLN,'testUSpecAfN.jpg',f0=3.2)
 h.plotUSpec(3.2,specBeLS,'testUSpecBeS.jpg',f0=3.2)
 h.plotUSpec(3.2,specAfLS,'testUSpecAfS.jpg',f0=3.2)
 reload(hsr)
-h= hsr.hsr(fL0=np.arange(4.7,5.3,0.002),uL=np.arange(1500,5000,25))
+h= hsr.hsr(fL0=np.arange(4.9,5.1,0.002),uL=np.arange(10000,30000,50))
 bSecL = np.arange(10,80,1)
 fBeNL =[]
 fAfNL =[]
@@ -64,7 +87,7 @@ fAfSL =[]
 vN = []
 vS = []
 for bSec in  bSecL:
-    specBeLN,specAfLN,specBeLS,specAfLS= h.handleDayUSpec(stations,T0,comp=0,rotate=25,bSec=bSec,eSec=bSec+10,T3L=T3L,DL=DL,maxDV=2)
+    specBeLN,specAfLN,specBeLS,specAfLS= h.handleDayUSpec(stations,T0,comp=0,rotate=25,bSec=bSec,eSec=bSec+10,T3L=T3L,DL=DL,maxDV=2.5)
     fBeNL.append(h.findBF(specBeLN,f0=5,f1=5.3))
     fAfNL.append(h.findBF(specAfLN,f0=4.7,f1=5))
     fBeSL.append(h.findBF(specBeLS,f0=5,f1=5.3))
@@ -82,6 +105,9 @@ plt.plot(bSecL*80,fBeNL,'.b')
 plt.plot(-bSecL*80,fBeSL,'.b')
 fMN = 2/(1/np.array(fBeNL)+1/np.array(fAfSL))
 fMS = 2/(1/np.array(fBeSL)+1/np.array(fAfNL))
+F = fMN[:10].mean()
+vNAf = (80/np.array(fAfSL/F-1))
+vSAf = (80/np.array(fAfNL/F-1))
 plt.plot(-bSecL*80,fMS,'.k')
 plt.plot(+bSecL*80,fMN,'.k')
 plt.plot(-bSecL*80,fAfNL,'.r')
@@ -90,6 +116,8 @@ plt.plot(+bSecL*80,fAfSL,'.r')
 plt.subplot(2,1,2)
 plt.plot(bSecL*80,vN,'.k')
 plt.plot(-bSecL*80,vS,'.k')
+plt.plot(bSecL*80,vNAf,'.r')
+plt.plot(-bSecL*80,vSAf,'.r')
 plt.ylim([0,4000])
 #plt.xlim([-5000,5000])
 plt.savefig('testUV.jpg',dpi=300)
@@ -177,8 +205,8 @@ eSecL1[1]=-1000
 reload(hsr)
 h = hsr.hsr()
 #h.testDenseFFT()
-h.plotFV(FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL1,eSecL1,np.arange(1)*40/80*0,workDir='../hsrRes/',head='plotFV—single1',marker='.',strL='ac')
-h.plotFV(FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL1,eSecL1,np.arange(0,17)*40/80,workDir='../hsrRes/',head='plotFV1',strL='bd',maxStd=1000)#300
+h.plotFV(FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL1,eSecL1,np.arange(1)*40/80*0,workDir='./',head='plotFV—single1',marker='.',strL='ac')
+h.plotFV(FBeLNM,FAfLNM,vLNM,FBeLSM,FAfLSM,vLSM,bSecL1,eSecL1,np.arange(0,17)*40/80,workDir='./',head='plotFV1',strL='bd',maxStd=1000)#300
 h.plotSV2(SBeLNM,SAfLNM,vLNM,SBeLSM,SAfLSM,vLSM,bSecL1,eSecL1,np.arange(17)*40/80*0,workDir='../hsrRes/V11/fig2/',head='plotSVReLa')
 #基频与桥频之差，反映轨道形状
 #有的随车速变化，有的不随；
@@ -190,7 +218,52 @@ h.plotSV2(SBeLNM,SAfLNM,vLNM,SBeLSM,SAfLSM,vLSM,bSecL1,eSecL1,np.arange(17)*40/8
 #来前，来时，来后之能量变化
 #不同频率随分量的变化不同
 
-
+FBeLSM6=[[]for i in range(3)]
+FAfLSM6=[[]for i in range(3)]
+SBeLSM6=[[]for i in range(3)]
+SAfLSM6=[[]for i in range(3)]
+vLSM6=[[]for i in range(3)]
+SBeLNM6=[[]for i in range(3)]
+SAfLNM6=[[]for i in range(3)]
+FBeLNM6=[[]for i in range(3)]
+FAfLNM6=[[]for i in range(3)]
+vLNM6=[[]for i in range(3)]
+perN=6
+isPlot=False
+for comp in [0]:
+    for j in range(len(bSecL)):
+        bSec=bSecL[j]
+        eSec=eSecL[j]        
+        fL0LS,specAtLS,specBeLS,specAfLS,FFAtLS,FFBeLS,FFAfLS,dTLS=\
+        h.loadStationsSpec(stations,'../hsrRes/%s/%d_%d/'%(version,bSec,eSec),comp=comp,isAdd=True,minDT=0,maxDT=100,dF=0.05*3.2,isRemove=False,perN=perN)
+        fL0LN,specAtLN,specBeLN,specAfLN,FFAtLN,FFBeLN,FFAfLN,dTLN=\
+        h.loadStationsSpec(stations,'../hsrRes/%s/%d_%d/'%(version,bSec,eSec),comp=comp,isAdd=True,minDT=-100,maxDT=0,dF=0.05*3.2,isRemove=False,perN=perN)
+        head = 'North_%d_%d~%d'%(comp,bSec,eSec)
+        FBeLN,FAfLN,SBeLN,SAfLN,vLN=h.showSpec(fL0LS,specAtLN,specBeLS,specAfLN,stations,head=head,workDir='../hsrRes/%s/fig%s/'%(version,fversion),maxF=25,v=3000,isPlot=isPlot)
+        head = 'South_%d_%d~%d'%(comp,bSec,eSec)
+        FBeLS,FAfLS,SBeLS,SAfLS,vLS=h.showSpec(fL0LS,specAtLS,specBeLN,specAfLS,stations,head=head,workDir='../hsrRes/%s/fig%s/'%(version,fversion),maxF=25,v=3000,isPlot=isPlot)
+        FBeLNM6[comp].append(FBeLN)
+        FAfLNM6[comp].append(FAfLN)
+        SBeLNM6[comp].append(SBeLN)
+        SAfLNM6[comp].append(SAfLN)
+        vLNM6[comp].append(vLN)
+        FBeLSM6[comp].append(FBeLS)
+        FAfLSM6[comp].append(FAfLS)
+        SBeLSM6[comp].append(SBeLS)
+        SAfLSM6[comp].append(SAfLS)
+        vLSM6[comp].append(vLS)
+bSecL1=bSecL.copy()
+eSecL1=eSecL.copy()
+bSecL1[0]=-1000
+eSecL1[0]=-1000
+bSecL1[1]=-1000
+eSecL1[1]=-1000
+reload(hsr)
+h = hsr.hsr()
+#h.testDenseFFT()
+h.plotFV(FBeLNM6,FAfLNM6,vLNM6,FBeLSM6,FAfLSM6,vLSM6,bSecL1,eSecL1,np.arange(1)*40/80*0,workDir='./',head='plotFV—single6',marker='.',strL='ac')
+h.plotFV(FBeLNM6,FAfLNM6,vLNM6,FBeLSM6,FAfLSM6,vLSM6,bSecL1,eSecL1,np.arange(0,17)*40/80,workDir='./',head='plotFV6',strL='bd',maxStd=300)#300
+h.plotSV2(SBeLNM,SAfLNM,vLNM,SBeLSM,SAfLSM,vLSM,bSecL1,eSecL1,np.arange(17)*40/80*0,workDir='../hsrRes/V11/fig2/',head='plotSVReLa')
 
 #syn source
 FK = fk.FK(exePath='../hsrRes/fkRun/',resDir='../hsrRes/fk/')
@@ -223,6 +296,7 @@ dt = 1000*stations[1].dist(stations[0])/80
 
 T3=seism.Trace3(seism.getTrace3ByFileName(stations[1].\
     getFileNames(int(t0/86400)*86400),freq=[0.5, 40],delta0=0.01))
+#T3=T3L[0]
 reload(hsr)
 h= hsr.hsr()
 t0=1.567129671405785799e+09+dt
@@ -278,14 +352,14 @@ squareY = [0.5,   -0.5,  -0.5  , 0.5,  0.5]
 plt.close()
 
 figureSet.init()
-fig=plt.figure(figsize=[4,4])
+fig=plt.figure(figsize=[3.2,3.2])
 plt.subplot(3,1,1)
 plt.plot(x,y,'k',linewidth=2)
 plt.plot([0],[0],'^y',markersize=10)
 plt.plot(squareX,squareY,'b')
 plt.plot(squareX_,squareY,'r')
 plt.xlim(x)
-plt.xlabel('$distance$/m')
+plt.xlabel('$d$ (m)')
 plt.ylim([-1,1])
 plt.yticks([])
 figureSet.setABC('(a)',[0.01,0.98],c='k')
@@ -298,7 +372,7 @@ plt.plot(squareT,squareY,'b')
 plt.plot(squareT_,squareY,'r')
 plt.xlim([bSec,eSec])
 plt.ylim([-1,1])
-plt.xlabel('$time$/s')
+plt.xlabel('$t$ (s)')
 plt.ylabel('$D$')
 figureSet.setABC('(b)',[0.01,0.98],c='k')
 plt.subplot(3,1,3)
@@ -310,11 +384,11 @@ plt.plot(squareT,squareY,'r')
 plt.plot(squareT_,squareY,'b')
 plt.xlim([eSec,bSec])
 plt.ylim([-1,1])
-plt.xlabel('$time$/s')
+plt.xlabel('$t$ (s)')
 plt.ylabel('$D$')
 figureSet.setABC('(c)',[0.01,0.98],c='k')
 #fig.tight_layout()
-plt.savefig('../hsrRes/twoD.eps')
+plt.savefig('./twoD.eps')
 ############plot stations and high speed rail
 reload(hsr)
 h= hsr.hsr()

@@ -14,7 +14,7 @@ inputDir = '/home/jiangyr/Surface-Wave-Dispersion/accuratePickerV4/'
 staInfos = seism.StationList(inputDir+'../stations/SCYN_withComp_ac')
 fcn.defProcess()
 v_i='SCYNV2_2021-0608'
-p_i='SCYNV2_2021-0608V1'
+p_i='SCYNV2_2021-0608V4'
 bSec=UTCDateTime(2014,1,1).timestamp
 eSec=UTCDateTime(2020,1,1).timestamp
 laL=[21,35]#area: [min latitude, max latitude]
