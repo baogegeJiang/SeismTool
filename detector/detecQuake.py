@@ -1,4 +1,5 @@
 import obspy
+from obspy import imaging
 import numpy as np
 import os
 from glob import glob
@@ -793,7 +794,7 @@ def plotQuakeL(staL,quakeL,laL,loL,outDir='output/',filename='',vModel=None,isPe
     plt.savefig(filename,dpi=300)
     plt.close()
 
-def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=False,rL=[],R0=[]):
+def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=False,rL=[],R0=[],isBall=False,figSize=[6.2,5],width=0.06):
     dayIndex = int(quakeL[-1]['time']/86400)
     Ymd = obspy.UTCDateTime(dayIndex*86400).strftime('%Y%m%d')
     if len(filename)==0:
@@ -801,7 +802,7 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=Fa
     dayDir=os.path.dirname(filename)
     if not os.path.exists(dayDir):
         os.mkdir(dayDir)
-    fig=plt.figure(figsize=[6.2,5])
+    fig=plt.figure(figsize=figSize)
     m = basemap.Basemap(llcrnrlat=laL[0],urcrnrlat=laL[-1],llcrnrlon=loL[0],\
         urcrnrlon=loL[-1])
     if len(staInfos)>0:
@@ -823,7 +824,17 @@ def plotQuakeLDis(staInfos,quakeL,laL,loL,outDir='output/',filename='',isTopo=Fa
         plotTopo(m,laL+loL)
     #sc=m.scatter(eX,eY,c=dep,s=((ml*0+1)**2)*0.3/3,vmin=-5,vmax=50,cmap='gist_rainbow')#Reds
     #sc=m.scatter(eX,eY,c=dep,s=((ml*0+1)**2)*0.3/3,vmin=-5,vmax=50,cmap='jet')
-    eh=m.plot(eX,eY,'.r',markersize=0.3,alpha=1,linewidth=0.01)
+    if not isBall:
+        eh=m.plot(eX,eY,'.r',markersize=0.3,alpha=1,linewidth=0.01)
+    else:
+        ax = plt.axes()
+        sdr0L=[]
+        xyL=[]
+        for quake in quakeL:
+            sdr0L.append(quake['sdr0'])
+            xyL.append((quake['lo'],quake['la']))
+            ball=imaging.beachball.beach(sdr0L[-1],xy=xyL[-1],width=width,facecolor='r',size=20)
+            ax.add_collection(ball) 
     staLa= []
     staLo=[]
     for sta in staInfos:

@@ -1,3 +1,7 @@
+#coding=utf
+from re import M
+from pkg_resources import safe_version
+from numpy.lib.npyio import save
 import obspy 
 import numpy as np
 from obspy import UTCDateTime,read,Trace,Stream
@@ -15,6 +19,7 @@ from ..mathTool.mathFunc import rotate,getDetec
 from ..mathTool.mathFunc_bak import R as mathR
 from . import parRead
 from SeismTool.plotTool import figureSet as fs
+import struct
 dm = 0
 printDetail=True
 comp3='RTZ'
@@ -29,7 +34,10 @@ fileP = filePath()
 def tolist(s,d='/'):
 	return s.split(d)
 nickStrL='1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM'
-strType={'S':str,'f':float,'F':float,'i':int, 'l':tolist,'b':bool,'u':UTCDateTime}
+def initM(mStr):
+	m = np.array([float(s) for s in mStr.split('/')])
+	return m
+strType={'S':str,'f':float,'F':float,'i':int, 'l':tolist,'b':bool,'u':UTCDateTime,'L':initM}
 NoneType = type(None)
 
 
@@ -50,7 +58,8 @@ class Dist:
 				self.keysIn     = kwargs['keysIn']
 			else:
 				self.keysIn     = kwargs['keysIn'].split()
-		for i in range(len(argv)):
+		for i in range(min(len(argv),len(self.keysIn))):
+			#print(argv)
 			self[self.keysIn[i]] = argv[i]
 		if 'splitKey' in kwargs:
 			self.splitKey = kwargs['splitKey']
@@ -466,6 +475,7 @@ class RecordCC(Record):
 	def getSMul(self):
 		return (self['sCC']-self['sM'])/self['sS']
 
+m06=['m'+str(i) for i in range(7)]
 
 defaultStrL='ENZ'
 class Quake(Dist):
@@ -478,14 +488,15 @@ class Quake(Dist):
 		if self['randID'] == None:
 			self['randID']=int(10000*np.random.rand(1))
 		if self['filename'] == None:
-			self['filename'] = self.getFileName() 
+			self['filename'] = self.getFileName()
+		#print(self['m']) 
 	def defaultSet(self):
 		#               quake: 34.718277 105.928949 1388535219.080064 num: 7 index: 0    randID: 1    filename: 16071/1388535216_1.mat -0.300000
 		super().defaultSet()
 		self.keysIn   = 'type     la       lo          time          para0  num  para1 index   para2    randID para3   filename ml   dep'.split()
-		self.keys     = 'type     la       lo          time          para0  num  para1 index   para2    randID para3   filename ml   dep stationList strTime no YMD HMS sort'.split()
-		self.keysType = 'S        f        f           f             S      F       S  f        S       f      S        S        f    f   l  S S S S S'.split()
-		self.keys0    = ['quake',  None,     None,      None,       'num', None,'index',None, 'randID', None,'filename',  None,   None,0 ,'','','time']
+		self.keys     = 'type     la       lo          time          para0  num  para1 index   para2    randID para3   filename ml   dep stationList strTime no YMD HMS sort strike0 dip0 rake0 strike1 dip1 rake1 m YMDHMS'.split()
+		self.keysType = 'S        f        f           f             S      F       S  f        S       f      S        S        f    f   l  S S S S S f f f f f f L S'.split()
+		self.keys0    = ['quake',  None,     None,      None,       'num', None,'index',None, 'randID', None,'filename',  None,   None,0 ,'','','','','','time',0,0,0,0,0,0,initM('0/0/0/0/0/0/0'),'']
 		self.keysName = ['time','la','lo']
 	def Append(self,tmp):
 		if isinstance(tmp,Record):
@@ -631,12 +642,26 @@ class Quake(Dist):
 				
 		return True
 	def __setitem__(self,key,value):
+		if key in m06:
+			index = int(key[-1])
+			self['m'][index]=float(value)
+			return
+		if key =='YMDHMS':
+			#2009 01 02 11 00 104
+			#print('#',value)
+			self['time']=UTCDateTime(value[:4]+':'+value[4:6]+':'+value[6:8]+':'+value[8:10]+':'+value[10:12]+':'+value[12:14]+'.'+value[14:])
+			self['strTime'] = UTCDateTime(self['time']).strftime('%Y:%m:%d %H:%M:%S.%f')
+			return
 		super().__setitem__(key,value)
 		if key == 'time' :
 			self['strTime'] = UTCDateTime(self['time']).strftime('%Y:%m:%d %H:%M:%S.%f')
 		if key =='HMS' and self['YMD']!='' and self['HMS']!='':
 			self['time'] = UTCDateTime(self['YMD'] + ' ' + self['HMS'])
 	def __getitem__(self,key):
+		if key=='sdr0':
+			return self['strike0'],self['dip0'],self['rake0']
+		if key=='sdr1':
+			return self['strike1'],self['dip1'],self['rake1']
 		if key=='num':
 			return len(self.records)
 		return super().__getitem__(key) 
@@ -1114,7 +1139,7 @@ class QuakeL(list):
 		super().__init__()
 		self.inQuake = {}
 		self.inRecord= {}
-		self.keys = ['#','*','q-','d-',' ',' ']
+		self.keys = ['#','*','q2','d-',' ',' ']
 		if 'Quake' in kwargs:
 			self.Quake = kwargs['Quake']
 		else:
@@ -1355,7 +1380,7 @@ class QuakeL(list):
 			if quake['time']>bTime and  quake['time']<eTime:
 				self1.append(quake)
 		return self1
-def adjust(data,stloc=None,kzTime=None,tmpFile='test.sac',decMul=-1,\
+def adjust(data,stloc=None,kzTime=None,kzTimeNew=None,tmpFile='test.sac',decMul=-1,\
 	eloc=None,chn=None,sta=None,net=None,o=None,pTime=None,sTime=None):
 	if decMul>1 :
 		decMul = int(decMul)
@@ -1418,6 +1443,17 @@ def adjust(data,stloc=None,kzTime=None,tmpFile='test.sac',decMul=-1,\
 		data.stats['sac']['nzmsec'] = int(kzTime.microsecond/1000)
 		data.stats['sac']['b']      = data.stats.starttime.timestamp-kzTime.timestamp
 		data.stats['sac']['e']      = data.stats['sac']['b']+(data.data.size-1)*data.stats.delta
+	if kzTimeNew!=None:
+		kzTimeNew=UTCDateTime(kzTimeNew)
+		kzTime0= data.stats.starttime-data.stats['sac']['b']
+		data.stats['sac']['nzyear'] = int(kzTimeNew.year)
+		data.stats['sac']['nzjday'] = int(kzTimeNew.julday)
+		data.stats['sac']['nzhour'] = int(kzTimeNew.hour)
+		data.stats['sac']['nzmin']  = int(kzTimeNew.minute)
+		data.stats['sac']['nzsec']  = int(kzTimeNew.second)
+		data.stats['sac']['nzmsec'] = int(kzTimeNew.microsecond/1000)
+		data.stats.starttime = data.stats.starttime+kzTimeNew.timestamp-kzTime0.timestamp
+		#data.stats.endtime = data.stats.endtime+kzTimeNew.timestamp-kzTime0.timestamp
 		#tmp=sac.SACTrace.from_obspy_trace(data)
 		#data=tmp.to_obspy_trace()
 	if pTime !=None:
@@ -1552,7 +1588,7 @@ def sacFromO(sac):
 	return sac
 
 from obspy.taup import TauPyModel
-from scipy import interpolate
+from scipy import interpolate, signal
 iasp91 = TauPyModel(model="iasp91")
 
 class taup:
@@ -1786,7 +1822,26 @@ class Trace3(obspy.Stream):
 			if key in t.stats['sac']:
 				return t.stats['sac'][key]
 		return None
-
+	def cross(self,self1,compStrL='ENZ',function=signal.correlate,kwags={'mode':'valid'}):
+		Data = self.Data()
+		Data1= self1.Data()
+		t = self.bTime-self1.bTime
+		sacL=[]
+		for i in range(3):
+			data = Data[:,i]
+			data1= Data1[:,i]
+			xx = function(data,data1,**kwags)
+			#print(len(xx),len(data),len(data1))
+			compStr=compStrL[i]
+			header = {'knetwk':'cross','kstnm': 'xx', 'kcmpnm': 'BH'+compStr,\
+			'stla':0,'stel':0,\
+			'stlo': 0,\
+			'nzyear': 1970,'nzjday': 1, 'nzhour': 0, \
+			'nzmin': 0,'nzsec': 0,'nzmsec': 0\
+			, 'delta': 1/self[0].stats['sampling_rate'],'b':t,'npts':len(xx)}
+			sacL.append(obspy.io.sac.sactrace.SACTrace(data=xx,**header).to_obspy_trace())
+			#sacL[-1].stats.endtime=sacL[-1].stats['starttime']+(len(sacL[-1].data)-1)/sacL[-1].stats['sampling_rate']
+		return Trace3(sacL)
 def checkSacFile(sacFileNamesL):
 	if len(sacFileNamesL)==0:
 		return False
@@ -1968,3 +2023,231 @@ def getT3LLQuick(qL,staInfos,matDir,f=[-1,-1],batch_size=100,num_workers=6,**kwa
 		for t in tmp:
 			T3PSLL.append(t)
 	return T3PSLL
+
+def readRotateBinary(file,bType='i',f=250,net='u',sta='u',stel=0):
+	with open(file,'rb') as F:
+		s = F.read()
+	res=struct.unpack('<'+(bType*int(len(s)/struct.calcsize(bType))),s)
+	la,lo,data=[res[1]/1e5,res[3]/1e5,res[4:]]
+
+	name = os.path.basename(file)[:-4]
+	#x_2021_07_14_12_09_28_0.bin
+	comp,y,m,d,H,M,S,ms=name.split('_')
+	t=UTCDateTime(y+'-'+m+'-'+d+' '+H+':'+M+':'+S)-8*3600+float(ms)/1000
+	sta=sta+(t+5).strftime('%d%H%M')
+	header = {'knetwk':net,'kstnm': sta, 'kcmpnm': comp,\
+	'stla':la,'stel':stel,\
+	'stlo': lo,\
+	'nzyear': t.year,'nzjday': t.julday, 'nzhour': t.hour, \
+	'nzmin': t.minute,'nzsec': t.second,'nzmsec': int(t.microsecond/1e3)\
+	, 'delta': 1/f,'b':0}
+	sac = obspy.io.sac.sactrace.SACTrace(data=np.array(data),**header).to_obspy_trace()
+	return sac,la,lo,comp,net,sta
+
+def convertRotate(fileDir='/HOME/jiangyr/XA_HSR_DATA/202107XT/origin/6/',saveDir='/HOME/jiangyr/XA_HSR_DATA/202107XT/sac/'):
+	NET = '6'
+	with open(saveDir+'rotateStaLst','w+') as f:
+		for STA in ['DCZ','GTD','GTS1','GTS2','HS']:
+			staDir = fileDir+STA+'/'+'rotate/' 
+			for file in glob(staDir+'/*.bin'):
+				SAC,la,lo,comp,net,sta = readRotateBinary(file,net=NET,sta=STA)
+				time0=SAC.stats.starttime.timestamp
+				time1=SAC.stats.starttime.timestamp+len(SAC)/SAC.stats.sampling_rate
+				print(time0,time1,time0-time1)
+				Time0 =int(time0/86400)*86400
+				if comp=='x':
+					f.write('%s %s %.5f %.5f 0 0 0 0 %s\n'%(net,sta,la,lo,os.path.basename(file)))
+				for Time in Time0+np.arange(-1,10)*86400:
+					if Time >time0 and Time<time1+86400:
+						bTime=UTCDateTime(max([Time-86400,time0]))
+						eTime=UTCDateTime(min([Time,time1]))
+						print(bTime,eTime,bTime-eTime)
+						sac = SAC.copy().slice(bTime,eTime) 
+						stats=sac.stats
+						startTime=stats.starttime
+						fileName = '%s/%s/%s/%s/%s.%s.%s.%s.sac'%(saveDir,net,sta,(startTime+5).strftime('%Y%m%d'),net,sta,(startTime+5).strftime('%Y%m%d%H%M'),comp)
+						print(fileName)
+						if not os.path.exists(os.path.dirname(fileName)):
+							os.makedirs(os.path.dirname(fileName))
+						sac.write(fileName)
+						
+#起始时间：2021/7/14 12:20:16.000	采样率：200单位：Gal	通道顺序：UD NS EW
+#0        1            2             3    4       5       6      7  8  9
+#0.000000	0.000000	0.000000
+#0.005140	-0.007243	0.032477
+def saveTrace(sac,saveDir,net,sta,comp='',str0='%Y%m%d',str1='%Y%m%d%H%M'): 
+	stats=sac.stats
+	startTime=stats.starttime
+	if comp=='':
+		comp = stats['sac']['kcmpnm']
+	fileName = '%s/%s/%s/%s/%s.%s.%s.%s.sac'%(saveDir,net,sta,(startTime+5).strftime(str0),net,sta,(startTime+5).strftime(str1),comp)
+	print(fileName)
+	if not os.path.exists(os.path.dirname(fileName)):
+		os.makedirs(os.path.dirname(fileName))
+	sac.write(fileName)
+
+def readAcc(file,net='u',sta='u',stel=0):
+	COMPSTR={'UD':'BHZ','NS':'BHN','EW':'BHE'}
+	#data =np.loadtxt(file,skiprows=1)
+	data=[]
+	with open(file,encoding='utf-8',errors='ignore') as F:
+		line = F.readline()
+		print(line)
+		for l in F.readlines():
+			data.append([float(s) for s in l.split()])
+	data = np.array(data)
+	tmp = line.split()
+	print(tmp)
+	#['ʼʱ䣺2021/7/14', '12:20:16.000', 'ʣ200λGal', 'ͨ˳UD', 'NS', 'EW']
+	t = UTCDateTime(tmp[0][-9:]+' '+tmp[1])-8*3600
+	f = float(tmp[2][1:4])
+	traces=[]
+	for i in range(3):
+		comp=COMPSTR[tmp[-3:][i][-2:]]
+		header = {'knetwk':net,'kstnm': sta, 'kcmpnm': comp,\
+		'stla':0,'stel':stel,\
+		'stlo': 0,\
+		'nzyear': t.year,'nzjday': t.julday, 'nzhour': t.hour, \
+		'nzmin': t.minute,'nzsec': t.second,'nzmsec': int(t.microsecond/1e3)\
+		, 'delta': 1/f,'b':0}
+		sac = obspy.io.sac.sactrace.SACTrace(data=data[:,i],**header).to_obspy_trace()
+		traces.append(sac)
+	return traces
+
+def convertAcc(fileDir='/HOME/jiangyr/XA_HSR_DATA/202107XT/origin/6/acc/',saveDir='/HOME/jiangyr/XA_HSR_DATA/202107XT/sac/'):
+	net = '6'
+	for staDir in glob(fileDir+'/*/'):
+		sta=staDir[:-1].split('/')[-1]
+		print(staDir)
+		for file in glob(staDir+'/*A .txt'):
+			traces = readAcc(file,net=net,sta=sta)
+			for trace in traces:
+				saveTrace(trace,saveDir,net,sta)
+def convertFiber(fileDir='/HOME/jiangyr/XA_HSR_DATA/202107XT/origin/fiber/',saveDir='/HOME/jiangyr/XA_HSR_DATA/202107XT/sac/',dTime=UTCDateTime(2021,7,16).timestamp-UTCDateTime(2021,1,16).timestamp):
+	net = 'fiber'
+	for staDir in glob(fileDir+'/*/'):
+		sta=staDir[:-1].split('/')[-1]
+		print(staDir)
+		for file in glob(staDir+'/*A .txt'):
+			traces = readAcc(file,net=net,sta=sta)
+			for trace in traces:
+				saveTrace(trace,saveDir,net,sta)
+	for file in glob(fileDir+'*sgy'):
+		stream = read(file,format='segy')
+		for i in range(len(stream)):
+			sta = '%d'%i
+			trace = stream[i]
+			sac = obspy.io.sac.SACTrace.from_obspy_trace(trace)
+			trace = sac.to_obspy_trace()
+			trace.stats['sac']['kcmpnm']='0'
+			trace.stats['sac']['knetwk']=net
+			trace.stats['sac']['kstnm']=sta
+			if dTime !=0:
+				trace.stats['_format']='SAC'
+				trace=adjust(trace,kzTimeNew=trace.stats.starttime-trace.stats['sac']['b']+dTime)
+			saveTrace(trace,saveDir,net,sta,str1='%Y%m%d%H%M%S')
+
+def dayMerge(fileDir='/HOME/jiangyr/XA_HSR_DATA/202107XT/sac/',saveDir='/HOME/jiangyr/XA_HSR_DATA/202107XT/sacMergeDay/',compL=['BHE','BHN','BHZ','x','y','z','0','1','2']):
+	for net in ['6','fiber']:#'fiber'
+		for staDir in glob('%s/%s/*/'%(fileDir,net)):
+			sta = staDir[:-1].split('/')[-1]
+			for dayDir in glob('%s/????????/'%staDir):
+				for comp in compL:
+					file = glob('%s*.%s.sac'%(dayDir,comp))
+					if len(file)>0:
+						stream = read('%s*.%s.sac'%(dayDir,comp))
+						stream = stream.merge(method=1, fill_value=0, interpolation_samples=0)
+						if len(stream)>=1:
+							trace=stream[0]
+							saveTrace(trace,saveDir,net,sta,comp=comp,str1='%Y%m%d')
+					
+
+def hourMerge(fileDir='/HOME/jiangyr/XA_HSR_DATA/202107XT/sac/',saveDir='/HOME/jiangyr/XA_HSR_DATA/202107XT/sacMergeHour/',compL=['BHE','BHN','BHZ','x','y','z','0','1','2','3']):
+	for net in ['HS','CZ','XT','6']:#'fiber'
+		for staDir in glob('%s/*/'%fileDir):
+			sta = staDir[:-1].split('/')[-1]
+			for dayDir in glob('%s/????????/'%staDir):
+				for comp in compL:
+					file = glob('*.sac')
+					if len(file)>0:
+						stream = read(file)
+						trace=file.merger(method=1, fill_value=0, interpolation_samples=0)
+						time0=trace.stats.starttime.timestamp
+						time1=trace.stats.starttime.timestamp+len(trace)/trace.stats.sampling_rate
+						#saveTraceD(trace,saveDir,net,sta)
+						Time0 =int(time0/86400)*86400
+						for Time in Time0+np.arange(-1,10)*86400:
+							if Time >time0 and Time<time1+86400:
+								bTime=UTCDateTime(max([Time-86400,time0]))
+								eTime=UTCDateTime(min([Time,time1]))
+								print(bTime,eTime,bTime-eTime)
+								sac = trace.copy().slice(bTime,eTime) 
+								stats=sac.stats
+								startTime=stats.starttime
+								fileName = '%s/%s/%s/%s/%s.%s.%s.%s.sac'%(saveDir,net,sta,(startTime+5).strftime('%Y%m%d'),net,sta,(startTime+5).strftime('%Y%m%d%H%M'),comp)
+								print(fileName)
+								if not os.path.exists(os.path.dirname(fileName)):
+									os.makedirs(os.path.dirname(fileName))
+								sac.write(fileName)
+
+def downSample(fileDir='/HOME/jiangyr/XA_HSR_DATA/201908DX/sac/',saveDir='/HOME/jiangyr/XA_HSR_DATA/201908DX/sacDS/',sampleRate=100):
+	for staDir in glob('%s/?????/'%fileDir):
+		sta = staDir[-6:-1]
+		for tmpFile in glob('%s/*.SAC'%staDir):
+			fileName = os.path.basename(tmpFile)
+			distFile = '%s/%s/%s'%(saveDir,sta,fileName)
+			distDir  = '%s/%s'%(saveDir,sta)
+			if not  os.path.exists(distDir):
+				os.makedirs(distDir)
+			a = obspy.read(tmpFile)[0]
+			a.decimate(factor=round(1/a.stats['sac']['delta']/sampleRate))
+			a.write(distFile)
+			print(tmpFile,distFile,round(1/a.stats['sac']['delta']/sampleRate))
+#saveTrace(sac,saveDir,net,sta,comp='',str0='%Y%m%d',str1='%Y%m%d%H%M')
+def downSample2(fileDir='/HOME/jiangyr/XA_HSR_DATA/201805DX/SAC/',saveDir='/HOME/jiangyr/XA_HSR_DATA/201805DX/SACDS/',sampleRate=100):
+	for netDir in glob('%s/???/'%fileDir):
+		for staDir in glob('%s/?????_day/'%netDir):
+			sta = staDir[-10:-5]
+			for tmpFile in glob('%s/*.SAC'%staDir):
+				fileName = os.path.basename(tmpFile)
+				distFile = '%s/%s/%s'%(saveDir,sta,fileName)
+				distDir  = '%s/%s'%(saveDir,sta)
+				if not  os.path.exists(distDir):
+					os.makedirs(distDir)
+				a = obspy.read(tmpFile)[0]
+				a.decimate(factor=round(1/a.stats['sac']['delta']/sampleRate))
+				a.write(distFile)
+				print(tmpFile,distFile,round(1/a.stats['sac']['delta']/sampleRate))
+
+def getAllMeca(fileDir='../SCMECA/',file0='sc.meca0',file1='sc.meca1'):
+	#2016/12/02 10:35:43 31.985 104.480 14 3.3 CAP 0.490 -0.180 -0.310 0.460 0.740 -0.240 260.0 79.0 -124.0 154.2 35.5 -19.2 267.3 33.3 135.8 45.3 16.1 26.1 4.01 20.3 1.4 3.698e-004  9 63.2 110.6 0.155
+	#Moment# SC  
+	#Moment# Net YearDate   Time      lat     lon    dep  Mw  scale    Mrr    Mtt     Mff     Mrt     Mrf     Mtf   T-val  T-trd   T-plg   N-val   N-trd   N-plg  P-val  P-trd   P-plg       M0        stk1     dip1   rake1   stk2     dip2   rake2  Nst  Fit  Qval Gap deltaU Method
+	head0='^# * q2 d- \n#YMD HMS la lo dep ml para0 m1 m2 m3 m4 m5 m6 strike0 dip0 rake0 strike1 dip1 rake1 para0 para0 para0 para0 para0 para0 para0 para0 para0 \n'
+	head1='^# * q2 d- \n#YMD   HMS      la     lo    dep  ml  para0    m1    m2     m3     m4 m5 m6    para0 para0 para0 para0 para0 para0    para0 para0 para0     m0 strike0 dip0 rake0 strike1 dip1 rake1\n'
+	if isinstance(file0,str):
+		with open(file0,'w+') as file0:
+			file0.write(head0)
+			with open(file1,'w+') as file1:
+				file1.write(head1)
+				getAllMeca(fileDir,file0,file1)
+		return
+	for logFile in glob(fileDir+'*.meca'):
+		with open(logFile,'r') as f:
+			for line in f.readlines():
+				if len(line)==0:
+					continue
+				tmp = line.split()
+				if 'Net' in tmp:
+					continue
+				if '#Moment#' in tmp:
+					line = line[13:]
+					line0=line[:4]+'/'+line[4:6]+'/'+line[6:8]
+					file1.write(line0+line[8:])
+				else:
+					file0.write(line)
+				print(line)
+				
+	for fileDir in glob(fileDir+'*/'):
+		getAllMeca(fileDir,file0,file1)
+	#画出来之后对比

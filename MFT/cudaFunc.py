@@ -115,6 +115,9 @@ def torchcorrnn(a,b):
     #c=torch.where(torch.isinf(c),torch.tensor(-1000.0,dtype=dtype),c)
     return c[0,0,:],c[0,0,c[0,0,:]!=0].mean().cpu().numpy(),\
             c[0,0,c[0,0,:]!=0].std().cpu().numpy()
+def torchcorrnn2np(a,b,**kwags):
+    c,m,s=torchcorrnn(a,b)
+    return c.cpu().numpy()
 def torchcorrnp(a,b):
     '''
     directly calculate cross-correlation based on torch.nn.functional.conv1d

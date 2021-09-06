@@ -311,8 +311,8 @@ class hsr:
         plt.subplot(2,1,1)
         plt.pcolormesh(self.fL0*f/f0,uL,np.array(np.abs(specL)),cmap='jet',shading='gouraud',rasterized=True)
         #plt.xlim([self.fL0[0]*f/f0,fmax])
-        plt.xlabel('f/Hz')
-        plt.ylabel('u/(m/s)')
+        plt.xlabel('f Hz')
+        plt.ylabel('u (m/s)')
         ##plt.colorbar()
         plt.subplot(2,1,2)
         specLNew = specL
@@ -335,7 +335,7 @@ class hsr:
                     getFileNames(day),freq=[0.5, 40],delta0=0.01,corners=4)).rotate(rotate))
         if not os.path.exists(workDir):
             os.makedirs(workDir)
-        eL = self.getCatolog(T3L)
+        eL = self.getCatolog(T3L,stations[0].dist(stations[-1])*1000)
         eFile = workDir + UTCDateTime(day).strftime('%Y%m%d')
         #np.savetxt(eFile,eL)
         specBeLLN,specAtLLN,specAfLLN,FFBeLN,FFAtLN,FFAfLN,uLLN =[],[],[],[],[],[],[]
@@ -396,7 +396,7 @@ class hsr:
             delta = t3.Delta()
             indexL = np.arange(len(data))
             iM=(indexL*data).sum()/data.sum()
-            print(iM,data.argmax(),np.where(data>0)[0].mean(),np.where(data>0)[0])
+            #print(iM,data.argmax(),np.where(data>0)[0].mean(),np.where(data>0)[0])
             time1=iM*delta+bTime.timestamp
             return time1
         else:
@@ -420,20 +420,29 @@ class hsr:
                 timeLNew.append(time)
         return np.array(timeLNew)
 
-    def getCatolog(self,T32,minValue=15000,minD=20):
-        timeL0 = self.noClose(self.meanTime(T32[0],\
-            T32[0].getDetec(minValue,minD)[0]))
-        timeL1 = self.noClose(self.meanTime(T32[-1],\
-            T32[-1].getDetec(minValue,minD)[0]))
+    def getCatolog(self,T32,minValue=15000,minDis=1000,refV=80,sta0='',net0='',sta1='',net1='',stations=[]):
+        minD=5+1.5*minDis/refV
+        i0=0
+        i1=-1
+        if len(sta0)>0:
+            #station0 = stations.find(sta0,net0)
+            #station1 = stations.find(sta1,net1)
+            i0=stations.index(net0,sta0)
+            i1=stations.index(net1,sta1)
+        timeL0 = self.noClose(self.meanTime(T32[i0],\
+            T32[i0].getDetec(minValue,minD)[0]),minD)
+        timeL1 = self.noClose(self.meanTime(T32[i1],\
+            T32[i1].getDetec(minValue,minD)[0]),minD)
         eL=[]
+        print(minD,len(timeL0),len(timeL1))
         for time in timeL0:
             dTime = timeL1-time
             absD  = np.abs(dTime)
             if (absD<minD).sum()==1:
                 time0 = time
                 time1 = timeL1[absD.argmin()]
-                v0 = self.findFF(T32[0].slice(time0-5,time0+5))
-                v1 = self.findFF(T32[-1].slice(time1-5,time1+5))
+                v0 = self.findFF(T32[i0].slice(time0-5,time0+5))
+                v1 = self.findFF(T32[i1].slice(time1-5,time1+5))
                 eL.append([time0,time1,v0,v1])
         return np.array(eL)
     def handleDay(self,stations,day,workDir='../hsrRes/',compL=[2],rotate=0,bSecL=[5,10,15,20],eSecL=[15,20,25,30],T3L=[]):
@@ -842,7 +851,7 @@ class hsr:
             figureSet.init()
             plt.figure(figsize=[3.5,3.5])
             plt.subplot(2,1,1)
-            plt.ylim([4,6])
+            plt.ylim([4.5,5.5])
             plt.xlim([-5000,5000])
             for i in range(len(dTimeL)):
                 dTime=dTimeL[i]
@@ -855,26 +864,27 @@ class hsr:
                 #print(FBeLNL[:,i].shape,*self.realMS(FBeLNL[:,i],minX=3,maxX=6,minNum=3),marker=marker,color='b')
                 #print(((midSecL-dTime)*80).shape)
                 print(i)
-                plt.errorbar((midSecL-dTime)*80,*self.realMS(FBeLNL[:,i],minX=3,maxX=6,minNum=4),fmt=marker+'b',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
-                plt.errorbar((midSecL-dTime)*80,*self.realMS(FAfLNL[:,i],minX=3,maxX=6,minNum=4),fmt=marker+'r',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
-                plt.errorbar((-midSecL+dTime)*80,*self.realMS(FBeLSL[:,i],minX=3,maxX=6,minNum=4),fmt=marker+'b',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
-                plt.errorbar((-midSecL+dTime)*80,*self.realMS(FAfLSL[:,i],minX=3,maxX=6,minNum=4),fmt=marker+'r',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
+                plt.errorbar((midSecL-dTime)*80,*self.realMS(FBeLNL[:,i],minX=3,maxX=6,minNum=4),fmt=marker+'k',markersize=1,capsize=2,elinewidth=0.5,capthick=0.5)
+                plt.errorbar((midSecL-dTime)*80,*self.realMS(FAfLNL[:,i],minX=3,maxX=6,minNum=4),fmt=marker,color='gray',markersize=1,capsize=2,elinewidth=0.5,capthick=0.5)
+                plt.errorbar((-midSecL+dTime)*80,*self.realMS(FBeLSL[:,i],minX=3,maxX=6,minNum=4),fmt=marker+'k',markersize=1,capsize=2,elinewidth=0.5,capthick=0.5)
+                plt.errorbar((-midSecL+dTime)*80,*self.realMS(FAfLSL[:,i],minX=3,maxX=6,minNum=4),fmt=marker,color='gray',markersize=1,capsize=2,elinewidth=0.5,capthick=0.5)
             #plt.xlim([-60,60])
-            plt.ylabel('$f$/Hz')
+            plt.ylabel('$f$ (Hz)')
             figureSet.setABC('(%s)'%strL[0],[0.01,0.98],c='k')
             plt.subplot(2,1,2)
-            plt.ylim([0,5000])
+            plt.ylim([1500,5000])
+            plt.xlim([-5000,5000])
             for i in range(len(dTimeL)):
                 dTime=dTimeL[i]
                 '''
                 plt.plot((midSecL-dTime)*80,vLNL[:,i],marker+'k')
                 plt.plot((-midSecL+dTime)*80,vLSL[:,i],marker+'k')
                 '''
-                plt.errorbar((midSecL-dTime)*80,*self.realMS(vLNL[:,i],minX=1500,maxX=5000,minNum=4,maxStd=maxStd),fmt=marker+'k',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
-                plt.errorbar((-midSecL+dTime)*80,*self.realMS(vLSL[:,i],minX=1500,maxX=5000,minNum=4,maxStd=maxStd),fmt=marker+'k',markersize=0.5,capsize=2,elinewidth=0.25,capthick=0.2)
+                plt.errorbar((midSecL-dTime)*80,*self.realMS(vLNL[:,i],minX=1500,maxX=5000,minNum=4,maxStd=maxStd),fmt=marker+'k',markersize=1,capsize=2,elinewidth=0.5,capthick=0.5)
+                plt.errorbar((-midSecL+dTime)*80,*self.realMS(vLSL[:,i],minX=1500,maxX=5000,minNum=4,maxStd=maxStd),fmt=marker+'k',markersize=1,capsize=2,elinewidth=0.5,capthick=0.5)
             plt.xlim([-5000,5000])
-            plt.xlabel('$distance$/m')
-            plt.ylabel('$v$/(m/s)')
+            plt.xlabel('$d$ (m)')
+            plt.ylabel('$v$ (m/s)')
             figureSet.setABC('(%s)'%strL[1],[0.01,0.98],c='k')
             if not os.path.exists(workDir):
                 os.makedirs(workDir)
@@ -1274,12 +1284,12 @@ class hsr:
         plt.arrow(FBe_,1.25,0,-0.10,color='b',linewidth=0.5,width=0.01)
         #plt.plot([FAf_,FAf_],[0,1.25],'--r',linewidth=0.3)
         #plt.plot([FBe_,FBe_],[0,1.25],'--b',linewidth=0.3)
-        plt.xlabel('$f$/Hz')
+        plt.xlabel('$f$ (Hz)')
         plt.ylabel('$A$')
         plt.xlim([0,20])
         plt.ylim([0,1.25])
         figureSet.setABC('(e)',[0.01,0.98],c='k')
-        plt.savefig('../hsrRes/ERR%s.eps'%head,dpi=300)
+        plt.savefig('./ERR%s.eps'%head,dpi=300)
         plt.close()
     def plotERR5_0_300(self,N=16,v=80,U=[3000],Lc=25,L=np.arange(30,100)*32+16,A=1,timeL=np.arange(-50,50,0.001)\
         ,f=np.arange(0,1000,0.01),head='',t3='',time=0,t3_='',time1=0):
@@ -1537,12 +1547,14 @@ class hsr:
         plt.xlim([0,20])
         plt.savefig('../hsrRes/ERL%s.pdf'%head)
         plt.close()
-    def plotWS(self,data,time0=-40,head='test',delta=0.01,fMin=0,fMax=10,xlim=[-40,40],whiteL=[],ylabel0='D/count',isSpec=False,linewidth=0.5):
+    def plotWS(self,data,time0=-40,head='test',delta=0.01,fMin=0,fMax=10,xlim=[-40,40],whiteL=[],ylabel0='$D$ (count)',isSpec=False,linewidth=0.5,fileName=''):
         figureSet.init()
         fMax+=0.5
         #head = '1.567142294544028521e+09'
+        plt.ylabel(ylabel0)
+        plt.savefig('y.eps')
         plt.close()
-        fig=plt.figure(figsize=[4.8,4])
+        fig=plt.figure(figsize=[3.2,5])
         fig.tight_layout()
         '''
         if isSpec:
@@ -1567,8 +1579,8 @@ class hsr:
         pc=ax1.pcolormesh(TL+time0,FL[:int(N*fMax*delta)],np.log(np.abs(dataS[:int(N*fMax*delta)])/np.std(dataS[:int(N*fMax*delta)]).max(axis=0,keepdims=True)+1e-3),cmap='hot',shading='gouraud',rasterized=True,vmin=-3)
         for white in whiteL:
             ax1.plot(TL+time0,(TL+time0)*0+white,'-.',color='cyan',linewidth=0.3)
-        plt.xlabel('$t$/s')
-        plt.ylabel('$f$/Hz')
+        plt.xlabel('$t$ (s)')
+        plt.ylabel('$f$ (Hz)')
         plt.xlim(xlim)
         plt.ylim([fMin,fMax-0.5])
         figureSet.setABC('(b)',[0.01,0.98],c='w')
@@ -1592,7 +1604,10 @@ class hsr:
             plt.yticks(a,['' for tmp in a])
             figureSet.setABC('(c)',[0.85,0.98],c='k')
         #plt.tight_layout()
-        plt.savefig('../hsrRes/rt%s%d.eps'%(head,time0),dpi=500)
+        if fileName=='':
+            plt.savefig('./rt%s%d.eps'%(head,time0),dpi=500)
+        else:
+            plt.savefig(fileName,dpi=500)
     def testDenseFFT(self,f0=5+1/16,N=800,delta=0.01):
         timeL=(np.arange(N)*delta).reshape([1,-1])
         data =  np.sin(timeL*f0*np.pi*2)
@@ -1609,6 +1624,36 @@ class hsr:
         plt.ylim([-0.1,1.25])
         plt.arrow(f0,1.25,0,-0.1,color='b',linewidth=0.5,width=0.01)
         #plt.savefig('../hsrRes/ERRDense.eps',dpi=300)
+    def cossTT(self,T30,T31,eL,bTime,eTime,dTime,delta=0.01,V0=80,V1=83,NS=1,**kwags):
+        N     = int((dTime-1)/delta)
+        dataL = []
+        count=0
+        for e in eL:
+            Time0  = max(T30.bTime,T31.bTime)
+            Time1  = min(T30.eTime,T31.eTime)
+            time0,time1,v0,v1=e
+            if NS*(time0-time1)<0:
+                continue
+            v0*=25
+            v1*=25
+            v= (v0+v1)/2
+            if v<V0 or v>V1:
+                continue
+            if time0-100< Time0 or time1+dTime+100>Time1:
+                continue
+            time0,time1=[min([time0,time1]),max([time0,time1])]
+            #t30 =T30.slice(time0+bTime,time1+dTime)
+            t3 = T30.slice(time0-5,time1+5)
+            time = self.MeanTime(t3)
+            t30 =seism.Trace3(T30.slice(time+bTime,time+eTime+dTime))
+            t31 =T31.slice(time+bTime,time+eTime)
+            tmp= t30.cross(t31,**kwags).Data()[:,2]
+            if len(tmp)>=N:
+                dataL.append(tmp[:N])
+                count+=1
+        return dataL,count
+
+
 
 def handleDay(l):
     stations,day,workDir,compL,rotate,bSecL,eSecL,T3L=l
@@ -1659,7 +1704,7 @@ def plotStaRail(stations,mt,basemap):
     #fig.tight_layout()
     figureSet.init()
     plt.close()
-    fig=plt.figure(figsize=[4,8])
+    fig=plt.figure(figsize=[5,10])
     plt.subplot(2,2,1)
     m0 = basemap.Basemap(llcrnrlat=laL0[0],urcrnrlat=laL0[1],llcrnrlon=loL0[0],\
             urcrnrlon=loL0[1])

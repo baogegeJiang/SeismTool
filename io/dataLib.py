@@ -2,6 +2,8 @@ import os
 import numpy as np
 from obspy import UTCDateTime,read,read_inventory
 from glob import glob
+
+from scipy.signal.filter_design import _nearest_real_complex_idx
 himaNet = ['hima']
 NECE    = ['YP','AH','BJ','BU','CQ','FJ','GD','HA','HB','HE',\
 'HI','HL','JL','JS','JX','LN','NM','NX','QH','SC','SD','SH','SN',\
@@ -117,14 +119,29 @@ class filePath:
             #2000015_220000_090be_1_2.msd
             pattern='%s/%s/%s%s.msd'\
             %(staDir,sta,time.strftime('%Y%j_%H0000_*'),filePath.himaComp[comp[-1]])
-        if nameMode =='RD':
+        if nameMode =='RD' or nameMode=='RDDS' :
             sta = sta.split('_')[0]
             #2000015_220000_090be_1_2.msd
             pattern='%s/%s/%s.%s.00.DN%s.%s.SAC'\
             %(staDir,sta,net,sta,comp[-1],time.strftime('%Y%m%d'))
+        if nameMode=='201805DS':
+            sta = sta.split('_')[0]
+            #2000015_220000_090be_1_2.msd
+            pattern='%s/%s/*.%s.00.%s.%s.SAC'\
+            %(staDir,sta,sta,comp,time.strftime('%Y%m%d'))
+            #print(pattern)
+        if nameMode=='SZ':
+            pattern = '%s/%s.%s.%s.%s.SAC'%(staDir,net,sta,time.strftime('%Y%m%d'),comp)
+            #print(pattern)
         if nameMode =='xinxilan':
             pattern='%s/%s/%s.%s.*.%s.SAC'\
             %(staDir,time.strftime('%Y%m%d'),net,sta,comp)
+        if nameMode =='2021XT':
+            if net == '6':
+                comp={'BHE':'x','BHN':'y','BHZ':'z'}[comp]
+            pattern='%s/%s/%s.%s.*.%s.sac'\
+            %(staDir,time.strftime('%Y%m%d'),net,sta,comp)
+            #print(pattern)
             #print(pattern)
         return glob(pattern)
     def getStaDirL(self,net,sta,nameMode=''):
@@ -164,9 +181,17 @@ class filePath:
             return ['/HOME/jiangyr/XA_HSR_DATA/201908DX_BB/MSD/']
         if nameMode =='RD':
             return ['/HOME/jiangyr/XA_HSR_DATA/201908DX/sac/']
+        if nameMode =='RDDS':
+            return ['/HOME/jiangyr/XA_HSR_DATA/201908DX/sacDS/']
+        if nameMode == 'SZ':
+            return ['/HOME/jiangyr/XA_HSR_DATA/201801SZ/SAC_M/','/HOME/jiangyr/XA_HSR_DATA/201801SZ/SAC_T/']
         if nameMode =='xinxilan':
             return ['/home/jiangyr/Surface-Wave-Dispersion/xinxilan2/']
+        if nameMode =='2021XT':
+            return ['/HOME/jiangyr/XA_HSR_DATA/202107XT/sac/%s/%s/'%(net,sta)]
             #staDirL =['/media/jiangyr/YNSCMOVE/sac']
+        if nameMode=='201805DS':
+            return ['/HOME/jiangyr/XA_HSR_DATA/201805DX/SACDS/']
         return staDirL
     
     def getSensorDas(self,net,sta,nameMode=''):

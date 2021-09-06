@@ -4,6 +4,7 @@ import scipy.signal  as signal
 from scipy import fftpack
 from scipy.optimize import curve_fit
 from scipy import stats
+import torch
 nptype=np.float32
 rad2deg=1/np.pi*180
 
@@ -383,3 +384,85 @@ def rotate(rad,data):
     dataNew[:,1]=np.cos(rad)*data[:,0]-np.sin(rad)*data[:,1]
     dataNew[:,2]= data[:,2]
     return dataNew
+
+def deConv_(wave,src,round=5000,threshold=0.05):
+    L    = len(wave)
+    l    = len(src)
+    dl   = L-l
+    resp = np.zeros(dl+1)
+    #print(dl)
+    wave0 = wave/(wave**2).sum()**0.5
+    wave  = wave0.copy()
+    src  = src/(src**2).sum()**0.5
+    for i in range(round):
+        cc = signal.correlate(wave,src,'valid')
+        index =  np.abs(cc).argmax()
+        resp[index]+=cc[index]
+        wave[index:(index+l)] -= cc[index]*src
+        if (wave**2).sum()**0.5<threshold:
+            break
+    waveNew = signal.convolve(src,resp)
+    return resp,wave0,waveNew,(wave**2).sum()**0.5
+def deConv(wave,src,Round=5000,threshold=0.05,device='cuda:0',f=[]):
+    L    = len(wave)
+    l    = len(src)
+    dl   = L-l
+    resp = np.zeros(dl+1)
+    #print(dl)
+    wave0 = (wave/(wave**2).sum()**0.5).astype(np.float32)
+    wave  = wave0.copy().astype(np.float32)
+    src  = (src/(src**2).sum()**0.5).astype(np.float32)
+    wave = torch.tensor(wave,device=device).reshape(1,1,-1)
+    src  =  torch.tensor(src,device=device).reshape(1,1,-1)
+    resp  =  torch.tensor(resp,device=device).reshape(1,1,-1)
+    for i in range(Round):
+        cc = torch.nn.functional.conv1d(wave,src)
+        for j in range(1):
+            index = cc[0,0,:].abs().argmax()
+            resp[0,0,index]+=cc[0,0,index]
+            wave[0,0,index:(index+l)] -= cc[0,0,index]*src[0,0]
+            cc[0,0,max(0,index-5):min(cc.shape[-1]-1,index+5)]=0
+        if (wave**2).sum()**0.5<threshold:
+            break
+    src = src[0,0,:].cpu().numpy()
+    resp = resp[0,0,:].cpu().numpy()
+    wave = wave[0,0,:].cpu().numpy()
+    waveNew = signal.convolve(src,resp)
+    return resp,wave0,waveNew,(wave**2).sum()**0.5
+def genSrc_(v=80,dL = np.arange(8)*25,delta=0.01,dt=1,diffOrder=0,f=[]):
+    dL = dL-dL.min()
+    maxT = dL.max()/v
+    timeR = maxT+2*dt
+    src = np.zeros(int(timeR/delta))
+    if len(f)>0:
+        fMax = f[-1]
+        N = int(1/(4*fMax*delta))
+        src = np.zeros(int(timeR/delta)+8*N-1)
+        timeL=np.arange(8*N)-4*N
+        g = np.exp(-(timeL/N)**2)
+    for d in dL:
+        time = d/v+dt
+        index = round(time/delta)
+        src[index]+=1
+    if diffOrder>0:
+        srcSpec = np.fft.fft(src)
+        srcSpec *= (np.arange(len(srcSpec))/len(srcSpec)*1j)**diffOrder
+        src     = np.fft.ifft(srcSpec).real
+    if len(f)>0:
+        src = signal.convolve(g,src)
+    return src
+
+modelD = {'380A':[8,25,26.5,17.5,1],
+          '380AL':[16,25,26.5,17.5,1]
+         }
+def genSrc(v=80,model='380A',delta=0.01,dt=1,diffOrder=0,f=[]):
+    N,L0,L1,l,M=modelD[model]
+    n=round(N/M)
+    #dM = np.zeros([M,n,2])
+    D = (L1-l)/2
+    DM = np.arange(2).reshape([1,1,-1])*l+D
+    LL = L0*(n-2)*L0+L1*2
+    LLM = np.arange(M).reshape([-1,1,1])*LL
+    LM = np.arange(n).reshape([1,-1,1])*L0
+    dM = DM+LLM+LM
+    return genSrc_(v,dM.reshape([-1]),delta,dt,diffOrder,f)
