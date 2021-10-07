@@ -7,7 +7,7 @@ stations.inR([34,44,108.5,115.5])
 stations.plot()
 stations.write('GZ.txt')
 delta0=0.01
-for station in stations:
+for station in stations[305::4]:#302 303 304 305
     for i in range(8*365):
         time   = time0+i*86400
         filesL = station.getFileNames(time,time+86400-10)

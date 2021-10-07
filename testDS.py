@@ -2,7 +2,18 @@ import os
 import sys
 from imp import reload
 from SeismTool.SurfDisp import run
-R = run.run(run.runConfig(run.paraAllONew))
+R = run.run(run.runConfig(run.paraTrainTest))
+R.loadCorr()
+R.loadCorr(isLoadFromMat=True)
+R.loadModelUp()
+R.train(up=5,isRand=True,isShuffle=False)
+'''
+trainSetDir='/HOME/jiangyr/trainSet/'
+R.fvL = run.loadListStr(trainSetDir+'fvL')
+R.fvTrain = run.loadListStr(trainSetDir+'fvTrain')
+R.fvTest = run.loadListStr(trainSetDir+'fvTest')
+R.fvValid = run.loadListStr(trainSetDir+'fvValid')
+'''
 R.calResOneByOne()
 R.loadCorr()
 R.model = None
