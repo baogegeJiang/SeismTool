@@ -1,7 +1,7 @@
 from re import L
 
 from matplotlib.cbook import delete_masked_points
-
+import scipy
 from scipy import fft
 from ..io import seism
 import numpy as np
@@ -191,14 +191,17 @@ class hsr:
         fL = (self.fL0*f/f0).reshape([-1,1])
         M  = data*np.exp(-1j*fL*timeL*np.pi*2)
         return M.sum(axis=1)
-    def adjustSpec(self,T3,f,f0=3.2,comp=2):
+    def adjustSpec(self,T3,f,f0=3.2,comp=2,isNorm=True,oTime=0):
         data = T3.Data()
-        data/=data.std()
+        if isNorm:
+            data/=data.std()
         data=data[:,comp].reshape([1,-1])
         delta=T3.delta
         timeL=(np.arange(data.size)*delta).reshape([1,-1])
         fL = (self.fL0*f/f0).reshape([-1,1])
-
+        if oTime>0:
+            if len(T3)>0:
+                timeL+=T3.bTime.timestamp-oTime
         dataT = tensor(data,dtype=dtype,device=device)
         timeLT = tensor(timeL,dtype=dtype,device=device)
         fLT= tensor(fL,dtype=dtype,device=device)
@@ -246,9 +249,104 @@ class hsr:
         MS  = (dataT*torch.sin(-fLT*timeLT*np.pi*2)).sum(axis=1)
         MC  = (dataT*torch.cos(-fLT*timeLT*np.pi*2)).sum(axis=1)
         return 1j*MS.cpu().numpy()+MC.cpu().numpy(),fL.reshape([-1])
+    def adjustSpecDt(self,T3,f,f0=3.2,comp=2,dt=0,isNormal=True):
+        data = T3.Data()
+        if isNormal:
+            data/=data.std()
+        data=data[:,comp].reshape([1,-1])
+        delta=T3.delta
+        timeL=(np.arange(data.size)*delta).reshape([1,-1])+dt
+        fL = (self.fL0*f/f0).reshape([-1,1])
+
+        dataT = tensor(data,dtype=dtype,device=device)
+        timeLT = tensor(timeL,dtype=dtype,device=device)
+        fLT= tensor(fL,dtype=dtype,device=device)
+        #print(dataT.shape,fLT.shape,timeLT.shape)
+        MS  = (dataT*torch.sin(-fLT*timeLT*np.pi*2)).sum(axis=1)
+        MC  = (dataT*torch.cos(-fLT*timeLT*np.pi*2)).sum(axis=1)
+        return 1j*MS.cpu().numpy()+MC.cpu().numpy(),fL.reshape([-1])
     def shiftDt(self,spec,dt,f,f0=3.2):
         fL = (self.fL0*f/f0)
         return spec*np.exp(-1j*fL*dt*np.pi*2)
+    def ShiftDt(self,specL,dtL,f=3.2,f0=3.2):
+        fL=(self.fL0*f/f0).reshape([1,-1])
+        dtL = dtL.reshape([-1,1])
+        return specL*np.exp(-1j*fL*dtL*np.pi*2)
+    def ShiftDtSum(self,specL,dtL,f=3.2,f0=3.2):
+        nanCount =np.isnan(specL).sum(axis=1)
+        specLDt= self.ShiftDt(specL,dtL,f=f,f0=f0)
+        return specLDt[nanCount==0].sum(axis=0)
+    def loopSlh(self,specL,slL,shL,L,H,f=3.2,f0=3.2):
+        M=[]
+        for sl in slL:
+            M.append([])
+            for sh in shL:
+                dtL=sl*L+sh*H
+                M[-1].append(self.ShiftDtSum(specL,dtL,f=f,f0=f0))
+        return M
+    def loopSTheta(self,specL,sL,thetaL,L,H,f=3.2,f0=3.2):
+        M=[]
+        for s in sL:
+            M.append([])
+            for theta in thetaL:
+                sl = s*np.cos(theta)
+                sh = s*np.sin(theta)
+                dtL=sl*L+sh*H
+                M[-1].append(self.ShiftDtSum(specL,dtL,f=f,f0=f0))
+        return M
+    def plotSlhByF(self,M,slL,shL,saveDir='hsrFig/',xlabel='slowness_h(s/km)',ylabel='slowness_p(s/km)',max_1=False):
+        vmin=0
+        vmax=1
+        M =np.array(M)
+        if not os.path.exists(saveDir):
+            os.makedirs(saveDir)
+        for i in range(len(self.fL0)):
+            f = self.fL0[i]
+            print(f)
+            m = M[:,:,i]/np.abs(M).max()
+            plt.close()
+            if not max_1:
+                vmax=np.abs(m).max()
+                vmin=0
+            plt.pcolormesh(shL,slL,np.abs(m),rasterized=True,vmax=vmax,vmin=vmin)
+            plt.title('f=%.3f A:%f'%(f,np.abs(m).max()))
+            fileName ='%s/%.3f.jpg'%(saveDir,f)
+            print(fileName)
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel)
+            plt.colorbar()
+            plt.savefig(fileName,dpi=500)
+            plt.close()
+    def plotSlhAll(self,M,slL,shL,saveDir='hsrFig/'):
+        M =np.array(M)
+        if not os.path.exists(saveDir):
+            os.makedirs(saveDir)
+        m = M[:].reshape([-1,len(self.fL0)])
+        #(1/shL).tolist()*len(self.fL0),1/slL,
+        plt.pcolormesh(self.fL0,np.arange(len(m)),np.abs(m),rasterized=True)
+        #
+        fileName ='%s/all.jpg'%(saveDir)
+        print(fileName)
+        plt.savefig(fileName)
+        plt.close()
+    def plotSlh3D(self,M,slL,shL,saveDir='hsrFig/',xlabel='slowness_h(s/km)',ylabel='slowness_p(s/km)'):
+        M =np.abs(np.array(M))
+        if not os.path.exists(saveDir):
+            os.makedirs(saveDir)
+        iL = M.max(axis=1).argmax(axis=0)
+        jL = M.max(axis=0).argmax(axis=0)
+        aL = M.max(axis=0).max(axis=0)
+        print(jL)
+        plt.close()
+        plt.scatter(slL[iL],shL[jL],aL/20,aL/20,cmap='hot')
+        #plt.pcolormesh(self.fL0,np.arange(len(m)),np.abs(m),rasterized=True)
+        #
+        fileName ='%s/3D.jpg'%(saveDir)
+        #print(fileName)
+        plt.savefig(fileName)
+        #plt.close()
+    def getSpecL(self,T3L,comp,f=3.2,f0=3.2,**kwags):
+        return np.array([self.adjustSpec(T3,f=f,f0=f0,comp=comp,**kwags)for T3 in T3L])
     def getAll(self,T3,eL,minF=3.1,maxF=3.3,comp=2,bSec=5,eSec=15):
         specAt = []
         specBe = []
@@ -304,6 +402,16 @@ class hsr:
         specAfL = np.array([ np.array([ self.shiftDt(specLAf[i],T3LAf[i].bTime-T3LAf[0].bTime+DL[i]/u,FFAf) for i in range(len(T3LAf))]).mean(axis=0)for u in uL])
 
         return specBeL,specAtL,specAfL,FFBe,FFAt,FFAf,self.uL
+    def getLine(self,stations,sta0='',sta1='',net0='',net1=''):
+        if len(sta0)>0:
+            #station0 = stations.find(sta0,net0)
+            #station1 = stations.find(sta1,net1)
+            i0=stations.index(net0,sta0)
+            i1=stations.index(net1,sta1)
+        else:
+            i0=0
+            i1=-1
+        return mathFunc_bak.Line([[stations[i0]['la'],stations[i0]['lo']],[stations[i1]['la'],stations[i1]['lo']]],10)
     def plotUSpec(self,f,specL,filename,f0=3.2):
         uL=self.uL
         plt.close()
@@ -419,7 +527,6 @@ class hsr:
             if (np.abs(timeL-time)<minD).sum()==1:
                 timeLNew.append(time)
         return np.array(timeLNew)
-
     def getCatolog(self,T32,minValue=15000,minDis=1000,refV=80,sta0='',net0='',sta1='',net1='',stations=[]):
         minD=5+1.5*minDis/refV
         i0=0
@@ -1652,9 +1759,84 @@ class hsr:
                 dataL.append(tmp[:N])
                 count+=1
         return dataL,count
-
-
-
+    def plotPhaseByF(self,specL,stations,saveDir='hsrFig/',xlabel='la',ylabel='lo',net0='',sta0='',cmap='rainbow'):
+        #M =np.array(M)
+        if not os.path.exists(saveDir):
+            os.makedirs(saveDir)
+        specL = np.array(specL)
+        specL/=np.abs(specL).max()
+        la,lo = stations.loc()
+        phase0=0
+        index=-1
+        if len(sta0)>0:
+            index =stations.index(net0,sta0)
+        for i in range(len(self.fL0)):
+            f = self.fL0[i]
+            
+            print(f)
+            #m = M[:,:,i]/np.abs(M).max()
+            plt.close()
+            '''for j in range(len(stations)):
+                station = stations[j]
+                la = station['la']
+                lo = station['lo']
+                r  = specL[j][i]
+                #print(np.abs(r))
+                phase = np.angle(r)%(2*np.pi)
+                #print(phase)'''
+            r = specL[:,i]
+            if index>=0:
+                phase0=np.angle(r[index])
+                print(phase0)
+            plt.scatter(lo,la,np.abs(r)*100,(np.angle(r)-phase0)%(2*np.pi),vmin=0,vmax=2*np.pi,cmap=cmap)
+            #plt.pcolormesh(shL,slL,np.abs(m),vmax=1,vmin=0,rasterized=True)
+            plt.title('f=%.3f '%(f))
+            fileName ='%s/%.3f.jpg'%(saveDir,f)
+            print(fileName)
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel)
+            plt.colorbar()
+            plt.savefig(fileName,dpi=500)
+            plt.close()
+    def calSlowness(self,rL0,l,sL0=[0.3,1],aL0=[1,0.1],phaseL0=[0.,0.],loop=3,alpha=0.1,omega=5*np.pi*2):
+        rL = np.array(rL0)
+        rL/=np.abs(rL)
+        l=np.array(l)
+        sL= np.array(sL0)
+        aL= np.array(aL0)
+        phaseL= np.array(phaseL0)
+        for i in range(loop):
+            RM = self.calSum(l,sL,aL,phaseL,omega=omega)
+            RL = RM.sum(axis=1)
+            RL /= np.abs(RL)
+            drL = rL - RL
+            G = self.calG(l,RM,omega=omega)
+            G = np.mat(G)
+            drL = np.mat(drL.reshape([-1,1]))
+            GTG = G.transpose().conj()*G+np.eye(len(l))*alpha
+            #print(G[:3,:3])
+            #print(G.transpose()[:3,:3])
+            #print(G.transpose()[:3,:3].conj())
+            GTdrL = G.transpose().conj()*drL
+            #print(G.shape,GTG.shape,GTdrL.shape)
+            d = np.array(GTG**(-1)*GTdrL).reshape([-1,3])
+            #print(d)
+            aL += d[:,0].real
+            sL += d[:,1].real
+            phaseL+=d[:,2].real
+            print(np.abs(drL).sum())
+            print('########',sL,aL,phaseL)
+    def calG(self,l,RM,omega=5*np.pi*2):
+        #drL = drL.reshape([-1,1])
+        l   = l.reshape([-1,1])
+        G = np.array([RM,1j*RM*l*omega,1j*RM]).transpose([1,2,0]).reshape([l.shape[0],-1])
+        return G
+    def calSum(self,l,sL=np.array([0.3,1]),aL=np.array([1,0.1]),phaseL=np.array([0,0]),omega=5*np.pi*2):
+        l=l.reshape([-1,1])
+        sL= sL.reshape([1,-1])
+        aL= aL.reshape([1,-1])
+        phaseL= phaseL.reshape([1,-1])
+        return aL*np.exp(1j*(l*sL*omega+phaseL))
 def handleDay(l):
     stations,day,workDir,compL,rotate,bSecL,eSecL,T3L=l
     h = hsr()
