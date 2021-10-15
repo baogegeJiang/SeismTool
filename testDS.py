@@ -5,48 +5,42 @@ from SeismTool.SurfDisp import run
 R = run.run(run.runConfig(run.paraTrainTest))
 R.loadCorr()
 R.saveTrainSet(isMat=True)
-R.loadCorr(isLoadFromMat=True)
-run.run.loadCorr(R,isLoad=False)
+#R.loadCorr(isLoadFromMat=True)
+R.loadModelUp()
+R.train(up=5,isRand=True,isShuffle=True)
+#run.run.loadCorr(R,isLoad=False)
 R.calResOneByOne()
 #R.loadModelUp(R.config.para['modelFile'])
 R.loadModelUp()
 R.train(up=5,isRand=True,isShuffle=False)
+reload(run)
+reload(run.fcn)
 R.model=None
 R.loadModelUp()
 run.run.train(R,up=5,isRand=False,isShuffle=False)
 reload(run)
+R.config.para.update(run.paraTrainTest)
 R.corrL1.reSetUp(5)
 run.run.calRes(R)
 run.run.loadRes(R)
 run.run.getAv(R)
+run.d.qcFvD(R.fvAvGet)
+run.d.qcFvD(R.fvDGet)
+run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compare5/')
 reload(run.d)
-disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvD,R.stations,t=R.config.para['T'],keys=R.fvTrain)
-run.d.plotFvDist(disL,vL,fL,'predict/fvDistTrain.eps')
 
-disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvD,R.stations,t=R.config.para['T'],keys=R.fvValid)
-run.d.plotFvDist(disL,vL,fL,'predict/fvDistValid.eps')
 
-disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvD,R.stations,t=R.config.para['T'],keys=R.fvTest)
-run.d.plotFvDist(disL,vL,fL,'predict/fvDistTest.eps')
+disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvD0,R.stations,t=R.config.para['T'],keys=R.fvTest,)
 
-disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvDAvarage,R.stations,t=R.config.para['T'],keys=R.fvTrain)
-run.d.plotFV(vL,fL,'predict/FVTrain.eps',isAverage=True,fvAverage=fvAverage)
 
-disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvDAvarage,R.stations,t=R.config.para['T'],keys=R.fvValid)
-run.d.plotFV(vL,fL,'predict/FVValid.eps',isAverage=True,fvAverage=fvAverage)
-
-disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvDAvarage,R.stations,t=R.config.para['T'],keys=R.fvTest)
-run.d.plotFV(vL,fL,'predict/FVTest.eps',isAverage=True,fvAverage=fvAverage)
-
-disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvD0,R.stations,t=R.config.para['T'],keys=R.fvTrain)
-run.d.plotFV(vL,fL,'predict/FVTrainSingle.eps',isAverage=True,fvAverage=fvAverage)
-
-disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvD0,R.stations,t=R.config.para['T'],keys=R.fvValid)
-run.d.plotFV(vL,fL,'predict/FVValidSingle.eps',isAverage=True,fvAverage=fvAverage)
-
-disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvD0,R.stations,t=R.config.para['T'],keys=R.fvTest)
-run.d.plotFV(vL,fL,'predict/FVTestSingle.eps',isAverage=True,fvAverage=fvAverage)
-
+reload(run.fcn)
+run.fcn.modelUp.show(R.model,R.corrLTest.x[::100],R.corrLTest.y[::100],outputDir='predict/raw/',delta=1,T=R.config.para['T'])
+reload(run.d)
+run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compareV10/')
+run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='err0_distribution')
+run.d.compareFVD(R.fvAvGet,R.fvDGet,R.stations,'predict/stdTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='err0_distribution')
+run.d.compareFVD(R.fvD,R.fvD0,R.stations,'predict/erro0.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='err0_distribution')
+run.d.plotFVM(R.fvMGet,R.fvAvGet,resDir=R.config.para['trainDir']+'pairs4/get_',isDouble=True)
 from glob import glob
 from SeismTool.io import seism
 fvFileL = glob('%s/*.dat'%('../models/ayu/Pairs_avgpvt/'))
