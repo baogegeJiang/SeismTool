@@ -1193,23 +1193,26 @@ class fv:
                     if len(self.std)>0:
                         std = self.std[i]
                     f.write('%f %f %f\n'%(T,v,std))
-    def update(self,self1,isReplace=True):
+    def update(self,self1,isReplace=True,threshold=0.10):
         v = self1(self.f).reshape([-1])
         dv = np.abs(v-self.v)
-        if (dv<0.2).sum()>1:
-            self.f = self.f[dv<0.2]
+        if (dv<threshold*v).sum()>1:
+            self.f = self.f[dv<threshold*v]
             if isReplace:
-                self.v = v[dv<0.2]
+                self.v = v[dv<threshold*v]
             else:
-                self.v = self.v[dv<0.2]
-            self.std = self.std[dv<0.2]
+                self.v = self.v[dv<threshold*v]
+            self.std = self.std[dv<threshold*v]
         else:
             self.v[:] = 1e-9
         self.interp = self.genInterp()
     def qc(self,threshold=0.08):
-        self.f = self.f[self.std<threshold]
-        self.v = self.v[self.std<threshold]
-        self.std = self.std[self.std<threshold]
+        v = self.v.copy()
+        if threshold<0:
+            v= v*0+1
+        self.f = self.f[self.std<threshold*v]
+        self.v = self.v[self.std<threshold*v]
+        self.std = self.std[self.std<threshold*v]
         if len(self.f)>2:
             self.interp = self.genInterp()
     def limit(self,self1,threshold=2):
@@ -1243,8 +1246,6 @@ def outputFvDist(fvD,stations,t=(16**np.arange(0,1.000001,1/49))*10,keys=[],keys
         keysL = fvD.keys()
     for key in keysL:
         if 'prem' in key:
-            distL.append(0)
-            vL.append(fL*0-1)
             continue
         netSta0,netSta1 = key.split('_')[-2:]
         name=netSta0+'_'+netSta1
@@ -1255,12 +1256,20 @@ def outputFvDist(fvD,stations,t=(16**np.arange(0,1.000001,1/49))*10,keys=[],keys
         if name not in nameL and name1 not in nameL:
             nameL.append(name)
         if key not in fvD:
-            time,la,lo,sta0,sta1=key.split('_')
-            key = '%s_%s_%s_%s_%s'%(time,la,lo,sta1,sta0)
-            if key not in fvD:
-                distL.append(0)
-                vL.append(fL*0-1)
-                continue
+            if len(key.split('_'))==2:
+                sta0,sta1=key.split('_')
+                key = '%s_%s'%(sta1,sta0)
+                if key not in fvD:
+                    distL.append(0)
+                    vL.append(fL*0-1)
+                    continue
+            else:
+                time,la,lo,sta0,sta1=key.split('_')
+                key = '%s_%s_%s_%s_%s'%(time,la,lo,sta1,sta0)
+                if key not in fvD:
+                    distL.append(0)
+                    vL.append(fL*0-1)
+                    continue
         sta0 = stations.Find(netSta0)
         sta1 = stations.Find(netSta1)
         dist = sta0.dist(sta1)
@@ -1298,7 +1307,7 @@ def plotFV(vL,fL,filename,fStrike=2,title='',isAverage=True,thresL=[0.01,0.03,0.
     VL    = VL[VL>1]
     binF  = fL[::fStrike]
     binF.sort()
-    binV  = np.arange(3,6,0.03)
+    binV  = np.arange(2.8,5.2,0.02)
     plt.close()
     plt.figure(figsize=[4,3])
     plt.hist2d(VL,FL,bins=(binV,binF),rasterized=True,cmap='Greys',norm=colors.LogNorm())
@@ -1314,8 +1323,32 @@ def plotFV(vL,fL,filename,fStrike=2,title='',isAverage=True,thresL=[0.01,0.03,0.
             plt.plot(fvAverage.v[fvAverage.v>1]*(1+thres),fvAverage.f[fvAverage.v>1],'-.r',linewidth=linewidth)
             plt.plot(fvAverage.v[fvAverage.v>1]*(1-thres),fvAverage.f[fvAverage.v>1],'-.r',linewidth=linewidth)
     plt.savefig(filename,dpi=300)
-    plt.close()   
+    plt.close()
 
+def compareFVD(fvD,fvDGet,stations,filename,t=(12**np.arange(0,1.000001,1/49))*10,keys=[],fStrike=2,title='err0_dos'):
+    disL,vL,fL,fvAverage = outputFvDist(fvD,stations,t=t,keys=keys,keysL=fvD.keys())
+    disLGet,vLGet,fLGet,fvAverageGet = outputFvDist(fvDGet,stations,t=t,keys=keys,keysL=fvD.keys())
+    VL    = vL.reshape([-1])
+    FL    = (fL.reshape([1,-1])+vL*0).reshape([-1])
+    VLGet    = vLGet.reshape([-1])
+    FLGet    = (fLGet.reshape([1,-1])+vLGet*0).reshape([-1])
+    dv = VLGet-VL
+    dvR = dv/VL
+    print((vL>1).sum())
+    print(dvR*100,FL)
+    plt.close()
+    binF  = fL[::fStrike]
+    binF.sort()
+    binDVR  = np.arange(-0.04,0.04,0.002)
+    plt.figure(figsize=[4,3])
+    plt.hist2d(dvR[(VL>1)*(VLGet>1)],FL[(VL>1)*(VLGet>1)],bins=(binDVR,binF),rasterized=True,cmap='Greys')#,norm=colors.LogNorm()
+    plt.colorbar(label='count')
+    plt.gca().set_yscale('log')
+    plt.xlabel('dv/v_0')
+    plt.ylabel('frequency(Hz)')
+    plt.title(title)
+    plt.savefig(filename,dpi=300)
+    plt.close()
 def getFVFromPairFile(file,fvD={},quakeD={},isPrint=True,isAll=False):
     with open(file) as f :
         lines = f.readlines()
@@ -1593,29 +1626,32 @@ def getFVFromPairFileDis(file,fvD={},quakeD={},isPrint=True):
         if isPrint:
             print(len(quakeD.keys()))
 
-def qcFvD(fvD):
+def qcFvD(fvD,threshold=-1,minCount=3):
     keyL = []
     for key in fvD:
-        if len(fvD[key].f)<5:
+        if threshold>0:
+            fvD[key].qc(threshold)
+        if len(fvD[key].f)<minCount:
             keyL.append(key)
     for key in keyL:
         fvD.pop(key)
 
-def qcFvL(fvL):
+def qcFvL(fvL,minCount=3):
     FVL = []
     count = 0
     for fv in fvL:
-        if len(fv.f)<5:
+        if len(fv.f)<minCount:
             FVL.append(count)
         count+=1
     for fv in FVL[-1::-1]:
         fvL.pop(fv)
-def averageFVL(fvL,minSta=6,threshold=2.5,fL=[]):
-    fL =[]
+def averageFVL(fvL,minSta=5,threshold=2.5,minThreshold=0.02,fL=[]):
+    #fL =[]
     qcFvL(fvL)
     if len(fvL)<minSta:
         return fv([np.array([-1]),np.array([-1]),np.array([10])])
     if len(fL)==0:
+        fL=[]
         for FV in fvL:
             f = FV.f
             for F in f:
@@ -1623,6 +1659,7 @@ def averageFVL(fvL,minSta=6,threshold=2.5,fL=[]):
                     fL.append(F)
         fL.sort()
         fL = np.array(fL)
+    #print(type(fL))
     vM = np.zeros([len(fL),len(fvL)])
     for i in range(len(fvL)):
         vM[:,i] = fvL[i](fL)
@@ -1632,7 +1669,7 @@ def averageFVL(fvL,minSta=6,threshold=2.5,fL=[]):
     std = f*0
     v = f*0
     for i in range(len(f)):
-        MEAN, STD, vN = QC(vMNew[i][vMNew[i]>1],threshold=threshold)
+        MEAN, STD, vN = QC(vMNew[i][vMNew[i]>1],threshold=threshold,minThreshold=minThreshold,minSta=minSta)
         v[i] = MEAN
         std[i] = STD
     return fv([f,v,std])
@@ -1686,19 +1723,23 @@ def fvD2fvM(fvD,isDouble=False):
         if keyNew not in fvM:
             fvM[keyNew] = []
         fvM[keyNew].append(fvD[key])
+        #print(keyNew,fvM[keyNew],)
+        #break
     return fvM
 
-def fvM2Av(fvM):
+def fvM2Av(fvM,**kwags):
     fvD = {}
     for key in fvM:
-        fvD[key] = averageFVL(fvM[key])
+        #print(key)
+        #print(len(fvM[key]))
+        fvD[key] = averageFVL(fvM[key],**kwags)
     return fvD
 
 def plotFVM(fvM,fvD={},resDir='test/',isDouble=False):
     if not os.path.exists(resDir):
         os.makedirs(resDir)
     for key in fvM:
-        filename = resDir + key+'.jpg'
+        filename = resDir + key+'.eps'
         fvRef    = None
         fvL = fvM[key]
         if isDouble:
@@ -1717,7 +1758,7 @@ def plotFVL(fvL,fvRef=None,filename='test.jpg',thresholdL=[2],title='fvL'):
     plt.close()
     hL=[]
     lL=[]
-    plt.figure(figsize=[4,4])
+    plt.figure(figsize=[3,3])
     for fv in fvL:
         if isinstance(fvL,dict):
             fv = fvL[fv]
@@ -1726,14 +1767,18 @@ def plotFVL(fvL,fvRef=None,filename='test.jpg',thresholdL=[2],title='fvL'):
             for part in parts:
                 if len(part)>0:
                     part = np.array(part)
-                    h=plt.plot(fv.v[part],fv.f[part],'k',linewidth=0.1,alpha=0.2)
+                    h=plt.plot(fv.v[part],fv.f[part],'k',linewidth=0.2)
     hL.append(h)
     lL.append('pairs')
     if fvRef !=None:
-        for threshold in thresholdL:
-            plt.plot(fvRef.v-threshold*fvRef.std,fvRef.f,'-.r',linewidth=0.5)
-            h1=plt.plot(fvRef.v+threshold*fvRef.std,fvRef.f,'-.r',linewidth=0.5)
-        h2=plt.plot(fvRef.v,fvRef.f,'r',linewidth=0.5)
+        parts = validL(fvRef.v,fvRef.f,0)
+        for part in parts:
+            if len(part)>0:
+                part = np.array(part)
+                for threshold in thresholdL:
+                    plt.plot(fvRef.v[part]-threshold*fvRef.std[part],fvRef.f[part],'-.r',linewidth=0.5)
+                    h1=plt.plot(fvRef.v[part]+threshold*fvRef.std[part],fvRef.f[part],'-.r',linewidth=0.5)
+            h2=plt.plot(fvRef.v[part],fvRef.f[part],'r',linewidth=0.5)
         hL.append(h2)
         lL.append('average')
         hL.append(h1)
@@ -1786,7 +1831,7 @@ def replaceByAv(fvD,fvDAv,**kwags):
 
     for name in notL:
         fvD.pop(name)
-def compareFvD(fvD, fvDRef,resDir='results/'):
+def compareFvD_(fvD, fvDRef,resDir='results/'):
     if not os.path.exists(resDir):
         os.makedirs(resDir)
     for key in fvDRef:
@@ -1797,6 +1842,7 @@ def compareFvD(fvD, fvDRef,resDir='results/'):
                 fv = fvD[key]
             if isinstance(fvDRef,dict):
                 fvRef = fvDRef[key]
+            plt.figure(figsize=[3,3])
             if len(fvRef.f)>2:
                 plt.plot(fv.v,fv.f,'r',linewidth=0.3)
                 plt.plot(fvRef.v,fvRef.f,'k',linewidth=0.3)
@@ -1807,10 +1853,48 @@ def compareFvD(fvD, fvDRef,resDir='results/'):
                 else:
                     plt.legend(['predict','back'])
             
-            figSet()
+            #figSet()
             plt.title(key)
-            
-            plt.savefig(resDir+'compare_'+key+'.jpg',dpi=300)
+            plt.savefig(resDir+'compare_'+key+'.eps',dpi=300)
+            plt.close()
+def compareFvD(fvD, fvDRef,f,resDir='results/'):
+    if not os.path.exists(resDir):
+        os.makedirs(resDir)
+    for key in fvDRef:
+        if '_' not in key:
+            continue
+        sta0,sta1 = key.split('_')
+        key0 =key
+        keyNew = sta1+'_'+sta0
+        if key in fvD or keyNew in fvD:
+            if keyNew in fvD:
+                key = keyNew
+            if isinstance(fvD,dict):
+                fv = fvD[key]
+            if isinstance(fvDRef,dict):
+                fvRef = fvDRef[key0]
+            plt.figure(figsize=[3,3])
+            if len(fvRef.f)>2:
+                v = fv(f)
+                std = fv.STD(f)
+                vRef = fvRef(f)
+                v[v<1]=np.nan
+                vRef[vRef<1]=np.nan
+                plt.plot(vRef,f,'k',linewidth=0.3)
+                plt.plot(v,f,'r',linewidth=0.3)
+                plt.legend(['predict','manual'])
+                plt.plot(vRef*0.99,f,'-.k',linewidth=0.3)
+                plt.plot(vRef*1.01,f,'-.k',linewidth=0.3)
+                #plt.plot(v-std,f,'-.r',linewidth=0.3)
+                #plt.plot(v+std,f,'-.r',linewidth=0.3)
+            #figSet()
+            plt.title(key)
+            plt.gca().set_yscale('log')
+            plt.ylim([f.min(),f.max()])
+            plt.xlim([3,5])
+            plt.xlabel('v(km/s)')
+            plt.xlabel('f(Hz)')
+            plt.savefig(resDir+'compare_'+key+'.eps',dpi=300)
             plt.close()
 class areas:
     """docstring for  areas"""
@@ -2437,8 +2521,15 @@ class corrL(list):
             y[ii,iP*up:maxCount*up+iN*up,0,:] =tmpy[-iN*up:maxCount*up-iP*up]
             x[ii,iP:maxCount+iN,0,0] = np.real(self[i].xx.\
                 reshape([-1]))[-iN:maxCount-iP]
-            x[ii,iP:maxCount+iN,0,1] = np.imag(self[i].xx.\
-                reshape([-1]))[-iN:maxCount-iP]
+            #x[ii,iP:maxCount+iN,0,1] = np.imag(self[i].xx.\
+            #    reshape([-1]))[-iN:maxCount-iP]
+            dDis  = self[i].dDis
+            delta0 = self[i].timeL[1]-self[i].timeL[0]
+            timeMin = dDis/4.8
+            timeMax = dDis/2.8
+            I0 = int(timeMin/delta0)
+            I1 = int(timeMax/delta0)
+            x[ii,I0:I1,0,1]=1
             t0L[ii]=t0-iN/self[i].fs-iP/self[i].fs
             dt = np.random.rand()*5-2.5
             iP,iN = self.ipin(t0+dt,self[i].fs)
@@ -3292,7 +3383,7 @@ def corrSacsL(d,sacsL,sacNamesL,dura=0,M=np.array([0,0,0,0,0,0,0])\
         sacsL[i][0].stats['sac']['gcarc'])*1.1#distL[i]/5
         if tStart >1e5 or tStart <5:
             tStart = distL[i]/5
-        t0 = min(distL[i]/4.2,tStart)
+        t0 = min(distL[i]/4.6,tStart)#4.2
         dt0 = t0 - sacsL[i][0].stats['sac']['b']
         i0 = max(0,int(dt0/sacsL[i][0].stats['sac']['delta']))
         

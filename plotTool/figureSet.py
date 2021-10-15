@@ -41,6 +41,9 @@ def setColorbar(pc,label='',key='ZGKX',pos='bottom'):
     if pos in ['ZGKX']:
         cax = ax_divider.append_axes('bottom', size="7%", pad="3%")
         cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
+    if pos in ['Surf']:
+        cax = ax_divider.append_axes('bottom', size="20%", pad="-60%")
+        cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
         #plt.xticks([])
     if len(label)>0:
         cbar.set_label(label)

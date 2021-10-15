@@ -337,41 +337,24 @@ def QC_bak(data,threshold=2.5):
     else:
         return QC(data[d<Threshold],threshold)
 
-def QC(data,threshold=2.5,it=20):
-    if it==0:
-        print('***********************************reach depest*******************')
-    if len(data)<6 or it==0:
-        return data.mean(),999,len(data)
-    #if len(data)<10:
-    #    return data.mean(),data.std(),len(data)
-    mData = np.median(data)
-    d = np.abs(data - mData)
-    lqr = stats.iqr(data)
-    Threshold = lqr*threshold
-    mData = np.mean(data[d<Threshold])
-    d = np.abs(data - mData)
-    if (d>Threshold).sum() ==0 :
-        return data[d<Threshold].mean(),data[d<Threshold].std(),len(data)
-    else:
-        return QC(data[d<Threshold],threshold,it-1)
 
-def QC(data,threshold=2.5,it=20):
+def QC(data,threshold=2.5,it=20,minThreshold=0.02,minSta=5):
     if it==0:
         print('***********************************reach depest*******************')
-    if len(data)<6 or it==0:
+    if len(data)<minSta or it==0:
         return data.mean(),999,len(data)
     #if len(data)<10:
     #    return data.mean(),data.std(),len(data)
     mData = np.median(data)
     d = np.abs(data - mData)
     lqr = stats.iqr(data)
-    Threshold = lqr*threshold
+    Threshold = max(lqr*threshold,mData*minThreshold)
     mData = np.mean(data[d<Threshold])
     d = np.abs(data - mData)
-    if (d>Threshold).sum() ==0 :
+    if (d>Threshold).sum() ==0 and (d<=Threshold).sum()>=minSta:
         return data[d<Threshold].mean(),data[d<Threshold].std(),len(data)
     else:
-        return QC(data[d<Threshold],threshold,it-1)
+        return QC(data[d<Threshold],threshold,it-1,minThreshold=minThreshold)
 
 def rotate(rad,data):
     #RTZ

@@ -1,3 +1,4 @@
+from posixpath import dirname
 from tensorflow import keras
 from tensorflow.keras import  Model
 from tensorflow.keras.layers import Input, MaxPooling2D,\
@@ -23,6 +24,7 @@ import tensorflow as tf
 from numba import jit
 from .node_cell import ODELSTMR
 import gc
+from ..plotTool import figureSet
 # this module is to construct deep learning network
 def defProcess():
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -76,8 +78,8 @@ class Swish(Activation):
 get_custom_objects().update({'swish': Swish(swish)})
 #传统的方式
 w0 = np.ones(50)
-w0[-10:] = 1.5
-w0[-5:]  = 2
+w0[-10:] = 2.5
+w0[-5:]  = 5
 #w0/=w0.mean()
 
 channelW = K.variable(w0.reshape([1,1,1,-1]))
@@ -90,9 +92,15 @@ class lossFuncSoft:
     def __call__(self,y0,yout0):
         y1 = 1-y0
         yout1 = 1-yout0
-        return -K.mean((self.w*y0*K.log(yout0+1e-4)+y1*K.log(yout1+1e-4))*\
-            (K.max(y0,axis=1, keepdims=True)*1+0.0)*channelW,\
-            axis=-1)
+        yout0 = K.clip(yout0,1e-7,1)
+        yout1 = K.clip(yout1,1e-7,1)
+        return -K.mean(\
+                         (\
+                             self.w*y0*K.log(yout0)+y1*K.log(yout1)\
+                                                                     )*\
+                         K.max(y0,axis=1, keepdims=True),\
+                         axis=-1\
+                                                                         )
 class lossFuncSoftSq:
     # 当有标注的时候才计算权重
     # 这样可以保持结构的一致性
@@ -641,7 +649,7 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
     #model.show(xTrain,yTrain,time0L=timeTrain ,delta=1.0,T=tTrain,outputDir=outputDir+'_train')
     #2#4#8#8*3#8#5#10##model.config.lossFunc.w
     #w0=1.25#1.5
-    perN=100
+    #perN=100
     tmpDir =  os.path.dirname(outputDir)
     if not os.path.exists(tmpDir):
         os.makedirs(tmpDir)
@@ -954,6 +962,17 @@ class fcnConfig:
             self.featureL      = [6,8,10,12,16,20,30,40,60]
             self.featureL      = [6,8,12,16,20,20,24,24,28]
             self.featureL      = [6,8,8,10,10,12,16,16,20]
+            self.featureL      = [6,6,6,8,8,10,10,10,12]
+            self.featureL      = [6,8,12,16,20,20,24,24,28]
+            self.featureL      = [6,8,8,10,10,12,16,16,20]
+            self.featureL      = [6,6,8,8,10,10,12,12,16]
+            self.featureL      = [6,8,10,12,16,20,24,28,32]
+            self.featureL      = [6,8,8,12,12,16,16,24,24]
+            self.featureL      = [6,8,12,16,20,24,28,32,36]
+            self.featureL      = [6,8,12,16,16,24,24,24,32]
+            self.featureL      = [8,8,10,10,12,12,16,16,20]
+            self.featureL      = [8,8,8,10,10,10,12,12,12]
+            self.featureL      = [6,6,8,8,10,10,10,12,12]
             self.strideL       = [(2,1),(4,1),(4,1),(4,1),(4,1),(4,1),(6,1),\
             (4,1),(2,1),(2,1),(2,1),(5,1)]
             self.strideL       = [(2,1),(3,1),(2,1),(4,1),(2,1),(4,1),(2,1),\
@@ -1229,9 +1248,9 @@ class model(Model):
         XYT = xyt(x,y,t)
         self.trainByXYT(XYT,**kwarg)
     def trainByXYT(self,XYT,N=2000,perN=200,batchSize=None,xTest='',\
-        yTest='',k0 = 1e-6,t='',count0=3,resL=globalFL):
+        yTest='',k0 = 1e-3,t='',count0=3,resL=globalFL):
         resL.append(0)
-        if k0>1:
+        if k0>0:
             K.set_value(self.optimizer.lr, k0)
         indexL = range(len(XYT))
         sampleDone = np.zeros(len(XYT))
@@ -1508,9 +1527,9 @@ class modelUp(Model):
         XYT = xyt(x,y,t)
         self.trainByXYT(XYT,**kwarg)
     def trainByXYT(self,XYT,N=2000,perN=200,batchSize=None,xTest='',\
-        yTest='',k0 = 1e-6,t='',count0=3,resL=globalFL):
+        yTest='',k0 = 1e-3,t='',count0=3,resL=globalFL):
         resL.append(0)
-        if k0>1:
+        if k0>0:
             K.set_value(self.optimizer.lr, k0)
         indexL = range(len(XYT))
         sampleDone = np.zeros(len(XYT))
@@ -1570,7 +1589,7 @@ class modelUp(Model):
                         break
                     #print(self.metrics)
                     
-            if i%100==0:
+            if i%30==0:
                 print('learning rate: ',self.optimizer.lr)
                 K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.95)
             if i>10 and i%50==0:
@@ -1643,7 +1662,7 @@ class modelUp(Model):
             if i>10 and i%5==0:
                 perN += int(perN*0.02)
         self.set_weights(w0)
-    def show(self, x, y0,outputDir='predict/',time0L='',delta=0.5,T=np.arange(19),fileStr='',\
+    def show_(self, x, y0,outputDir='predict/',time0L='',delta=0.5,T=np.arange(19),fileStr='',\
         level=-1):
         y = self.predict(x)
         f = 1/T
@@ -1699,13 +1718,87 @@ class modelUp(Model):
             delta = timeL[1] -timeL[0]
             N = len(timeL)
             fL = np.arange(N)/N*1/delta
-            for j in range(x.shape[-1]):
+            for j in range(x.shape[-1]*0+1):
                 spec=np.abs(np.fft.fft(self.inx(x[i:i+1,:,0:1,j:j+1])[0,:,0,0])).reshape([-1])
                 plt.plot(fL,spec/(spec.max()+1e-16),'rbgk'[j],\
                     label=legend[j],linewidth=0.3)
             plt.xlabel('f/Hz')
             plt.ylabel('A')
             plt.xlim([fL[1],fL[-1]/2])
+            plt.ylim([-3,3])
+            #plt.gca().semilogx()
+            plt.savefig('%s%s_%d_%d.eps'%(outputDir,fileStr,level,i),dpi=200)
+    def show(self, x, y0,outputDir='predict/',time0L='',delta=0.5,T=np.arange(19),fileStr='',\
+        level=-1,number=4):
+        y = self.predict(x)
+        f = 1/T
+        dirName = os.path.dirname(outputDir)
+        if not os.path.exists(dirName):
+            os.makedirs(dirName)
+        count = x.shape[1]
+        for i in range(len(x)):
+            up = round(y.shape[1]/x.shape[1])
+            #print('show',i)
+            timeL = np.arange(count)*delta
+            timeLOut = np.arange(count*up)*delta/up
+            if len(time0L)>0:
+                timeL+=time0L[i]
+                timeLOut+=time0L[i]
+            xlim=[timeL[0],timeL[-1]]
+            xlim=[0,500]
+            xlimNew=[0,500]
+            #xlim=xlimNew
+            tmpy0=y0[i,:,0,:]
+            pos0  =tmpy0.argmax(axis=0)
+            timeLOutL0=timeLOut[pos0.astype(np.int)]
+            timeLOutL0[tmpy0.max(axis=0)<0.5]=np.nan
+            tmpy=y[i,:,0,:]
+            pos  =tmpy.argmax(axis=0).astype(np.float)
+            timeLOutL=timeLOut[pos.astype(np.int)]
+            timeLOutL[tmpy.max(axis=0)<0.5]=np.nan
+            #pos[tmpy.max(axis=0)<0.5]=np.nan
+            plt.close()
+            if number == 6:
+                plt.figure(figsize=[6,4])
+            else:
+                plt.figure(figsize=[6,3])
+            plt.subplot(number,1,1)
+            plt.title('%s%d'%(outputDir,i))
+            legend = ['r s','i s',\
+            'r h','i h']
+            for j in range(x.shape[-1]*0+2):
+                plt.plot(timeL,self.inx(x[i:i+1,:,0:1,j:j+1])[0,:,-1,0],('rkbg'[j]),\
+                    label=legend[j],linewidth=0.5)
+            #plt.legend()
+            plt.xlim(xlim)
+            ax = plt.gca()
+            plt.xticks([])
+            plt.subplot(number,1,2)
+            #plt.clim(0,1)
+            pc=plt.pcolormesh(timeLOut,f,y0[i,:,0,:].transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True)
+            #figureSet.setColorbar(pc,label='Probility',pos='right')
+            if number==4:
+                plt.plot(timeLOutL,f,'--k',linewidth=0.5)
+            plt.ylabel('f/Hz')
+            plt.gca().semilogy()
+            plt.xlim(xlimNew)
+            if number==4:
+                plt.xticks([])
+            #plt.colorbar(label='Probility')
+            if number==4:
+                plt.subplot(number,1,3)
+                pc=plt.pcolormesh(timeLOut,f,y[i,:,level,:].transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True)
+                #plt.clim(0,1)
+                plt.plot(timeLOutL0,f,'--k',linewidth=0.5)
+                plt.ylabel('f/Hz')
+                plt.xlabel('t/s')
+                plt.gca().semilogy()
+                plt.xlim(xlimNew)
+            plt.subplot(number,1,number)
+            plt.axis('off')
+            #cax=figureSet.getCAX(pos='right')
+            figureSet.setColorbar(pc,label='Probility',pos='Surf')
+            #plt.colorbar(label='Probility')
             #plt.gca().semilogx()
             plt.savefig('%s%s_%d_%d.eps'%(outputDir,fileStr,level,i),dpi=200)
     def predictRaw(self,x):
