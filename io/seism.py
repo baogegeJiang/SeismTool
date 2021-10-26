@@ -917,16 +917,18 @@ class Quake(Dist):
 		'toDisp': False
 		}
 		para0.update(para)
-		print(para0)
+		#print(para0)
 		para = para0
 		respStr += '_'+para['output']
 		respDone = False
+		'''
 		if para['freq'][0] > 0:
 			print('filting ',para['freq'])
 		if 'pre_filt' in para:
 			print('pre filting ',para['pre_filt'])
 		if 'output' in para:
 			print('outputing ',para['output'])
+		'''
 		for staIndex in range(len(stations)):
 			station = stations[staIndex]
 			if remove_resp and station['oRemove'] ==False:
@@ -946,7 +948,7 @@ class Quake(Dist):
 							#time.sleep(1)
 							rigthResp=False
 					if rigthResp == False:
-						print('#### no Such Resp')
+						#print('#### no Such Resp')
 						continue
 				if self['time']<UTCDateTime(2009,7,1).timestamp and station['nameMode']=='CEA'\
 					and len(station.sensor[0])<2:
@@ -1008,7 +1010,7 @@ class Quake(Dist):
 								timeL = np.arange(len(data))*delta+sacsL[-1][i].stats['sac']['b']
 								plt.plot(timeL,data/data.std(),'b',linewidth=0.5)
 						if remove_resp and respDone==False and station['oRemove'] ==False:
-							print('remove_resp ',station)
+							#print('remove_resp ',station)
 							
 							for channelIndex in range(len(strL)):
 								sac = sacsL[-1][channelIndex]
@@ -1049,7 +1051,7 @@ class Quake(Dist):
 									timeL = np.arange(len(data))*delta+sacsL[-1][i].stats['sac']['b']
 									plt.plot(timeL,data/data.std(),'r',linewidth=0.5)
 					except:
-						print('no resp continue')
+						#print('no resp continue')
 						continue
 					else:
 						pass
@@ -1062,7 +1064,8 @@ class Quake(Dist):
 						for sac in sacsL[-1]:
 							sac.integrate()
 							if np.random.rand()<0.01:
-								print('integrate to Disp')
+								pass
+								#print('integrate to Disp')
 					
 					for sac in sacsL[-1]:
 						sac.detrend()
@@ -1072,7 +1075,8 @@ class Quake(Dist):
 						for sac in sacsL[-1]:
 							if para['filterName']=='bandpass':
 								if np.random.rand()<0.01:
-									print('do do bandpass**************************')
+									pass
+									#print('do do bandpass**************************')
 								sac.filter(para['filterName'],\
 									freqmin=para['freq'][0], freqmax=para['freq'][1], \
 									corners=para['corners'], zerophase=para['zerophase'])

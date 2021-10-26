@@ -216,7 +216,11 @@ class config:
         if minSNR <0:
             minSNR = self.minSNR
         self.para0.update(para)
+        count =0
+        countAll = len(quakes)
         for quake in quakes:
+            print('%d of %d have done'%(count,countAll))
+            count+=1
             quakeName=quake.name('_')
             if len(quakesRef)>0:
                 index = quakesRef.find(quake)
@@ -340,6 +344,7 @@ class config:
         fvD = {}
         quakeD={}
         for i in range(len(stations)):
+            print('do for %d in %d'%(i+1,len(stations)))
             for j in range(len(stations)):
                 #dkm = stations[i].stations
                 #\YP.NE11\YP.NE11_YP.NE3A\Rayleigh
@@ -359,7 +364,7 @@ class config:
                         for f in file:
                             getFVFromPairFile(f,fvD,quakeD)
                     else:
-                        print('*.%s_*.%s-pvt*'%(stations[i]['sta'],stations[j]['sta']))
+                        #print('*.%s_*.%s-pvt*'%(stations[i]['sta'],stations[j]['sta']))
                         file = glob('%s/%s.%s_%s.%s-pvt*'%(quakeFvDir,\
                             stations[i]['net'],stations[i]['sta'],stations[j]['net'],stations[j]['sta']))
                         if len(file)>0:
@@ -390,7 +395,7 @@ class config:
                 '''
         return fvD,seism.QuakeL([quakeD[key] for key in quakeD])
     def loadQuakeNEFVAv(self,stations,quakeFvDir='models/QuakeNEFV',threshold=2\
-        ,minP=0.5):
+        ,minP=0.5,minThreshold=0.02,minSta=5):
         with multiprocessing.Manager() as m:
             fvD = m.dict()
             quakeD=m.dict()
@@ -402,13 +407,13 @@ class config:
                     dist = stations[i].dist(stations[j])
                     if dist<200 or dist>1800:
                         continue
-                    arg.append([sta0['net'],sta1['net'],sta0['sta'],sta1['sta'],fvD,quakeD,quakeFvDir,threshold,minP])
+                    arg.append([sta0['net'],sta1['net'],sta0['sta'],sta1['sta'],fvD,quakeD,quakeFvDir,threshold,minP,minThreshold,minSta])
             with Pool(30) as p:
                 p.map(loadOne,arg)
                 qcFvD(fvD)
             return {key:fvD[key] for key in fvD},seism.QuakeL([quakeD[key] for key in quakeD])
 def loadOne(l):
-    net0,net1,sta0,sta1,fvD,quakeD,quakeFvDir,threshold,minP=l
+    net0,net1,sta0,sta1,fvD,quakeD,quakeFvDir,threshold,minP,minThreshold,minSta=l
     fvDPair = {}
     #print('models/QuakeNEFV/???%s/*_*%s/Rayleigh/pvt_sel.dat'%(stations[i]['sta'],stations[j]['sta']))
     file = glob('%s/%s.%s/*_%s.%s/Rayleigh/pvt_sel.dat'%(quakeFvDir,\
@@ -464,7 +469,7 @@ def loadOne(l):
     for key in fvDPair:
         fvDPair[key].qc(threshold=-minP)
     qcFvD(fvDPair)
-    fvAv = averageFVL([fvDPair[key] for key in fvDPair])
+    fvAv = averageFVL([fvDPair[key] for key in fvDPair],minThreshold=minThreshold,minSta=minSta)
     fvAv.qc(threshold=threshold)
     if len(fvAv.f)>2:
         fvD[net0+'.'+\
@@ -1291,6 +1296,7 @@ def plotFvDist(distL,vL,fL,filename,fStrike=2,title=''):
     print(DISTL.max())
     plt.close()
     plt.figure(figsize=[4,3])
+    plt.gca().set(facecolor='#A9A9A9')
     plt.hist2d(DISTL,FL,bins=(binD,binF),rasterized=True,cmap='Greys',norm=colors.LogNorm())
     plt.colorbar(label='count')
     plt.gca().set_yscale('log')
@@ -1299,7 +1305,23 @@ def plotFvDist(distL,vL,fL,filename,fStrike=2,title=''):
     plt.title(title)
     plt.savefig(filename,dpi=300)
     plt.close()
-
+def plotPair(fvD,stations,filename='predict/pairDis.eps'):
+    plt.figure(figsize=[4,4])
+    staL =[]
+    for key in fvD:
+        if 'prem' in key:
+            continue
+        netSta0,netSta1 = key.split('_')[-2:]
+        sta0 = stations.Find(netSta0)
+        sta1 = stations.Find(netSta1)
+        if netSta0 not in staL:
+            staL.append(netSta0)
+            plt.text(sta0['lo'],sta0['la'],str([sta0['la'],sta0['lo']]))
+        if netSta1 not in staL:
+            staL.append(netSta1)
+            plt.text(sta1['lo'],sta1['la'],str([sta1['la'],sta1['lo']]))
+        plt.plot([sta0['lo'],sta1['lo']],[sta0['la'],sta1['la']],'--k',linewidth=0.01)
+    plt.savefig(filename)
 def plotFV(vL,fL,filename,fStrike=2,title='',isAverage=True,thresL=[0.01,0.03,0.05],fvAverage={}):
     VL    = vL.reshape([-1])
     FL    = (fL.reshape([1,-1])+vL*0).reshape([-1])
@@ -1310,7 +1332,7 @@ def plotFV(vL,fL,filename,fStrike=2,title='',isAverage=True,thresL=[0.01,0.03,0.
     binV  = np.arange(2.8,5.2,0.02)
     plt.close()
     plt.figure(figsize=[4,3])
-    plt.hist2d(VL,FL,bins=(binV,binF),rasterized=True,cmap='Greys',norm=colors.LogNorm())
+    plt.hist2d(VL,FL,bins=(binV,binF),rasterized=True,cmap='Greys',)#norm=colors.LogNorm())
     plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('v(km/s)')
@@ -1344,12 +1366,12 @@ def compareFVD(fvD,fvDGet,stations,filename,t=(12**np.arange(0,1.000001,1/49))*1
     plt.hist2d(dvR[(VL>1)*(VLGet>1)],FL[(VL>1)*(VLGet>1)],bins=(binDVR,binF),rasterized=True,cmap='Greys')#,norm=colors.LogNorm()
     plt.colorbar(label='count')
     plt.gca().set_yscale('log')
-    plt.xlabel('dv/v_0')
+    plt.xlabel('$dv/v_0$')
     plt.ylabel('frequency(Hz)')
     plt.title(title)
     plt.savefig(filename,dpi=300)
     plt.close()
-def getFVFromPairFile(file,fvD={},quakeD={},isPrint=True,isAll=False):
+def getFVFromPairFile(file,fvD={},quakeD={},isPrint=False,isAll=False):
     with open(file) as f :
         lines = f.readlines()
     stat='next'
@@ -1363,7 +1385,8 @@ def getFVFromPairFile(file,fvD={},quakeD={},isPrint=True,isAll=False):
     for line in lines:
         #print(stat)
         if len(line.split())==0:
-            print(file,line)
+            if isPrint:
+                print(file,line)
             continue
         if stat=='next':
             sta0 = line.split()[0]
@@ -1735,7 +1758,7 @@ def fvM2Av(fvM,**kwags):
         fvD[key] = averageFVL(fvM[key],**kwags)
     return fvD
 
-def plotFVM(fvM,fvD={},resDir='test/',isDouble=False):
+def plotFVM(fvM,fvD={},resDir='test/',isDouble=False,**kwags):
     if not os.path.exists(resDir):
         os.makedirs(resDir)
     for key in fvM:
@@ -1749,10 +1772,10 @@ def plotFVM(fvM,fvD={},resDir='test/',isDouble=False):
                 fvL += fvM[keyNew]
         if key in fvD:
             fvRef = fvD[key]
-        plotFVL(fvL,fvRef,filename=filename,title=key)
+        plotFVL(fvL,fvRef,filename=filename,title=key,**kwags)
     
 
-def plotFVL(fvL,fvRef=None,filename='test.jpg',thresholdL=[2],title='fvL'):
+def plotFVL(fvL,fvRef=None,filename='test.jpg',thresholdL=[1],title='fvL',fL0=[]):
     if not os.path.exists(os.path.dirname(filename)):
         os.makedirs(os.path.dirname(filename))
     plt.close()
@@ -1763,22 +1786,30 @@ def plotFVL(fvL,fvRef=None,filename='test.jpg',thresholdL=[2],title='fvL'):
         if isinstance(fvL,dict):
             fv = fvL[fv]
         if len(fv.f)>2:
-            parts = validL(fv.v,fv.f,0)
-            for part in parts:
-                if len(part)>0:
-                    part = np.array(part)
-                    h=plt.plot(fv.v[part],fv.f[part],'k',linewidth=0.2)
+            if len(fL0)>0:
+                fL =fL0.copy()
+            else:
+                fL = fv.f
+            v = fv(fL)
+            #fL[v<1]=np.nan
+            v[v<1]=np.nan
+            h=plt.plot(v,fL,'k',linewidth=0.2)
     hL.append(h)
     lL.append('pairs')
     if fvRef !=None:
-        parts = validL(fvRef.v,fvRef.f,0)
-        for part in parts:
-            if len(part)>0:
-                part = np.array(part)
-                for threshold in thresholdL:
-                    plt.plot(fvRef.v[part]-threshold*fvRef.std[part],fvRef.f[part],'-.r',linewidth=0.5)
-                    h1=plt.plot(fvRef.v[part]+threshold*fvRef.std[part],fvRef.f[part],'-.r',linewidth=0.5)
-            h2=plt.plot(fvRef.v[part],fvRef.f[part],'r',linewidth=0.5)
+        if len(fL0)>0:
+            fL =fL0.copy()
+        else:
+            fL = fv.f
+        v = fvRef(fL)
+        std  = fvRef.STD(fL)
+        std[v<1]=np.nan
+        #fL[v<1]=np.nan
+        v[v<1]=np.nan 
+        for threshold in thresholdL:
+            plt.plot(v-threshold*std,fL,'-.r',linewidth=0.5)
+            h1=plt.plot(v+threshold*std,fL,'-.r',linewidth=0.5)
+        h2=plt.plot(v,fL,'r',linewidth=0.5)
         hL.append(h2)
         lL.append('average')
         hL.append(h1)
@@ -1796,7 +1827,7 @@ def figSet():
     plt.xlabel('v/(km/s)')
     plt.ylabel('f/Hz')
 
-def fvD2fvL(fvD,stations,f):
+def fvD2fvL(fvD,stations,f,isRef=False,fvRef=None):
     indexL = [[] for station in stations]
     vL     = [[] for station in stations]
     for i in range(len(stations)):
@@ -1805,12 +1836,19 @@ def fvD2fvL(fvD,stations,f):
             sta1 = stations[j]
             key = '%s_%s'%(sta0.name('.'),sta1.name('.'))
             key1 = '%s_%s'%(sta1.name('.'),sta0.name('.'))
+            isIn =False
             if key in fvD:
-                indexL[i].append(j)
-                vL[i].append(fvD[key](f))
+                isIn = True
             elif key1 in fvD:
+                isIn = True
+                key = key1
+            if isIn:
                 indexL[i].append(j)
-                vL[i].append(fvD[key1](f))
+                v = fvD[key](f)
+                if isRef:
+                    vRef = fvRef(f)
+                    v[v>1]=vRef[v>1]
+                vL[i].append(v)
     return indexL, vL
 
 
@@ -1882,7 +1920,7 @@ def compareFvD(fvD, fvDRef,f,resDir='results/'):
                 vRef[vRef<1]=np.nan
                 plt.plot(vRef,f,'k',linewidth=0.3)
                 plt.plot(v,f,'r',linewidth=0.3)
-                plt.legend(['predict','manual'])
+                plt.legend(['manual','predict'])
                 plt.plot(vRef*0.99,f,'-.k',linewidth=0.3)
                 plt.plot(vRef*1.01,f,'-.k',linewidth=0.3)
                 #plt.plot(v-std,f,'-.r',linewidth=0.3)
@@ -2539,22 +2577,24 @@ class corrL(list):
             x[ii,iP:maxCount+iN,0,3]       = self[i].x1.\
             reshape([-1])[-iN:maxCount-iP]
             #print('###',t0,dt,iP,iN)
-            if False:# randMove:
-                dT = (np.random.rand(1)-0.5)*2*self[i].dDis/4*0.1
+            if randMove:
+                dT = (np.random.rand(1)-0.5)*2*self[i].dDis/4*0.05
                 if np.random.rand()<0.001:
                     print('random ',dT,self[i].dDis)
                 dN = int(dT*self[i].fs)
                 t0L[ii]= -dN/self[i].fs
                 if dN>0:
-                    for channel in [0,1,2]:
+                    for channel in [0]:
                         x[ii,dN:,0,channel] = x[ii,:-dN,0,channel]
                         x[ii,:dN,0,channel] = 0
-                    y[ii,dN:,0,0] = y[ii,:-dN,0,0]
+                    y[ii,dN*up:,0,:] = y[ii,:-dN*up,0,:]
+                    y[ii,:dN*up,0,:] = 0
                 if dN<0:
-                    for channel in [0,1,2]:
+                    for channel in [0]:
                         x[ii,:dN,0,channel] = x[ii,-dN:,0,channel]
                         x[ii,dN:,0,channel] =0
-                    y[ii,:dN,0,0] = y[ii,-dN:,0,0]
+                    y[ii,:dN*up,0,:] = y[ii,-dN*up:,0,:]
+                    y[ii,dN*up:,0,:] = 0
             dDisL[ii] = self[i].dDis
             deltaL[ii]= self[i].timeLOut[1]-self[i].timeLOut[0]
         xStd = x.std(axis=1,keepdims=True)
@@ -3097,7 +3137,7 @@ class corrL(list):
             print('calV')
             v[i0:i1],prob[i0:i1],vM,probM=self.getV(Y,isSimple=isSimple,\
                 D=D,isLimit=isLimit,isFit=isFit)
-            self.saveVAll(vM,probM,T,self.iL,stations,resDir =resDir,minProb=minProb)
+            #self.saveVAll(vM,probM,T,self.iL,stations,resDir =resDir,minProb=minProb)
             #v0[i0:i1],prob0[i0:i1]=self.getV(y)
         self.saveV(v,prob,T, np.arange(N),stations,resDir =resDir,minProb=minProb)
         if isPlot:
@@ -3346,10 +3386,11 @@ def corrSacsL(d,sacsL,sacNamesL,dura=0,M=np.array([0,0,0,0,0,0,0])\
     specN = 40,specThreshold=0.1,isDisp=False,maxCount=-1,**kwags):#specThreshold=0.8
     modelFileO = modelFile
     if len(sacsL)!=len(sacNamesL):
-        print('#####################################not right')
+        #print('#####################################not right')
         return []
     if removeP:
-        print('removeP')
+        pass
+        #print('removeP')
     corrL = []
     N = len(sacsL)
     distL = np.zeros(N)
@@ -3357,7 +3398,8 @@ def corrSacsL(d,sacsL,sacNamesL,dura=0,M=np.array([0,0,0,0,0,0,0])\
     for i in range(N):
         distL[i] = sacsL[i][0].stats['sac']['dist']
         if np.random.rand()<0.01:
-            print(sacsL[i][0].stats)
+            pass
+            #print(sacsL[i][0].stats)
         '''
         pos = np.abs(sacsL[i][0].data).argmax()
         dTime = pos*sacsL[i][0].stats['sac']['delta']+sacsL[i][0].stats['sac']['b']
@@ -3417,11 +3459,12 @@ def corrSacsL(d,sacsL,sacNamesL,dura=0,M=np.array([0,0,0,0,0,0,0])\
             sacsL[i][0].data/=STD
 
     #print(SNR)
-    print((SNR>minSNR).sum(),minSNR,isLoadFv)
+    #print((SNR>minSNR).sum(),minSNR,isLoadFv)
     iL = distL.argsort()
     for ii in range(N):
         if i%25 == 0:
-            print('handle**********************',ii)
+            pass
+            #print('handle**********************',ii)
         for jj in range(ii):
             i = iL[ii]
             j = iL[jj]
@@ -3489,7 +3532,8 @@ def corrSacsL(d,sacsL,sacNamesL,dura=0,M=np.array([0,0,0,0,0,0,0])\
             if corr.compareSpec(N=specN)>specThreshold:
                 corrL.append(corr)
             else:
-                print('no match ',corr.compareSpec(N=specN))
+                pass
+                #print('no match ',corr.compareSpec(N=specN))
     return corrL        
 
 

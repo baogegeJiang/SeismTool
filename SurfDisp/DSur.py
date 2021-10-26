@@ -34,7 +34,7 @@ class config:
         'kmaxRc':10,'rcPerid':np.arange(1,11).tolist(),'kmaxRg':0,'rgPeriod':[],\
         'kmaxLc':0,'lcPeriod':[],'kmaxLg':0,'lgPeriod':[],'isSyn':0,'noiselevel':0.02,'threshold':0.05,\
         'vnn':[0,100,50],'iso':'F','c':'c','smoothDV':10,'smoothG':20,'Damp':0,'perN':[6,6,4],'perA':0.05,\
-        'modelPara': {'config':self,'mode':'prem','runPath':'','file':'../models/prem','la':'','lo':'','z':'','self1':'',\
+        'modelPara': {'config':self,'mode':'prem','runPath':'','file':'../models/ref','la':'','lo':'','z':'','self1':'',\
         },'rayT':'F','noise':0,\
         'GSPara': {'config':self,'mode':'GS','runPath':'','file':'','la':'','lo':'','z':'','self1':'',\
         },\
@@ -250,6 +250,7 @@ class DS:
         self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R)
     def plotTK(self):
         nxyz,la,lo,z = self.config.output()
+        la = la[::-1]
         z0,la0,lo0,vsv0= loadModelTK()
         resDir = self.runPath+'/'+'plot/'
         if not os.path.exists(resDir):
@@ -258,28 +259,49 @@ class DS:
             index = np.abs(z[i]-z0).argmin()
             v = interpolate.interp2d(lo0,la0,vsv0[index],kind='cubic')(lo,la) 
             plt.close()
-            plt.pcolor(lo,la,-v,cmap=cmap)
+            plt.pcolormesh(lo,la,-v,cmap=cmap,rasterized=True)
             plt.colorbar()
             plt.title('%f.jpg'%z[i])
             plt.savefig('%s/TK_%f.jpg'%(resDir,z[i]),dpi=200)
             plt.ylim([35,55])
             plt.close()
+    def plotHJ(self):
+        nxyz,la,lo,z = self.config.output()
+        la = la[::-1]
+        z0,la0,lo0,vsv0= loadModelHJ('s')
+        resDir = self.runPath+'/'+'plot/'
+        if not os.path.exists(resDir):
+            os.mkdir(resDir)
+        for i in range(nxyz[-1]):
+            index = np.abs(z[i]-z0).argmin()
+            v = interpolate.interp2d(lo0,la0,vsv0[index],kind='cubic')(lo,la) 
+            print(la)
+            plt.close()
+            plt.pcolormesh(lo,la,-v,cmap=cmap,rasterized=True)
+            plt.colorbar()
+            plt.title('%f.jpg'%z[i])
+            plt.savefig('%s/HJ_%f.jpg'%(resDir,z[i]),dpi=200)
+            plt.ylim([35,55])
+            plt.close()
     def loadRes(self):
+        vR = ''#self.config.para['vR']
         if self.mode == 'syn':
-            self.modelTrue = Model(self.config,mode='DSFile',runPath=self.runPath,file='MODVs.true')
-        self.model0 = Model(self.config,mode='DSFile',runPath=self.runPath,file='MOD')
-        self.modelPeriod = Model(self.config,mode='DSP',runPath=self.runPath,file='period_Azm_tomo.inv')
+            self.modelTrue = Model(self.config,mode='DSFile',runPath=self.runPath,file='MODVs.true',vR =vR)
+        self.model0 = Model(self.config,mode='DSFile',runPath=self.runPath,file='MOD',vR =vR)
+        self.modelPeriod = Model(self.config,mode='DSP',runPath=self.runPath,file='period_Azm_tomo.inv',vR =vR)
         #self.GsTrue = Model(self.config,mode='GSO',runPath=self.runPath,file='MODGs.true')
         #self.GcTrue = Model(self.config,mode='GCO',runPath=self.runPath,file='MODGc.true')
         #self.modelInit = Model(self.config,mode='DSFile',runPath=self.runPath,file='MOD')
-        self.modelRes = Model(self.config,mode='DS',runPath=self.runPath,file='Gc_Gs_model.inv')
-        self.GsRes = Model(self.config,mode='GS',runPath=self.runPath,file='Gc_Gs_model.inv')
-        self.GcRes = Model(self.config,mode='GC',runPath=self.runPath,file='Gc_Gs_model.inv')
-        self.fast = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.inv')
-        self.fastP = Model(self.config,mode='fastP',runPath=self.runPath,file='period_Azm_tomo.inv')
+        self.modelRes = Model(self.config,mode='DS',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
+        self.GsRes = Model(self.config,mode='GS',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
+        self.GcRes = Model(self.config,mode='GC',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
+        self.fast = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
+        self.fastP = Model(self.config,mode='fastP',runPath=self.runPath,file='period_Azm_tomo.inv',vR =vR)
+    def outputRef(self):
+        self.modelRes.outputRef(self.config.para['modelPara']['file'])
 
 class Model(Model0):
-    def __init__(self,config=None,mode='DS',runPath='',file='',la='',lo='',z='',self1='',Gs='',Gc=''):
+    def __init__(self,config=None,mode='DS',runPath='',file='',la='',lo='',z='',self1='',Gs='',Gc='',vR=''):
         self.mode = mode
         self.config=config
         if mode =='DS':
@@ -408,6 +430,10 @@ class Model(Model0):
         self.la = la#.reshape([1,-1,1])
         self.lo = lo#.reshape([1,1,-1])
         self.v  = v
+        if len(vR)!=0:
+            out  = outR(vR,self.la,self.lo)
+            #print(out)
+            self.v[out]=np.nan
     def __call__(self,la,lo,z):
         i0 = np.abs(self.la - la).argmin()
         i1 = np.abs(self.lo - lo).argmin()
@@ -428,6 +454,7 @@ class Model(Model0):
         V = self.v
         if vR !='':
             out  = outR(vR,la,lo)
+        #out=out.reshape([out.shape[1],out.shape[0]]).transpose()
         if self1!='':
             nxyz1,la1,lo1,z1       =  self1.config.output()
             if self1.mode=='fastP':
@@ -444,7 +471,10 @@ class Model(Model0):
                 fig=plt.figure(figsize=[6,4])
             v = V[:,:,i]
             if vR!='':
+                #pass
                 v[out]=np.nan
+            #print('find')
+            #print(vR)
             #print(v)
             #print(v[:10,:10])
             laN, loN = v.shape
@@ -458,8 +488,8 @@ class Model(Model0):
             print(mean)
             Per   = (v-mean)/mean
             '''
-            la,lo,per=self.denseLaLoGrid(v.copy(),doDense=True,N=500,dIndex=1)
-            print(per)
+            la,lo,per=self.denseLaLoGrid(v.copy(),doDense=True,N=300,dIndex=1)
+            #print(per)
             if isinstance(per,type(None)):
                 plt.close()
                 print('no enough data in depth:',z)
@@ -472,13 +502,22 @@ class Model(Model0):
                 R = [la.min(),la.max(),lo.min(),lo.max()]
             m = mt.genBaseMap(R)
             x,y= m(lo,la)
+            #X,Y=m(vR[:,1],vR[:,0])
+            #m.plot(X,Y,'r')
+            #if vR !='':
+            #    OUT  = outR(vR,la,lo)
+            #    per[OUT]=np.nan
             mean = per[np.isnan(per)==False].mean()
+            perMid = per[midLaN:-midLaN,midLoN:-midLoN]
+            mean = perMid[np.isnan(perMid)==False].mean()
+            mean = v[np.isnan(v)==False].mean()
             per/=mean
             per-=1
-            vmin=-np.abs(per[np.isnan(per)==False]).max()
-            vmax=np.abs(per[np.isnan(per)==False]).max()
+            vmin=-np.abs(per[np.isnan(per)==False]).max()*0-0.03
+            vmax=np.abs(per[np.isnan(per)==False]).max()*0+0.03
             plotPlane(m,x,y,per,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False)
-            plt.gca().set(facecolor='#A9A9A9')
+            #plotPlane(m,x,y,out,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False)
+            plt.gca().set(facecolor='w')
             if self1 !='':
                 v1 = V1[:,:,i]
                 x1,y1= m(lo1,la1)
@@ -486,7 +525,7 @@ class Model(Model0):
                 x0,y0= m(R[2],R[1])
                 #printplt.arrow(x0+0.01*dx1,y0-0.05*dx1,0,0.03*dx1,color='b')
                 plt.plot([x0+0.01*dx1,x0+0.01*dx1],\
-                    [y0-0.05*dx1,y0-0.05*dx1+0.03*dx1],color='k',linewidth=1)
+                    [y0-0.05*dx1,y0-0.05*dx1+0.03*dx1],color='k',linewidth=0.5)
                 plt.text(x0+0.01*dx1,y0-0.05*dx1,'0.03',ha='left',va='top',color='r',size=10)
                 for ii in range(v1.shape[0]):
                     for jj in range(v1.shape[1]):
@@ -495,7 +534,7 @@ class Model(Model0):
                         dX,dY=[np.imag(v1[ii,jj])*dx1,np.real(v1[ii,jj])*dx1]
                         #plt.arrow(x1[jj]-0.5*dX,y1[ii]-0.5*dY,dX,dY,color='b',)
                         plt.plot([x1[jj]-0.5*dX,x1[jj]+0.5*dX],\
-                            [y1[ii]-0.5*dY,y1[ii]+0.5*dY],color='k',linewidth=1)
+                            [y1[ii]-0.5*dY,y1[ii]+0.5*dY],color='k',linewidth=0.5)
             fig.tight_layout()
             plt.savefig('%s/%s_%f.jpg'%(resDir,head,self.z[i]),dpi=500)
             plt.close()
@@ -647,6 +686,17 @@ class Model(Model0):
             plt.savefig('%s/%s_%f.jpg'%(resDir,head,self.z[i]),dpi=500)
             #plt.ylim([35,55])
             plt.close()
+    def outputRef(self,filename):
+        NLa,NLo,NZ=self.v.shape
+        midLa= int(NLa/2)
+        midLo= int(NLa/2)
+        with open(filename,'w+') as f:
+            for i in range(NZ):
+                v = self.v[midLa,midLo,i]
+                z = self.z[i]
+                if np.isnan(v):
+                    v = 2
+                f.write('%.2f       %.3f     %.3f     2.800    1400.0     600.0\n'%(z,v*1.7,v))
 
 def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
     ,isVol=False):
@@ -658,7 +708,7 @@ def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
     if isVol:
         vX,vY=m(mt.volcano[:,0],mt.volcano[:,1])
         m.plot(vX, vY,'^r')
-    m.pcolor(x,y,per,cmap=cmap,shading='auto')
+    m.pcolormesh(x,y,per,cmap=cmap,shading='auto',rasterized=True)
     m.drawcoastlines(linewidth=0.8, linestyle='dashdot', color='k')
     plt.clim(vmin=vmin,vmax=vmax)
     cbar=plt.colorbar()
@@ -712,7 +762,18 @@ def loadModelTK(file = 'models/tk.nc'):
     vsv =  nc.variables['vsv'][:]
     return z,la,lo,vsv
 
-
+def loadModelHJ(phase='p',fileDir='../models/SRL_2018209_esupp_Velocity/'):
+    ref = np.loadtxt('%s/Z_v%s0.txt'%(fileDir,phase))
+    lo  = np.unique(ref[:,0])
+    la  = np.unique(ref[:,1])
+    lo.sort()
+    la.sort()
+    z   = np.array([0,5,10,15,20,30,60,80,100,120,150])
+    v = np.zeros([len(z),len(la),len(lo),])
+    for i in range(len(z)):
+        Z = z[i]
+        v[i,:,:]=np.loadtxt('%s/Z_v%s%d.txt'%(fileDir,phase,Z))[:,2].reshape([len(lo),len(la)]).transpose()
+    return z,la,lo,v
 
 def denseLaLo(La,Lo,Per,N=500):
     Per = Per+0

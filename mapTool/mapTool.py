@@ -21,7 +21,9 @@ volcano=np.loadtxt(os.path.dirname(__file__)+'/../data/volcano')
 pi=3.1415927
 def genBaseMap(R=[0,90,0,180], topo=None):
     m=basemap.Basemap(llcrnrlat=R[0],urcrnrlat=R[1],llcrnrlon=R[2],\
-        urcrnrlon=R[3])
+    urcrnrlon=R[3])
+    #m=basemap.Basemap(width=111700*(R[1]*-R[0]), height=111700*(R[3]*-R[2]),lat_0=R[0]*0.5+R[1]*0.5,lat_1=R[0],lon_0=R[2]*0.5+R[3]*0.5,\
+    #    projection='eqdc')
     if topo == None:
         #m.etopo()
         pass

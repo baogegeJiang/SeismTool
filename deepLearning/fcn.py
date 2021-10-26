@@ -35,7 +35,7 @@ def defProcess():
     #config.gpu_options.allow_growth = False
     #session =tf.compat.v1.Session(config=config)
     #K.set_session(session)
-defProcess()
+#defProcess()
 class LayerNormalization(Layer):
     """Layer Normalization Layer.
     
@@ -77,13 +77,13 @@ class Swish(Activation):
         self.__name__ = 'swish'
 get_custom_objects().update({'swish': Swish(swish)})
 #传统的方式
-w0 = np.ones(50)
-w0[-10:] = 2.5
-w0[-5:]  = 5
+#w0 = np.ones(50)
+#w0[-10:] = 2.5
+#w0[-5:]  = 5
 #w0/=w0.mean()
 
-channelW = K.variable(w0.reshape([1,1,1,-1]))
-class lossFuncSoft:
+#channelW = K.variable(w0.reshape([1,1,1,-1]))
+class lossFuncSoft_:
     # 当有标注的时候才计算权重
     # 这样可以保持结构的一致性
     def __init__(self,w=1):
@@ -99,6 +99,24 @@ class lossFuncSoft:
                              self.w*y0*K.log(yout0)+y1*K.log(yout1)\
                                                                      )*\
                          K.max(y0,axis=1, keepdims=True),\
+                         axis=-1\
+                                                                         )
+class lossFuncSoft:
+    # 当有标注的时候才计算权重
+    # 这样可以保持结构的一致性
+    def __init__(self,w=1):
+        self.w=w
+        self.__name__ = 'lossFuncSoft'
+    def __call__(self,y0,yout0):
+        y1 = 1-y0
+        yout1 = 1-yout0
+        yout0 = K.clip(yout0,1e-7,1)
+        yout1 = K.clip(yout1,1e-7,1)
+        return -K.mean(\
+                         (\
+                             y0*K.log(yout0)+y1*K.log(yout1)\
+                                                                     )*\
+                         K.max(y0,axis=1, keepdims=True)*((self.w-1)*(K.sign(y0-1/20)+1)/2+1),\
                          axis=-1\
                                                                          )
 class lossFuncSoftSq:
@@ -161,12 +179,12 @@ def printRes_old(yin, yout,resL=globalFL,isUpdate=False):
     youtPos = yout.argmax(axis=1)
     yinMax = yin.max(axis=1)
     youtMax = yout.max(axis=1)
-    for maxD in [0.03,0.02,0.01,0.005]:
-        for minP in [0.5,0.7,0.8,0.9]:
+    for maxD in [0.03,0.02,0.015,0.01]:
+        for minP in [0.5,0.6,0.7,0.8]:
             hitRate,rightRate,F,mean,std = rateNp(\
                 yinPos,youtPos,yinMax,youtMax,maxD=maxD,minP=minP)
             strL += strfmt%(maxD, minP, hitRate, rightRate,F,mean,std)
-            if maxD == 0.02 and minP==0.5 and (not np.isnan(F)) and isUpdate:
+            if maxD == 0.015 and minP==0.5 and (not np.isnan(F)) and isUpdate:
                 resL.append(F)
     print(strL)
     return strL
@@ -973,6 +991,19 @@ class fcnConfig:
             self.featureL      = [8,8,10,10,12,12,16,16,20]
             self.featureL      = [8,8,8,10,10,10,12,12,12]
             self.featureL      = [6,6,8,8,10,10,10,12,12]
+            self.featureL      = [6,6,6,8,8,8,10,10,12]
+            self.featureL      = [6,8,12,16,20,24,28,32,36]
+            self.featureL      = [8,12,16,20,24,28,32,36,48]
+            self.featureL      = [8,12,16,20,24,32,36,48,64]
+            self.featureL      = [10,15,15,20,20,25,25,30,40]
+            self.featureL      = [10,15,15,15,20,20,25,25,50]
+            self.featureL      = [10,10,10,15,15,15,30,30,30]
+            self.featureL      = [8,10,10,12,12,16,16,24,32]
+            self.featureL      = [8,12,12,16,16,24,24,32,36]
+            self.featureL      = [8,12,16,16,24,24,32,32,36]
+            self.featureL      = [8,12,16,20,24,28,32,36,48]
+            self.featureL      = [8,12,16,24,28,32,36,48,54]
+            self.featureL      = [8,12,16,20,24,28,32,36,48]
             self.strideL       = [(2,1),(4,1),(4,1),(4,1),(4,1),(4,1),(6,1),\
             (4,1),(2,1),(2,1),(2,1),(5,1)]
             self.strideL       = [(2,1),(3,1),(2,1),(4,1),(2,1),(4,1),(2,1),\
@@ -1149,7 +1180,7 @@ w0=np.ones(250)*(-0.75)
 w2=np.ones(250)*(-0.25)
 w=np.append(w0,w1)
 w=np.append(w,w2)
-wY=K.variable(w.reshape((1,2000,1,1)))
+#wY=K.variable(w.reshape((1,2000,1,1)))
 
 w11=np.ones(1800)*0
 w01=np.ones(100)*(-0.8)*0
@@ -1157,15 +1188,15 @@ w21=np.ones(100)*(-0.3)*0
 w1=np.append(w01,w11)
 w1=np.append(w1,w21)
 W1=w1.reshape((1,2000,1,1))
-wY1=K.variable(W1)
-wY1Short=K.variable(W1[:,200:1800])
-wY1Shorter=K.variable(W1[:,400:1600])
-wY1500=K.variable(W1[:,250:1750])
+#wY1=K.variable(W1)
+#wY1Short=K.variable(W1[:,200:1800])
+#wY1Shorter=K.variable(W1[:,400:1600])
+#wY1500=K.variable(W1[:,250:1750])
 W2=np.zeros((1,2000,1,3))
 W2[0,:,:,0]=W1[0,:,:,0]*0+(1-0.13)
 W2[0,:,:,1]=W1[0,:,:,0]*0+(1-0.13)
 W2[0,:,:,2]=W1[0,:,:,0]*0+0.13
-wY2=K.variable(W2)
+#wY2=K.variable(W2)
 
 def lossFuncNew(y,yout):
 
@@ -1194,6 +1225,7 @@ for i in range(10):
 class model(Model):
     def __init__(self,weightsFile='',config=fcnConfig(),metrics=rateNp,\
         channelList=[0],onlyLevel=-1000):
+        defProcess()
         #channelList=[0]
         config.inputSize[-1]=len(channelList)
         self.genM(config, onlyLevel)
@@ -1468,6 +1500,7 @@ class modelUp(Model):
     def __init__(self,weightsFile='',config=fcnConfig('surfUp'),metrics=rateNp,\
         channelList=[0],onlyLevel=-1000):
         #channelList=[0]
+        defProcess()
         config.inputSize[-1]=len(channelList)
         self.genM(config, onlyLevel)
         self.config = config
@@ -1562,7 +1595,7 @@ class modelUp(Model):
                     resStr+='\n %d train loss : %f valid loss :%f F: %f'%(i,lossTrain,lossTest,resL[-1])
                     #lossTest-=resL[-1]
                     trainTestLoss.append([i,lossTrain,lossTest])
-                    if i%30==0 and i>10:
+                    if i%60==0 and i>10:
                         youtTrain = 0
                         youtTest  = 0
                         youtTrain = self.predict(xTrain)
@@ -1758,7 +1791,7 @@ class modelUp(Model):
             timeLOutL[tmpy.max(axis=0)<0.5]=np.nan
             #pos[tmpy.max(axis=0)<0.5]=np.nan
             plt.close()
-            if number == 6:
+            if number == 4:
                 plt.figure(figsize=[6,4])
             else:
                 plt.figure(figsize=[6,3])
@@ -1791,13 +1824,13 @@ class modelUp(Model):
                 #plt.clim(0,1)
                 plt.plot(timeLOutL0,f,'--k',linewidth=0.5)
                 plt.ylabel('f/Hz')
-                plt.xlabel('t/s')
-                plt.gca().semilogy()
-                plt.xlim(xlimNew)
+            plt.xlabel('t/s')
+            plt.gca().semilogy()
+            plt.xlim(xlimNew)
             plt.subplot(number,1,number)
             plt.axis('off')
             #cax=figureSet.getCAX(pos='right')
-            figureSet.setColorbar(pc,label='Probility',pos='Surf')
+            figureSet.setColorbar(pc,label='Probability',pos='Surf')
             #plt.colorbar(label='Probility')
             #plt.gca().semilogx()
             plt.savefig('%s%s_%d_%d.eps'%(outputDir,fileStr,level,i),dpi=200)

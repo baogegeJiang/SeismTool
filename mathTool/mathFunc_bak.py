@@ -473,8 +473,9 @@ def isNan3D(La,Lo,Z,V,la,lo,z):
             #print(I,i[I],j[I])
     return isnan.reshape(shape)
 def outR(vR,la,lo):
-    lo,la=np.meshgrid(lo,la)
-    print(lo,la)
+    if len(la.shape)==1:
+        lo,la=np.meshgrid(lo,la)
+    #print(lo,la)
     #print(np.conca(la,lo).shape)
     lalo=np.concatenate((la.reshape([1,la.shape[0],la.shape[1]]),\
             lo.reshape([1,la.shape[0],la.shape[1]])),axis=0).transpose([1,2,0])
@@ -485,10 +486,20 @@ def outR(vR,la,lo):
             dlalo.shape[2]-1,dlalo.shape[3]]))\
         ,axis=0).transpose([0,4,1,2,3])
     print(dlalo2.shape,dlalo.shape)
-    theta = np.arcsin((dlalo2[0,0]*dlalo2[1,1]-dlalo2[0,1]*dlalo2[1,0])\
-    /((dlalo2[0]**2).sum(axis=0)*(dlalo2[1]**2).sum(axis=0))**0.5)
+    #theta = np.arcsin((dlalo2[0,0]*dlalo2[1,1]-dlalo2[0,1]*dlalo2[1,0])\
+    #/((dlalo2[0]**2).sum(axis=0)*(dlalo2[1]**2).sum(axis=0))**0.5)
+    #theta = np.arcsin((dlalo2[0,0]*dlalo2[1,1]-dlalo2[0,1]*dlalo2[1,0])\
+    #/((dlalo2[0]**2).sum(axis=0)*(dlalo2[1]**2).sum(axis=0))**0.5)
+    
+    a0 =dlalo2[0,0]+dlalo2[0,1]*1j
+    a1 =dlalo2[1,0]+dlalo2[1,1]*1j
+    da = a0/(a1+1e-9)
+    theta = np.angle(da)
     sumTheta=theta.sum(axis=2)
-    print(sumTheta)
+    #print(dlalo2[0,:,0,3])
+    #print(dlalo2[1,:,0,3])
+    #print(theta[0,3],theta[0,3].sum())
+    #print(sumTheta)
     return np.abs(sumTheta)<np.pi/3
 
 #calc_b is from Zhou Yijian
