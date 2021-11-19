@@ -27,14 +27,20 @@ import gc
 from ..plotTool import figureSet
 # this module is to construct deep learning network
 def defProcess():
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    #tf.config.experimental.set_memory_growth(gpus[0], True)
-    tf.config.experimental.set_virtual_device_configuration(gpus[0],[tf.config.experimental.VirtualDeviceConfiguration(memory_limit=10000)])
-    #config = tf.compat.v1.ConfigProto()
-    #config.gpu_options.per_process_gpu_memory_fraction = 0.4
-    #config.gpu_options.allow_growth = False
-    #session =tf.compat.v1.Session(config=config)
-    #K.set_session(session)
+    pass
+config = tf.compat.v1.ConfigProto()
+config.gpu_options.allow_growth = True
+sess = tf.compat.v1.Session(config=config)
+'''
+gpus = tf.config.experimental.list_physical_devices('GPU')
+#tf.config.experimental.set_memory_growth(gpus[0], True)
+tf.config.experimental.set_virtual_device_configuration(gpus[0],[tf.config.experimental.VirtualDeviceConfiguration(memory_limit=10000)])
+'''
+#config = tf.compat.v1.ConfigProto()
+#config.gpu_options.per_process_gpu_memory_fraction = 0.4
+#config.gpu_options.allow_growth = False
+#session =tf.compat.v1.Session(config=config)
+#K.set_session(session)
 #defProcess()
 class LayerNormalization(Layer):
     """Layer Normalization Layer.
@@ -77,12 +83,7 @@ class Swish(Activation):
         self.__name__ = 'swish'
 get_custom_objects().update({'swish': Swish(swish)})
 #传统的方式
-#w0 = np.ones(50)
-#w0[-10:] = 2.5
-#w0[-5:]  = 5
-#w0/=w0.mean()
 
-#channelW = K.variable(w0.reshape([1,1,1,-1]))
 class lossFuncSoft_:
     # 当有标注的时候才计算权重
     # 这样可以保持结构的一致性
@@ -105,6 +106,12 @@ class lossFuncSoft:
     # 当有标注的时候才计算权重
     # 这样可以保持结构的一致性
     def __init__(self,w=1):
+        w0 = np.ones(50)
+        w0[-8:] = 2.5
+        w0[-4:]  = 5
+        w0/=w0.mean()
+        channelW = K.variable(w0.reshape([1,1,1,-1]))
+        self.channelW = channelW
         self.w=w
         self.__name__ = 'lossFuncSoft'
     def __call__(self,y0,yout0):
@@ -116,7 +123,7 @@ class lossFuncSoft:
                          (\
                              y0*K.log(yout0)+y1*K.log(yout1)\
                                                                      )*\
-                         K.max(y0,axis=1, keepdims=True)*((self.w-1)*(K.sign(y0-1/20)+1)/2+1),\
+                         K.max(y0,axis=1, keepdims=True)*((self.w-1)*(K.sign(y0-1/20)+1)/2+1)*self.channelW,\
                          axis=-1\
                                                                          )
 class lossFuncSoftSq:
@@ -659,7 +666,7 @@ class xyt:
 tTrain = (10**np.arange(0,1.000001,1/29))*16
 
 def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTrain=tTrain,\
-    sigmaL=[4,3,2,1.5],count0=3,perN=200,w0=4):
+    sigmaL=[4,3,2,1.5],count0=3,perN=200,w0=4,k0=-1):
     '''
     依次提高精度要求，加大到时附近权重，以在保证收敛的同时逐步提高精度
     '''
@@ -692,7 +699,7 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
         corrLTest.iL=np.array([])
         model.compile(loss=model.config.lossFunc, optimizer='Nadam')
         xTest, yTest, tTest =corrLValid(np.arange(len(corrLValid)))
-        resStrTmp, trainTestLoss=model.trainByXYT(corrLTrain,xTest=xTest,yTest=yTest, count0=count0, perN=perN,N=20000)
+        resStrTmp, trainTestLoss=model.trainByXYT(corrLTrain,xTest=xTest,yTest=yTest, count0=count0, perN=perN,N=20000,k0=k0)
         resStr += resStrTmp
         trainTestLossL.append(trainTestLoss)
    # xTest, yTest, tTest =corrLValid(np.arange(len(corrLValid)))
@@ -1004,6 +1011,16 @@ class fcnConfig:
             self.featureL      = [8,12,16,20,24,28,32,36,48]
             self.featureL      = [8,12,16,24,28,32,36,48,54]
             self.featureL      = [8,12,16,20,24,28,32,36,48]
+            self.featureL      = [10,12,16,24,28,32,36,48,56]
+            self.featureL      = [10,12,16,24,32,36,48,64,72]
+            self.featureL      = [10,15,20,25,30,40,60,80,100]
+            self.featureL      = [8,12,16,20,28,36,48,64,96]
+            self.featureL      = [10,15,20,25,30,50,75,100,125]
+            self.featureL      = [10,15,20,25,50,75,100,125,150]
+            self.featureL      = [10,16,24,32,64,96,128,160,192]
+            #self.featureL      = [10,15,20,30,40,60,80,100,120]
+            #self.featureL      = [10,15,20,30,50,80,100,120,160]
+            #self.featureL      = [12,16,24,32,64,128,256,512,512]
             self.strideL       = [(2,1),(4,1),(4,1),(4,1),(4,1),(4,1),(6,1),\
             (4,1),(2,1),(2,1),(2,1),(5,1)]
             self.strideL       = [(2,1),(3,1),(2,1),(4,1),(2,1),(4,1),(2,1),\
@@ -1021,7 +1038,7 @@ class fcnConfig:
             self.dropOutL     =[]# [0,1,2]#[5,6,7]#[1,3,5,7]#[1,3,5,7]
             self.dropOutRateL = []#[0.2,0.2,0.2]#[0.2,0.2,0.2]
             self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
-            self.activationL  = ['relu','relu']+['swish' for i in range(5)]+['relu','relu']
+            #self.activationL  = ['relu','relu']+['swish' for i in range(5)]+['relu','relu']
             #self.activationL  = ['relu','relu','relu','relu','relu',\
             #'relu','relu','relu','relu','relu','relu']
             self.poolL        = [AveragePooling2D,AveragePooling2D,MaxPooling2D,\
@@ -1519,7 +1536,7 @@ class modelUp(Model):
         return model
     def predict(self,x,**kwargs):
         #print('inx')
-        maxN =1000
+        maxN =500
         NX = len(x)
         #print('inx done')
         if self.config.mode=='surf' or self.config.mode=='surfUp':
@@ -1560,7 +1577,7 @@ class modelUp(Model):
         XYT = xyt(x,y,t)
         self.trainByXYT(XYT,**kwarg)
     def trainByXYT(self,XYT,N=2000,perN=200,batchSize=None,xTest='',\
-        yTest='',k0 = 1e-3,t='',count0=3,resL=globalFL):
+        yTest='',k0 = 2e-3,t='',count0=3,resL=globalFL):
         resL.append(0)
         if k0>0:
             K.set_value(self.optimizer.lr, k0)
@@ -1622,7 +1639,7 @@ class modelUp(Model):
                         break
                     #print(self.metrics)
                     
-            if i%30==0:
+            if i%20==0:
                 print('learning rate: ',self.optimizer.lr)
                 K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.95)
             if i>10 and i%50==0:

@@ -3,10 +3,12 @@ import sys
 from imp import reload
 from SeismTool.SurfDisp import run
 R = run.run(run.runConfig(run.paraTrainTest))
-R.loadCorr()
-R.saveTrainSet(isMat=True)
-#R.loadCorr(isLoadFromMat=True)
+#R.loadCorr()
+#R.saveTrainSet(isMat=True)
+R.loadCorr(isLoad=True,isLoadFromMat=True)
+R.plotTrainDis()
 R.loadModelUp()
+run.run.train(R,up=5,isRand=False,isShuffle=False)
 R.train(up=5,isRand=True,isShuffle=True)
 #run.run.loadCorr(R,isLoad=False)
 R.calResOneByOne()
@@ -16,8 +18,8 @@ R.train(up=5,isRand=True,isShuffle=False)
 reload(run)
 reload(run.fcn)
 R.model=None
-R.loadModelUp()
-run.run.train(R,up=5,isRand=False,isShuffle=False)
+run.run.loadModelUp(R)
+run.run.train(R,up=5,isRand=True,isShuffle=False,isAverage=False)
 reload(run)
 R.config.para.update(run.paraTrainTest)
 R.corrL1.reSetUp(5)
@@ -26,9 +28,9 @@ run.run.loadRes(R)
 run.run.getAv(R)
 run.d.qcFvD(R.fvAvGet)
 run.d.qcFvD(R.fvDGet)
-run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compare5/')
+run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compare22/')
 reload(run.d)
-
+run.d.plotPair(R.fvAvGet,R.stations)
 
 disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvD0,R.stations,t=R.config.para['T'],keys=R.fvTest,)
 
@@ -37,10 +39,22 @@ reload(run.fcn)
 run.fcn.modelUp.show(R.model,R.corrLTest.x[::100],R.corrLTest.y[::100],outputDir='predict/raw/',delta=1,T=R.config.para['T'])
 reload(run.d)
 run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compareV10/')
-run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='err0_distribution')
-run.d.compareFVD(R.fvAvGet,R.fvDGet,R.stations,'predict/stdTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='err0_distribution')
-run.d.compareFVD(R.fvD,R.fvD0,R.stations,'predict/erro0.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='err0_distribution')
-run.d.plotFVM(R.fvMGet,R.fvAvGet,resDir=R.config.para['trainDir']+'pairs4/get_',isDouble=True)
+run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroAll.eps',t=R.config.para['T'],keys=[],fStrike=2,title='error_distribution')
+run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
+run.d.compareFVD(R.fvAvGet,R.fvDGet,R.stations,'predict/stdTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
+run.d.compareFVD(R.fvD,R.fvD0,R.stations,'predict/erro0.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
+run.d.compareFVD(R.fvDGet,R.fvD,R.stations,'predict/erroSingle.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
+run.d.plotFVM(R.fvMGet,R.fvAvGet,resDir=R.config.para['trainDir']+'pairsNorth/',isDouble=True,fL0=1/R.config.para['T'])
+
+
+
+
+reload(run)
+#reload(run.d)
+#reload(run.seism)
+R1=run.run(run.runConfig(run.paraNorth))
+R1.model=R.model
+R1.calResOneByOne(is)
 from glob import glob
 from SeismTool.io import seism
 fvFileL = glob('%s/*.dat'%('../models/ayu/Pairs_avgpvt/'))
@@ -75,8 +89,8 @@ para={\
 'maxA':1e19,
 }
 
-R.quakes.cutSac(R.stations,bTime=-1500,eTime =12300,\
-    para=para,byRecord=False,isSkip=True,resDir='/HOME/jiangyr/eventSac/')
+quakes.cutSac(stations,bTime=-1500,eTime =12300,\
+    para=para,byRecord=False,isSkip=True,resDir='/media/commonMount/data2/eventSac/')
 
 for key in R.fvD:
     if '_' not in key:
@@ -103,6 +117,7 @@ R.fvTrain = run.loadListStr(trainSetDir+'fvTrain')
 R.fvTest = run.loadListStr(trainSetDir+'fvTest')
 R.fvValid = run.loadListStr(trainSetDir+'fvValid')
 '''
+R.config= run.runConfig(run.paraTrainTest)
 R.calResOneByOne()
 R.loadCorr()
 R.model = None
@@ -132,6 +147,8 @@ import tensorflow as tf
 tf.keras.backend.clear_session()
 reload(run)
 run.run.train(R)
+
+
 '''
 R = run.run(run.runConfig(run.paraNorthLagerNew2))
 R.preDS(do=False)

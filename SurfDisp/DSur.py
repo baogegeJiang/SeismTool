@@ -226,7 +226,7 @@ class DS:
                         else:
                             tmp = line.split()
                             v   = float(tmp[-1])
-                            v   *= 1+2*(np.random.rand()-0.5)*0.008
+                            v   *= 1+2*(np.random.rand()-0.5)*0.005
                             tmp[-1] = '%.6f'%v
                             line=''
                             for t in tmp:
@@ -238,7 +238,7 @@ class DS:
             with open('%s/dsin_syn'%self.runPath,'w+') as f:
                 for period in periods:
                     f.write(period)
-    def plotByZ(self,p2L=[],R=[]):
+    def plotByZ(self,p2L=[],R=[],self1=''):
         if self.mode == 'syn':
             self.modelTrue.plotByZ(self.runPath,head='true',R=R)
         '''
@@ -248,6 +248,17 @@ class DS:
         self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth')
         self.fast.plotArrByZ(self.runPath,head='fast')
         self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R)
+        if self1!='':
+            self.fastDiff = self.fast.copy()
+            self.fastDiff.v = self.fastDiff.v - self1.fast.v
+            self.fastPDiff = self.fastP.copy()
+            self.fastPDiff.v = self.fastDiffP.v - self1.fastP.v
+            self.modelRes = self.modelRes.copy()
+            self.modelResDiff.v = self.modelResDiff.v - self1.modelRes.v
+            self.modelPeriodDiff = self.modelPeriod.copy()
+            self.modelPeriodDiff.v = self.modelPeriodDiff.v - self1.modelPeriod.v
+            self.modelResDiff.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastDiff,R=R,head='depth',isDiff=True)
+            self.modelPeriodDiff.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastPDiff,head='period',R=R,isDiff=True)
     def plotTK(self):
         nxyz,la,lo,z = self.config.output()
         la = la[::-1]
@@ -434,6 +445,10 @@ class Model(Model0):
             out  = outR(vR,self.la,self.lo)
             #print(out)
             self.v[out]=np.nan
+    def copy(self):
+        self1 = Model(self.config,'byModel',self.runPath,'',self.la,self.lo,self.z,self,Gs='',Gc='',vR='')
+        self1.mode = self.mode
+        return self1
     def __call__(self,la,lo,z):
         i0 = np.abs(self.la - la).argmin()
         i1 = np.abs(self.lo - lo).argmin()
@@ -441,7 +456,7 @@ class Model(Model0):
         v = self.v[i0,i1,i2]
         return v 
     
-    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[]):
+    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False):
         R0=R
         resDir = runPath+'/'+'plot/'
         if not os.path.exists(resDir):
@@ -511,11 +526,22 @@ class Model(Model0):
             perMid = per[midLaN:-midLaN,midLoN:-midLoN]
             mean = perMid[np.isnan(perMid)==False].mean()
             mean = v[np.isnan(v)==False].mean()
-            per/=mean
-            per-=1
-            vmin=-np.abs(per[np.isnan(per)==False]).max()*0-0.03
-            vmax=np.abs(per[np.isnan(per)==False]).max()*0+0.03
-            plotPlane(m,x,y,per,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False)
+            if isDiff:
+                vmin=-0.1
+                vmax=+0.1
+            else:
+                per/=mean
+                per-=1
+                if z[i]<20:
+                    perA=0.05
+                else:
+                    perA=0.03
+                vmin=-np.abs(per[np.isnan(per)==False]).max()*0-perA
+                vmax=np.abs(per[np.isnan(per)==False]).max()*0+perA
+            if isDiff:
+                plotPlane(m,x,y,per,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False,cLabel='V. D.(km/s)')
+            else:
+                plotPlane(m,x,y,per,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False,cLabel='V. A.(%)')
             #plotPlane(m,x,y,out,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False)
             plt.gca().set(facecolor='w')
             if self1 !='':
@@ -699,7 +725,7 @@ class Model(Model0):
                 f.write('%.2f       %.3f     %.3f     2.800    1400.0     600.0\n'%(z,v*1.7,v))
 
 def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
-    ,isVol=False):
+    ,isVol=False,cLabel='velocity anomal'):
     dLa,dLo=getDlaDlo(R)
     if isFault:
         for fault in faultL:
@@ -712,7 +738,7 @@ def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
     m.drawcoastlines(linewidth=0.8, linestyle='dashdot', color='k')
     plt.clim(vmin=vmin,vmax=vmax)
     cbar=plt.colorbar()
-    cbar.set_label('velocity anomal')
+    cbar.set_label(cLabel)
     plt.title('%s %.2f km mean: %.3f km/s'%(head,z,mean))
     if head=='period':
         plt.title('%s %.2f s mean: %.3f km/s'%(head,z,mean))
