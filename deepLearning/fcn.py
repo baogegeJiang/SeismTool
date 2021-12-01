@@ -27,10 +27,9 @@ import gc
 from ..plotTool import figureSet
 # this module is to construct deep learning network
 def defProcess():
-    pass
-config = tf.compat.v1.ConfigProto()
-config.gpu_options.allow_growth = True
-sess = tf.compat.v1.Session(config=config)
+    config = tf.compat.v1.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.compat.v1.Session(config=config)
 '''
 gpus = tf.config.experimental.list_physical_devices('GPU')
 #tf.config.experimental.set_memory_growth(gpus[0], True)
@@ -107,8 +106,8 @@ class lossFuncSoft:
     # 这样可以保持结构的一致性
     def __init__(self,w=1):
         w0 = np.ones(50)
-        w0[-8:] = 2.5
-        w0[-4:]  = 5
+        w0[:25]=1.5/(1.5+3*np.arange(25)/25)
+        w0[25:]=1.5/(1.5+3*np.arange(24,-1,-1)/25)
         w0/=w0.mean()
         channelW = K.variable(w0.reshape([1,1,1,-1]))
         self.channelW = channelW
@@ -488,15 +487,18 @@ def inAndOutFuncNewUp(config, onlyLevel=-10000):
             dConvL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1')(dConvL[j])
             convL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'1')
             if i <config.deepLevel and j==0:
-                upL[j]= Conv2DTranspose(config.featureL[j]*(len(config.featureL)-i+1),kernel_size=config.kernelL[j],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],\
-                bias_initializer=config.bias_initializerL[j])(convL[0])
-                upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
-                upL[j]  = Conv2D(config.featureL[j]*(len(config.featureL)-i+1),kernel_size=config.kernelL[j],\
-                    strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',\
-                    kernel_initializer=config.initializerL[j],\
-                    bias_initializer=config.bias_initializerL[j])(upL[j])
-                upL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'1'+'_Up')(upL[j])
-                upL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1'+'_Up')(upL[j])
+                if config.strideL[-1][0]>1:
+                    upL[j]= Conv2DTranspose(config.featureL[j]*(len(config.featureL)-i+1),kernel_size=config.kernelL[j],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],\
+                    bias_initializer=config.bias_initializerL[j])(convL[0])
+                    upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
+                    upL[j]  = Conv2D(config.featureL[j]*(len(config.featureL)-i+1),kernel_size=config.kernelL[j],\
+                        strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',\
+                        kernel_initializer=config.initializerL[j],\
+                        bias_initializer=config.bias_initializerL[j])(upL[j])
+                    upL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'1'+'_Up')(upL[j])
+                    upL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1'+'_Up')(upL[j])
+                else: 
+                    upL[j]=convL[0]
                 outputsL.append(Dense(config.outputSize[-1], activation='sigmoid'\
                     ,name='dense_out_%d'%i)(upL[j]))
         
@@ -947,88 +949,16 @@ class fcnConfig:
             self.inAndOutFunc = inAndOutFuncNewV6
             self.deepLevel = 1
         if mode=='surfUp':
+            up=2
             self.inputSize     = [512*3,1,4]
-            self.outputSize    = [512*3*5,1,50]
-            self.featureL      = [min(2**(i+1)+20,80) for i in range(7)]
-            self.featureL      = [30,40,60,60,80,60,40]
-            self.featureL      = [15,20,20,25,25,40,60]
-            self.featureL      = [32,32,64,64,64,128,128]#[8,16,32,64,128,128,256]
-            self.featureL      = [32,32,32,64,64,64,128]
-            self.featureL      = [32,32,32,64,64,64,128]
-            self.featureL      = [24,24,32,48,48,64,128]
-            self.featureL      = [32,32,48,48,64,64,128]
-            self.featureL      = [32,48,48,64,64,96,128]
-            self.featureL      = [32,32,32,32,48,64,96,128]
-            self.featureL      = [16,32,48,64,128,256,512]#high
-            self.featureL      = [24,32,48,64,128,256,512]
-            self.featureL      = [64,128,256,512,256*3,256*3,1028,1028]
-            self.featureL      = [32,48,86,64*3,128,256,128*3,512]
-            self.featureL      = [16,32,48,64,128,64*3,256,512,1024]
-            self.featureL      = [24,48,96,128,256,384,512,1024,2048]
-            self.featureL      = [16,32,64,96,192,256,384,512,1024]
-            self.featureL      = [24,48,64,96,128,192,256,384,512]
-            self.featureL      = [24,48,64,96,128,192,256,256,384]
-            self.featureL      = [16,32,48,64,96,128,198,256,256]
-            self.featureL      = [16,32,48,64,96,128,198,256,256]
-            self.featureL      = [12,24,32,48,64,96,128,198,256]
-            self.featureL      = [8,16,24,32,48,64,96,128,198]
-            self.featureL      = [8,12,16,24,32,48,64,96,128]
-            self.featureL      = [6,8,12,16,24,36,48,64,96]
-            self.featureL      = [8,12,16,24,36,48,64,96,128]
-            self.featureL      = [6,8,12,16,24,32,48,64,96]
-            self.featureL      = [4,6,8,12,16,24,32,48,64]
-            self.featureL      = [6,8,12,16,24,32,48,64,96]
-            self.featureL      = [6,8,12,16,32,48,64,96,128]
-            self.featureL      = [6,8,12,16,32,64,96,128,160]
-            self.featureL      = [6,8,12,16,32,48,64,96,192]
-            self.featureL      = [6,8,10,15,20,30,50,80,120]
-            self.featureL      = [6,8,10,15,20,30,40,60,80]
-            self.featureL      = [6,8,10,15,20,25,35,50,60]
-            self.featureL      = [6,8,10,12,16,20,30,40,60]
-            self.featureL      = [6,8,12,16,20,20,24,24,28]
-            self.featureL      = [6,8,8,10,10,12,16,16,20]
-            self.featureL      = [6,6,6,8,8,10,10,10,12]
-            self.featureL      = [6,8,12,16,20,20,24,24,28]
-            self.featureL      = [6,8,8,10,10,12,16,16,20]
-            self.featureL      = [6,6,8,8,10,10,12,12,16]
-            self.featureL      = [6,8,10,12,16,20,24,28,32]
-            self.featureL      = [6,8,8,12,12,16,16,24,24]
-            self.featureL      = [6,8,12,16,20,24,28,32,36]
-            self.featureL      = [6,8,12,16,16,24,24,24,32]
-            self.featureL      = [8,8,10,10,12,12,16,16,20]
-            self.featureL      = [8,8,8,10,10,10,12,12,12]
-            self.featureL      = [6,6,8,8,10,10,10,12,12]
-            self.featureL      = [6,6,6,8,8,8,10,10,12]
-            self.featureL      = [6,8,12,16,20,24,28,32,36]
-            self.featureL      = [8,12,16,20,24,28,32,36,48]
-            self.featureL      = [8,12,16,20,24,32,36,48,64]
-            self.featureL      = [10,15,15,20,20,25,25,30,40]
-            self.featureL      = [10,15,15,15,20,20,25,25,50]
-            self.featureL      = [10,10,10,15,15,15,30,30,30]
-            self.featureL      = [8,10,10,12,12,16,16,24,32]
-            self.featureL      = [8,12,12,16,16,24,24,32,36]
-            self.featureL      = [8,12,16,16,24,24,32,32,36]
-            self.featureL      = [8,12,16,20,24,28,32,36,48]
-            self.featureL      = [8,12,16,24,28,32,36,48,54]
-            self.featureL      = [8,12,16,20,24,28,32,36,48]
-            self.featureL      = [10,12,16,24,28,32,36,48,56]
-            self.featureL      = [10,12,16,24,32,36,48,64,72]
-            self.featureL      = [10,15,20,25,30,40,60,80,100]
-            self.featureL      = [8,12,16,20,28,36,48,64,96]
-            self.featureL      = [10,15,20,25,30,50,75,100,125]
-            self.featureL      = [10,15,20,25,50,75,100,125,150]
-            self.featureL      = [10,16,24,32,64,96,128,160,192]
+            self.outputSize    = [512*3*up,1,50]
+            self.featureL      = [8,12,24,48,96,160,320,360,720]
+            self.featureL      = [8,15,30,60,120,180,360,450,900]
             #self.featureL      = [10,15,20,30,40,60,80,100,120]
             #self.featureL      = [10,15,20,30,50,80,100,120,160]
             #self.featureL      = [12,16,24,32,64,128,256,512,512]
-            self.strideL       = [(2,1),(4,1),(4,1),(4,1),(4,1),(4,1),(6,1),\
-            (4,1),(2,1),(2,1),(2,1),(5,1)]
-            self.strideL       = [(2,1),(3,1),(2,1),(4,1),(2,1),(4,1),(2,1),\
-            (4,1),(2,1),(2,1),(2,1)]
-            self.strideL       = [(2,1),(3,1),(2,1),(2,1),(2,1),(4,1),(2,1),(2,1),\
-                (2,1),(2,1),(2,1)]
             self.strideL       = [(2,1),(3,1),(2,1),(2,1),(2,1),(2,1),(2,1),(2,1),\
-                (2,1),(2,1),(2,1),(5,1)]
+                (2,1),(2,1),(2,1),(up,1)]
             self.kernelL       = [(6,1),(8,1),(8,1),(8,1),(8,1),(16,1),(6,1),\
             (8,1),(4,1),(4,1),(4,1)]
             self.initializerL  = ['truncated_normal' for i in range(10)]
@@ -1037,10 +967,9 @@ class fcnConfig:
             self.bias_initializerL = ['he_normal' for i in range(10)]
             self.dropOutL     =[]# [0,1,2]#[5,6,7]#[1,3,5,7]#[1,3,5,7]
             self.dropOutRateL = []#[0.2,0.2,0.2]#[0.2,0.2,0.2]
-            self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
+            #self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
             #self.activationL  = ['relu','relu']+['swish' for i in range(5)]+['relu','relu']
-            #self.activationL  = ['relu','relu','relu','relu','relu',\
-            #'relu','relu','relu','relu','relu','relu']
+            self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
             self.poolL        = [AveragePooling2D,AveragePooling2D,MaxPooling2D,\
             AveragePooling2D,AveragePooling2D,MaxPooling2D,MaxPooling2D,AveragePooling2D,\
             MaxPooling2D,AveragePooling2D,MaxPooling2D]
@@ -1240,9 +1169,10 @@ for i in range(10):
     plt.show()
 '''
 class model(Model):
-    def __init__(self,weightsFile='',config=fcnConfig(),metrics=rateNp,\
+    def __init__(self,weightsFile='',metrics=rateNp,\
         channelList=[0],onlyLevel=-1000):
-        defProcess()
+        #defProcess()
+        config=fcnConfig()
         #channelList=[0]
         config.inputSize[-1]=len(channelList)
         self.genM(config, onlyLevel)
@@ -1513,11 +1443,13 @@ class model(Model):
 
         self.compile(loss=self.config.lossFunc, optimizer='Nadam')
         K.set_value(self.optimizer.lr,  lr0)
+
 class modelUp(Model):
-    def __init__(self,weightsFile='',config=fcnConfig('surfUp'),metrics=rateNp,\
+    def __init__(self,weightsFile='',metrics=rateNp,\
         channelList=[0],onlyLevel=-1000):
         #channelList=[0]
-        defProcess()
+        config=fcnConfig('surfUp')
+        #defProcess()
         config.inputSize[-1]=len(channelList)
         self.genM(config, onlyLevel)
         self.config = config
@@ -1561,9 +1493,9 @@ class modelUp(Model):
             if x.shape[-1] > len(self.channelList):
                 x = x[:,:,:,self.channelList]
             timeN0 = np.float32(x.shape[1])
-            timeN  = (x!=0).sum(axis=1,keepdims=True).astype(np.float32)
+            timeN  = (x[:,:,:,0]!=0).sum(axis=1,keepdims=True).astype(np.float32)
             timeN *= 1+0.2*(np.random.rand(*timeN.shape).astype(np.float32)-0.5)
-            x/=(x.std(axis=(1,2),keepdims=True))*(timeN0/timeN)**0.5
+            x[:,:,:,0]/=(x[:,:,:,0].std(axis=(1,2),keepdims=True))*(timeN0/timeN)**0.5
         else:
             x/=x.std(axis=(1,2,3),keepdims=True)+np.finfo(x.dtype).eps
         return x
@@ -1639,12 +1571,12 @@ class modelUp(Model):
                         break
                     #print(self.metrics)
                     
-            if i%20==0:
+            if i%15==0:
                 print('learning rate: ',self.optimizer.lr)
                 K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.95)
             if i>10 and i%50==0:
                 perN += int(perN*0.05)
-                perN = min(400, perN)
+                perN = min(500, perN)
         self.set_weights(w0)
         return resStr,trainTestLoss
     def trainByXYTCross(self,self1,XYT0,XYT1,N=2000,perN=100,batchSize=None,\
@@ -1879,9 +1811,10 @@ class modelUp(Model):
 
 
 class modelSq(Model):
-    def __init__(self,weightsFile='',config=odelstmrConfig(),metrics=rateNp,\
+    def __init__(self,weightsFile='',metrics=rateNp,\
         channelList=[1,2,3,4],onlyLevel=-1000,maxCount=-1):
-        config.channelSize=len(channelList)
+        config=odelstmrConfig()
+        config.channelSize=len(channelList) 
         if maxCount >0:
             config.padSize=maxCount
         self.genM(config)
@@ -2094,9 +2027,10 @@ class modelSq(Model):
 
 
 class modelDt(modelSq):
-    def __init__(self,weightsFile='',config=fcnConfig(mode='surfdt'),metrics=rateNp,\
+    def __init__(self,weightsFile='',metrics=rateNp,\
         channelList=[1,2,3,4],onlyLevel=-1000,maxCount=-1):
         #config.channelSize=len(channelList)
+        config=fcnConfig(mode='surfdt')
         config.inputSize[-1]=len(channelList)
         self.genM(config)
         self.config = config

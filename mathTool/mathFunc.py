@@ -1,10 +1,14 @@
+#from ..io.seism import NoneType
 import numpy as np
 from numba import jit,float32, int64
 import scipy.signal  as signal
 from scipy import fftpack
 from scipy.optimize import curve_fit
 from scipy import stats
+from matplotlib import pyplot as plt
 import torch
+
+from scipy.stats.stats import _threshold_mgc_map
 nptype=np.float32
 rad2deg=1/np.pi*180
 
@@ -338,7 +342,7 @@ def QC_bak(data,threshold=2.5):
         return QC(data[d<Threshold],threshold)
 
 
-def QC(data,threshold=2.5,it=20,minThreshold=0.02,minSta=5):
+def QC(data,threshold=2.5,it=20,minThreshold=0.02,minSta=5,resultL=None):
     if it==0:
         print('***********************************reach depest*******************')
     if len(data)<minSta or it==0:
@@ -351,10 +355,31 @@ def QC(data,threshold=2.5,it=20,minThreshold=0.02,minSta=5):
     Threshold = max(lqr*threshold,mData*minThreshold)
     mData = np.mean(data[d<Threshold])
     d = np.abs(data - mData)
+    if isinstance(resultL,list):
+        resultL.append([mData,Threshold,data])
     if (d>Threshold).sum() ==0 and (d<=Threshold).sum()>=minSta:
         return data[d<Threshold].mean(),data[d<Threshold].std(),len(data)
     else:
-        return QC(data[d<Threshold],threshold,it-1,minThreshold=minThreshold)
+        return QC(data[d<Threshold],threshold,it-1,minThreshold=minThreshold,resultL=resultL,minSta=minSta)
+def showQC(fileName,threshold=2.5,minThreshold=0.01):
+    plt.close()
+    plt.figure(figsize=[2.5,2.5])
+    data = np.array([3.1,3.11,3.105,3.09,3.05,3.0,3.12,3.13,3.2,3.15,3.08,3.07,3.5,3.095,3.112,3.05,3,3.04,3.07,3.11,3.095,3.099,2.9,2.95,3.099,3.098,3.101,3.12,3.01,3.23,3.096,3.091,3.092,3.093,3.0975])
+    resultL = []
+    m,s,c = QC(data,threshold=threshold,minThreshold=minThreshold,resultL=resultL)
+    N = len(resultL)
+    #print(resultL)
+    for i in range(N):
+        M,Thres,Data = resultL[i]
+        plt.plot(Data,i+Data*0+1+0*(np.random.rand(len(Data))-0.5),'.b',markersize=0.5)
+        plt.errorbar(M,i+1,fmt='k',ecolor='r',xerr=Thres,elinewidth=0.3,capsize=2,capthick=0.2)
+    plt.xlabel('km/s')
+    plt.ylabel('loop index')
+    #plt.xlim([3,3.5])
+    plt.ylim([0,N+1.5])
+    plt.text(2.9,N+1,'mean: %.2f km/s std: %.2f km/s'%(m,s))
+    plt.tight_layout()
+    plt.savefig(fileName)
 
 def rotate(rad,data):
     #RTZ

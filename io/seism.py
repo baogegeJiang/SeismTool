@@ -21,7 +21,7 @@ from . import parRead
 from SeismTool.plotTool import figureSet as fs
 import struct
 dm = 0
-printDetail=True
+printDetail=False
 comp3='RTZ'
 comp33=[]
 cI33=[]
@@ -114,9 +114,15 @@ class Dist:
 		s= self.splitKey
 		if len(argv)>1:
 			s = argv[1]
+		fmt='%.5f'
+		if len(argv)>2:
+			fmt = argv[2]
 		for key in keysOut:
 			if not isinstance(self[key],type(None)):
-				line += str(self[key])+s
+				if key in ['time','la','lo','dep']:
+					line += (fmt%self[key])+s
+				else:
+					line += str(self[key])+s
 			else:
 				line += '-99999 '
 		return line[:-1]
@@ -142,8 +148,8 @@ class Dist:
 		for tmp in self.keysIn:
 			keyIn += tmp  + ' ' 
 		return keyIn[:-1]
-	def name(self,s =' '):
-		return self.__str__(self.keysName,s)
+	def name(self,s =' ',fmt='%.5f'):
+		return self.__str__(self.keysName,s,fmt)
 	def __eq__(self,name1):
 		name0 = ''
 		if  isinstance(name1,type(self)):
@@ -901,7 +907,7 @@ class Quake(Dist):
 	def __len__(self):
 		return len(self.records)
 	def getSacFiles(self,stations,isRead=False,resDir = 'eventSac/',strL='ENZ',\
-		byRecord=True,maxDist=-1,minDist=-1,remove_resp=False,isPlot=False,\
+		byRecord=True,maxDist=-1,minDist=-1,remove_resp=False,isDoneSkip=False,isPlot=False,\
 		isSave=False,respStr='_remove_resp',para={},isSkip=False):
 		sacsL = []
 		staIndexs = self.staIndexs()
@@ -919,6 +925,7 @@ class Quake(Dist):
 		para0.update(para)
 		#print(para0)
 		para = para0
+		#print(para)
 		respStr += '_'+para['output']
 		respDone = False
 		'''
@@ -973,9 +980,12 @@ class Quake(Dist):
 						break
 				if isF:
 					respDone = True
+					if isDoneSkip:
+						continue
 					#print(station,'done')
 				else:
 					resSacNames = station.baseSacName(tmpDir,strL=strL)
+					#print(resSacNames)
 			if remove_resp and isSkip==True and isSave==True and station['oRemove'] ==False:
 				isF = True
 				resSacNamesTmp = station.baseSacName(tmpDir,strL=strL,infoStr=respStr)
@@ -1091,9 +1101,10 @@ class Quake(Dist):
 					if isPlot:
 						plt.savefig(resSacNames[0]+'.jpg',dpi=200)
 					if isSave and remove_resp and station['oRemove'] ==False:
-						resSacNames = station.baseSacName(tmpDir,strL=strL,infoStr=respStr)
-						for i in range(3):
-							sacsL[-1][i].write(resSacNames[i],format='SAC')
+						if not respDone:
+							resSacNames = station.baseSacName(tmpDir,strL=strL,infoStr=respStr)
+							for i in range(len(resSacNames)):
+								sacsL[-1][i].write(resSacNames[i],format='SAC')
 				else:
 					sacsL.append(resSacNames)
 		return sacsL
@@ -1143,6 +1154,10 @@ class QuakeL(list):
 		super().__init__()
 		self.inQuake = {}
 		self.inRecord= {}
+		self.timeL= []
+		self.laL  = np.array([])
+		self.loL  = np.array([])
+		self.nameD ={}
 		self.keys = ['#','*','q2','d-',' ',' ']
 		if 'Quake' in kwargs:
 			self.Quake = kwargs['Quake']
@@ -1190,13 +1205,32 @@ class QuakeL(list):
 			quakesNew.kyes = self.keys
 		return quakesNew
 	def find(self,quake0):
-		for i in range(len(self)):
+		if len(self)==0:
+			return -1
+		if len(self.nameD)!=len(self):
+			self.nameD = {}
+			for i in range(len(self)):
+				self.nameD[self[i].name()]=i
+		if quake0.name() in self.nameD:
+			return self.nameD[quake0.name()]
+		if len(self.timeL)!=len(self):
+			self.timeL = np.array([q['time'] for q in self])
+			self.laL = np.array([q['la'] for q in self])
+			self.loL = np.array([q['lo'] for q in self])
+		d = np.abs(self.timeL-quake0['time'])/10+np.abs(self.laL-quake0['la'])+np.abs(self.loL-quake0['lo'])
+		if d.min()<1:
+			return d.argmin()
+		else:
+			print(quake0,'not find')
+			return -1
+		'''for i in range(len(self)):
 			dTime = np.abs(self[i]['time']-quake0['time'])
 			dLa = np.abs(self[i]['la']-quake0['la'])
 			dLo = np.abs(self[i]['lo']-quake0['lo'])
 			if dTime<10 and dLa<0.5 and dLo<0.5:
 				return i
 		return -1
+		'''
 	def Find(self,value,key='filename'):
 		for q in self:
 			if q[key]==value:

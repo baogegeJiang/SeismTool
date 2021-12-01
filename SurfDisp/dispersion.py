@@ -230,12 +230,12 @@ class config:
                     continue
             sacsL = quake.getSacFiles(stations,isRead = True,strL='Z',\
                 byRecord=byRecord,minDist=self.minDist,maxDist=self.maxDist,\
-                remove_resp=remove_resp,para=self.para0,isSave=False,isSkip=True,\
+                remove_resp=remove_resp,para=self.para0,isSave=False,isSkip=False,\
                 resDir = resDir)
             #print('###',sacsL)
             sacNamesL = quake.getSacFiles(stations,isRead = False,strL='Z',\
                 byRecord=byRecord,minDist=self.minDist,maxDist=self.maxDist,\
-                remove_resp=remove_resp,para=self.para0,isSave=False,isSkip=True,\
+                remove_resp=remove_resp,para=self.para0,isSave=False,isSkip=False,\
                 resDir = resDir)
             if self.isFromO:
                 for sacs in sacsL:
@@ -338,9 +338,8 @@ class config:
                 if pairKey in fvFileD:
                     fvD[pairKey] = fv(fvFileD[pairKey],mode=mode)
         return fvD
-    def loadQuakeNEFV(self,stations,quakeFvDir='models/QuakeNEFV'):
+    def loadQuakeNEFV(self,stations,quakeFvDir='models/QuakeNEFV',quakeD=seism.QuakeL()):
         fvD = {}
-        quakeD={}
         for i in range(len(stations)):
             print('do for %d in %d'%(i+1,len(stations)))
             for j in range(len(stations)):
@@ -391,7 +390,7 @@ class config:
                             for f in file:
                                 getFVFromPairFile(f,fvD,quakeD)
                 '''
-        return fvD,seism.QuakeL([quakeD[key] for key in quakeD])
+        return fvD,quakeD
     def loadQuakeNEFVAv(self,stations,quakeFvDir='models/QuakeNEFV',threshold=2\
         ,minP=0.5,minThreshold=0.02,minSta=5):
         with multiprocessing.Manager() as m:
@@ -1232,7 +1231,18 @@ class fv:
         self.v = self.v[(T>randT)*(T<maxT)]
         self.std = self.std[(T>randT)*(T<maxT)]
         if len(self.f)>2:
-            print(1/self.f.max())
+            #print(1/self.f.max())
+            self.interp = self.genInterp()
+    def coverQC(self,dis,minI,maxI,R=0.1):
+        if len(self.f)<=2:
+            return 
+        minDis = minI(self.f)*(1-R)
+        maxDis = maxI(self.f)*(1+R)
+        self.f = self.f[(dis>minDis)*(dis<maxDis)]
+        self.v = self.v[(dis>minDis)*(dis<maxDis)]
+        self.std = self.std[(dis>minDis)*(dis<maxDis)]
+        if len(self.f)>2:
+            #print(1/self.f.max())
             self.interp = self.genInterp()
     def limit(self,self1,threshold=2):
         v    = self(self1.f)
@@ -1266,6 +1276,14 @@ def disQC(fvD,stations,fvRef,randA=0.15,maxR=2):
         dis = keyDis(key,stations)
         print(dis)
         fv.disQC(fvRef,dis,randA=randA,maxR=maxR)
+def coverQc(fvD,stations,minI,maxI,R=0.1):
+    for key in fvD:
+        fv = fvD[key]
+        dis = keyDis(key,stations)
+        print(dis)
+        fv.coverQC(dis,minI,maxI,R)
+def keyValue(time,la,lo):
+    return float(time)+1j*(float(la)+float(lo))
 def outputFvDist(fvD,stations,t=(16**np.arange(0,1.000001,1/49))*10,keys=[],keysL=[]):
     #HE.KAB_NM.MZL
     fL=1/t
@@ -1276,6 +1294,8 @@ def outputFvDist(fvD,stations,t=(16**np.arange(0,1.000001,1/49))*10,keys=[],keys
     fvL =[]
     if len(keysL)==0:
         keysL = fvD.keys()
+    
+    #keyDataL=np.array(keyDataL) 
     for key in keysL:
         if 'prem' in key:
             continue
@@ -1301,6 +1321,7 @@ def outputFvDist(fvD,stations,t=(16**np.arange(0,1.000001,1/49))*10,keys=[],keys
                 if key not in fvD:
                     distL.append(0)
                     vL.append(fL*0-1)
+                    print(key)
                     continue
         sta0 = stations.Find(netSta0)
         sta1 = stations.Find(netSta1)
@@ -1311,7 +1332,7 @@ def outputFvDist(fvD,stations,t=(16**np.arange(0,1.000001,1/49))*10,keys=[],keys
     print(len(nameL))
     return np.array(distL).reshape([-1,1]),np.array(vL),fL,averageFVL(fvL,fL=fL)
 
-def plotFvDist(distL,vL,fL,filename,fStrike=1,title=''):
+def plotFvDist(distL,vL,fL,filename,fStrike=1,title='',isCover=False,minDis=[],maxDis=[],fLDis=[],R=0.1):
     VL    = vL.reshape([-1])
     DISTL = (distL+vL*0).reshape([-1])
     FL    = (fL.reshape([1,-1])+vL*0).reshape([-1])
@@ -1325,6 +1346,11 @@ def plotFvDist(distL,vL,fL,filename,fStrike=1,title=''):
     plt.figure(figsize=[2.5,2])
     #plt.gca().set(facecolor='#A9A9A9')
     plt.hist2d(DISTL,FL,bins=(binD,binF),rasterized=True,cmap='Greys',norm=colors.LogNorm())
+    if isCover:
+        plt.plot(fLDis,minDis,'r')
+        plt.plot(fLDis,maxDis,'r')
+        plt.plot(fLDis,minDis*(1-R),'--r')
+        plt.plot(fLDis,maxDis*(1+R),'--r')
     plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('distance(km)')
@@ -1349,7 +1375,7 @@ def plotPair(fvD,stations,filename='predict/pairDis.eps'):
             plt.text(sta1['lo'],sta1['la'],str([sta1['la'],sta1['lo']]))
         plt.plot([sta0['lo'],sta1['lo']],[sta0['la'],sta1['la']],'--k',linewidth=0.01)
     plt.savefig(filename)
-def plotFV(vL,fL,filename,fStrike=1,title='',isAverage=True,thresL=[0.01,0.03,0.05],fvAverage={},isRand=False,randA=0.03,randN=10,midV=4,randR=0.5):
+def plotFV(vL,fL,filename,fStrike=1,title='',isAverage=True,thresL=[0.01,0.02,0.05],fvAverage={},isRand=False,randA=0.03,randN=10,midV=4,randR=0.5):
     VL    = vL.reshape([-1])
     FL    = (fL.reshape([1,-1])+vL*0).reshape([-1])
     FL    = FL[VL>1]
@@ -1395,8 +1421,16 @@ def plotFV(vL,fL,filename,fStrike=1,title='',isAverage=True,thresL=[0.01,0.03,0.
             plt.plot(fvAverage.v[fvAverage.v>1]*(1-thres),fvAverage.f[fvAverage.v>1],'-.r',linewidth=linewidth)
     plt.savefig(filename,dpi=300)
     plt.close()
+    plt.figure(figsize=[2.5,2])
+    plt.hist(FL,bins=binF)
+    #a=np.histogram(FL,bins=binF)
+    plt.gca().set_xscale('log')
+    plt.xlabel('f(Hz)')
+    plt.ylabel('count')
+    plt.savefig(filename[:-4]+'_f'+filename[-4:],dpi=300)
+    #np.savetxt(a[0],filename[:-4]+'_f.txt')
 
-def compareFVD(fvD,fvDGet,stations,filename,t=(12**np.arange(0,1.000001,1/49))*10,keys=[],fStrike=2,title='err0_dos'):
+def compareFVD(fvD,fvDGet,stations,filename,t=(12**np.arange(0,1.000001,1/49))*10,keys=[],fStrike=1,title='err0_dis'):
     disL,vL,fL,fvAverage = outputFvDist(fvD,stations,t=t,keys=keys,keysL=fvD.keys())
     disLGet,vLGet,fLGet,fvAverageGet = outputFvDist(fvDGet,stations,t=t,keys=keys,keysL=fvD.keys())
     VL    = vL.reshape([-1])
@@ -1408,8 +1442,10 @@ def compareFVD(fvD,fvDGet,stations,filename,t=(12**np.arange(0,1.000001,1/49))*1
     print((vL>1).sum())
     print(dvR*100,FL)
     plt.close()
-    binF  = fL[::fStrike]
+    binF  = fL[::fStrike].copy()
     binF.sort()
+    binF[-1]*=1.00000001
+    binF[0]*=1-0.00000001
     binDVR  = np.arange(-0.04,0.04,0.002)
     plt.figure(figsize=[4,3])
     plt.hist2d(dvR[(VL>1)*(VLGet>1)],FL[(VL>1)*(VLGet>1)],bins=(binDVR,binF),rasterized=True,cmap='Greys')#,norm=colors.LogNorm()
@@ -1419,8 +1455,31 @@ def compareFVD(fvD,fvDGet,stations,filename,t=(12**np.arange(0,1.000001,1/49))*1
     plt.ylabel('frequency(Hz)')
     plt.title(title)
     plt.savefig(filename,dpi=300)
+    plt.figure(figsize=[4,3])
+    plt.hist(FL[(VL>1)],bins=binF)
+    plt.hist(FL[(VL>1)*(VLGet>1)],bins=binF)
+    plt.hist(FL[(VL>1)*(VLGet>1)*(dvR<0.015)],bins=binF)#,norm=colors.LogNorm()
+    countAll,a=np.histogram(FL[(VL>1)],bins=binF)
+    countR,a=np.histogram(FL[(VL>1)*(VLGet>1)],bins=binF)
+    countP,a=np.histogram(FL[(VL>1)*(VLGet>1)*(dvR<0.015)],bins=binF)
+    binMid = (binF[1:]+binF[:-1])/2
+    #plt.colorbar(label='count')
+    ax1 =plt.gca()
+    ax2 = ax1.twinx()
+    ax2.plot(binMid,countP/countAll*100,'k-o',markersize=2,linewidth=1)
+    ax2.plot(binMid,countP/countR*100,'r-d',markersize=2,linewidth=1)
+    plt.gca().set_xscale('log')
+    ax1.set_ylabel('count')
+    ax1.set_xlabel('frequency(Hz)')
+    ax2.set_ylabel('Rate(%)')
+    ax1.set_ylim([0,1.25*countR.max()])
+    ax2.set_ylim([min(np.min(countP/countAll*100)-5,50),105])
+    plt.xlim([1/1e1,1/16e1])
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(filename[:-4]+'FCount'+filename[-4:],dpi=300)
     plt.close()
-def getFVFromPairFile(file,fvD={},quakeD={},isPrint=False,isAll=False):
+def getFVFromPairFile(file,fvD={},quakeD=seism.QuakeL(),isPrint=False,isAll=False):
     with open(file) as f :
         lines = f.readlines()
     stat='next'
@@ -1547,9 +1606,13 @@ def getFVFromPairFile(file,fvD={},quakeD={},isPrint=False,isAll=False):
                 if (baz0-az01+10)%180>20:
                     continue     
                 quake = seism.Quake(time=time,la=la,lo=lo,dep=dep,ml=ml)
-                name = quake.name('_')
-                if name not in quakeD:
-                    quakeD[name]=quake
+                #name = quake.name('_',fmt='%.5f')
+                index = quakeD.find(quake)
+                if index<0:
+                    quakeD.append(quake)
+                else:
+                    quake = quakeD[index]
+                name = quake.name('_',fmt='%.5f')
                 key='%s_%s'%(name,pairKey)
                 if len(f)<2:
                     continue
@@ -1852,7 +1915,7 @@ def plotFVL(fvL,fvRef=None,filename='test.jpg',thresholdL=[1],title='fvL',fL0=[]
     plt.close()
     hL=[]
     lL=[]
-    plt.figure(figsize=[3,3])
+    plt.figure(figsize=[2.5,2])
     for fv in fvL:
         if isinstance(fvL,dict):
             fv = fvL[fv]
@@ -1864,7 +1927,7 @@ def plotFVL(fvL,fvRef=None,filename='test.jpg',thresholdL=[1],title='fvL',fL0=[]
             v = fv(fL)
             #fL[v<1]=np.nan
             v[v<1]=np.nan
-            h=plt.plot(v,fL,'k',linewidth=0.2)
+            h=plt.plot(v,fL,'k',linewidth=0.1)
     hL.append(h)
     lL.append('pairs')
     if fvRef !=None:
@@ -1888,7 +1951,7 @@ def plotFVL(fvL,fvRef=None,filename='test.jpg',thresholdL=[1],title='fvL',fL0=[]
     figSet()
     #plt.legend(hL,lL)
     if dist>0:
-        plt.title('%s distance: %.2f km'%(title,dist))
+        plt.title('%s %.2f km'%(title,dist))
     else:
         plt.title('%s '%(title,))
     plt.savefig(filename,dpi=200)
@@ -1925,7 +1988,19 @@ def fvD2fvL(fvD,stations,f,isRef=False,fvRef=None):
                 vL[i].append(v)
     return indexL, vL
 
-
+def getDisCover(fvD,stations,fL):
+    minDis = fL*1e9
+    maxDis = fL*0
+    for key in fvD:
+        if '_' not in key:
+            continue
+        dis = keyDis(key,stations)
+        v = fvD[key](fL)
+        minDis[(v>1)*(dis<minDis)]=dis
+        maxDis[(v>1)*(dis>maxDis)]=dis
+    minI=interpolate.interp1d(fL,minDis)
+    maxI=interpolate.interp1d(fL,maxDis)
+    return minDis,maxDis,minI,maxI
 def replaceByAv(fvD,fvDAv,**kwags):
     notL = []
     for modelName in fvD:
@@ -2968,14 +3043,14 @@ class corrL(list):
             with open(file,'a') as f:
                 f.write('%s %s\n'%(station1['sta'],station0['sta']))
                 f.write('%s 5\n'%(station1['comp'][-1]))
-                f.write(obspy.UTCDateTime(time).strftime('%Y %m %d %H %M %S\n'))
+                f.write('%s %.5f\n'%(obspy.UTCDateTime(time).strftime('%Y %m %d %H %M'),time%60))
                 f.write('%f %f\n'%(station1['la'],station1['lo']))
-                f.write('%f %f -1 -1 0\n'%(la,lo))
+                f.write('%.5f %.5f -1 -1 0\n'%(la,lo))
                 f.write('%f %f 0 0 \n'%(corr.dis[1]/110.7, corr.az[1]))
                 f.write('%s 5\n'%(station0['comp'][-1]))
-                f.write(obspy.UTCDateTime(time).strftime('%Y %m %d %H %M %S\n'))
+                f.write('%s %.5f\n'%(obspy.UTCDateTime(time).strftime('%Y %m %d %H %M'),time%60))
                 f.write('%f %f\n'%(station0['la'],station0['lo']))
-                f.write('%f %f -1 -1 0\n'%(la,lo))
+                f.write('%.5f %.5f -1 -1 0\n'%(la,lo))
                 f.write('%f %f 0 0 \n'%(corr.dis[0]/110.7, corr.az[0]))
                 f.write('2 %d\n'%len(vIndex))
                 for ii in vIndex:

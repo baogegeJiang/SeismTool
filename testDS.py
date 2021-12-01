@@ -5,11 +5,16 @@ from SeismTool.SurfDisp import run
 R = run.run(run.runConfig(run.paraTrainTest))
 #R.loadCorr()
 #R.saveTrainSet(isMat=True)
-R.loadCorr(isLoad=True,isLoadFromMat=True)
+
+
+#R.plotGetDis()
+R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=False)
+R.getDisCover()
 R.plotTrainDis()
+
 R.loadModelUp()
-run.run.train(R,up=5,isRand=False,isShuffle=False)
-R.train(up=5,isRand=True,isShuffle=True)
+run.run.train(R,isAverage=False,isRand=True,isShuffle=True)
+#R.train(up=5,isRand=True,isShuffle=True)
 #run.run.loadCorr(R,isLoad=False)
 R.calResOneByOne()
 #R.loadModelUp(R.config.para['modelFile'])
@@ -21,14 +26,27 @@ R.model=None
 run.run.loadModelUp(R)
 run.run.train(R,up=5,isRand=True,isShuffle=False,isAverage=False)
 reload(run)
-R.config.para.update(run.paraTrainTest)
+R.config=run.runConfig(run.paraTrainTest)
+run.run.preDS(R,isByTrain=True)
+run.run.preDSTrain(R)
+run.run.preDSSyn(R,isByTrain=True)
+
 R.corrL1.reSetUp(5)
 run.run.calRes(R)
 run.run.loadRes(R)
-run.run.getAv(R)
+
+R.preDS(False)
+R.loadAndPlot(R.DS,False)
+run.run.compare(R,R.DS,R.DSTrain)
+
+R.getDisCover()
+R.loadRes()
+run.run.getAv(R,isCoverQC=True)
+run.run.preDS(R,isByTrain=True)
+
 run.d.qcFvD(R.fvAvGet)
 run.d.qcFvD(R.fvDGet)
-run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compare22/')
+run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compare120/')
 reload(run.d)
 run.d.plotPair(R.fvAvGet,R.stations)
 
@@ -39,22 +57,23 @@ reload(run.fcn)
 run.fcn.modelUp.show(R.model,R.corrLTest.x[::100],R.corrLTest.y[::100],outputDir='predict/raw/',delta=1,T=R.config.para['T'])
 reload(run.d)
 run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compareV10/')
-run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroAll.eps',t=R.config.para['T'],keys=[],fStrike=2,title='error_distribution')
-run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
-run.d.compareFVD(R.fvAvGet,R.fvDGet,R.stations,'predict/stdTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
+run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroAll.eps',t=R.config.para['T'],keys=[],fStrike=1,title='error_distribution')
+run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=1,title='error_distribution')
+run.d.compareFVD(R.fvD0,R.fvDGet,R.stations,'predict/erroTestSingle.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=1,title='error_distribution')
+run.d.compareFVD(R.fvAvGet,R.fvDGet,R.stations,'predict/stdTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=1,title='error_distribution')
 run.d.compareFVD(R.fvD,R.fvD0,R.stations,'predict/erro0.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
 run.d.compareFVD(R.fvDGet,R.fvD,R.stations,'predict/erroSingle.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
-run.d.plotFVM(R.fvMGet,R.fvAvGet,resDir=R.config.para['trainDir']+'pairsNorth/',isDouble=True,fL0=1/R.config.para['T'])
+run.d.plotFVM(R.fvMGet,R.fvAvGet,resDir=R.config.para['trainDir']+'pairsTrainTest5/',isDouble=True,fL0=1/R.config.para['T'],stations=R.stations)
 
 
-
-
+from SeismTool.mathTool import mathFunc
+mathFunc.showQC('predict/QC.eps')
 reload(run)
 #reload(run.d)
 #reload(run.seism)
 R1=run.run(run.runConfig(run.paraNorth))
 R1.model=R.model
-R1.calResOneByOne(is)
+R1.calResOneByOne()
 from glob import glob
 from SeismTool.io import seism
 fvFileL = glob('%s/*.dat'%('../models/ayu/Pairs_avgpvt/'))
@@ -82,15 +101,22 @@ keyL.sort()
 for key in keyL:
     stationsNew.append(staD[key])
 stationsNew.write('../stations/CEA.sta_labeled_sort')
+
+from SeismTool.io import seism
+import sys
+N= int(sys.argv[1])
+n= int(sys.argv[2])
+print(N,n)
 para={\
 'delta0' :1,
 'freq'   :[-1,-1],#[0.8/3e2,0.8/2],
 'corners':4,
 'maxA':1e19,
 }
-
-quakes.cutSac(stations,bTime=-1500,eTime =12300,\
-    para=para,byRecord=False,isSkip=True,resDir='/media/commonMount/data2/eventSac/')
+quakes = seism.QuakeL('CEA_quakes')
+staions = seism.StationList('../stations/CEA.sta_labeled_sort')
+quakes.cutSac(stations[n::N],bTime=-1500,eTime =12300,\
+    para=para,byRecord=False,isSkip=True,resDir='/media/jiangyr/1TSSD/eventSac/')
 
 for key in R.fvD:
     if '_' not in key:

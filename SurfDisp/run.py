@@ -4,13 +4,13 @@ from imp import reload
 import random
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy
 from ..mathTool import mathFunc
 from ..deepLearning import fcn
 from ..io import seism
 from . import DSur
 from . import dispersion as d
 import gc
+from scipy import fftpack,interpolate
 #主要还是需要看如何分批次更新
 #提前分配矩阵可能不影响
 #插值之后绘图，避免不对应
@@ -108,7 +108,11 @@ class runConfig:
 		self.para['surPara']['nxyz'][2]=len(self.para['z'])
 		self.para['surPara'].update({\
 				'kmaxRc':len(self.para['tSur']),'rcPerid': self.para['tSur'].tolist()})
-		
+
+disRandA=0.05
+disMaxR =4
+up=2
+defaultTrainSetDir ='/media/jiangyr/1TSSD/trainSet/'
 class run:
 	def __init__(self,config=runConfig(),self1 = None):
 		self.config = config
@@ -128,7 +132,7 @@ class run:
 			if np.abs(dDis0-corr.dDis).sum()>1:
 				count+=1
 		print('erro Count',count)
-	def loadCorr(self,isLoad=True,isLoadFromMat=False,trainSetDir='/fastDir/trainSet/'):
+	def loadCorr(self,isLoad=True,isLoadFromMat=False,isGetAverage=False,trainSetDir=defaultTrainSetDir):
 		config     = self.config
 		corrL      = []
 		stations   = seism.StationList([])
@@ -147,18 +151,26 @@ class run:
 			stations += sta
 			q       = seism.QuakeL(para['quakeFileL'][i])
 			quakes  += q
-			
-			fvDA    = para['dConfig'].loadNEFV(sta,fvDir=para['avgPairDirL'][i])
-			d.disQC(fvDA,stations,fvDAvarage['models/prem'],randA=0.12,maxR=2)
+			fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][i],quakeD=quakes)
+			#q0.write('fv.quakes')
+			self.q0 =q0
+			if isGetAverage:
+				print('get average')
+				fvMGet  =d.fvD2fvM(fvd,isDouble=True)
+				#print(self.fvMGet)qcThreshold
+				fvDA = d.fvM2Av(fvMGet,threshold=para['qcThreshold'],minThreshold=para['minThreshold'],minSta=para['minSta'])
+			else:
+				print('no get average')
+				fvDA    = para['dConfig'].loadNEFV(sta,fvDir=para['avgPairDirL'][i])
+			#d.disQC(fvDA,stations,fvDAvarage['models/prem'],randA=disRandA,maxR=disMaxR)
 			d.qcFvD(fvDA,threshold=para['thresholdTrain'])
 			fvDAvarage.update(fvDA)
 
-			fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][i])
-			d.replaceByAv(fvd,fvDA,threshold=para['thresholdTrain']*2)
+			d.replaceByAv(fvd,fvDA,threshold=para['thresholdTrain'])
 			fvD.update(fvd)
 			
-			fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][i])
-			d.replaceByAv(fvd,fvDA,isReplace=False,threshold=para['thresholdTrain']*2)
+			fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][i],quakeD=quakes)
+			d.replaceByAv(fvd,fvDA,isReplace=False,threshold=para['thresholdTrain'])
 			fvD0.update(fvd)
 			if isLoad:
 				if not isLoadFromMat:
@@ -170,34 +182,63 @@ class run:
 				else:
 					corrL = d.corrL()
 					corrL.load(trainSetDir)
-					self.fvL = loadListStr(trainSetDir+'fvL')
-					self.fvTrain = loadListStr(trainSetDir+'fvTrain')
-					self.fvTest = loadListStr(trainSetDir+'fvTest')
-					self.fvValid = loadListStr(trainSetDir+'fvValid')
+					self.loadFvL(trainSetDir)
 		if isLoad:
 			self.corrL  = d.corrL(corrL,maxCount=para['maxCount'])
 			self.corrL1 = d.corrL(self.corrL,maxCount=para['maxCount'],fvD=fvD)
-		fvDNew ={}
-		fvD0New = {}
-		fvDAvarageNew ={'models/prem':fvDAvarage['models/prem']}
-		for corr in self.corrL1:
-			key = corr.modelFile
-			fvDNew[key]=fvD[key]
-			fvD0New[key]=fvD0[key]
-			if len(key.split('_'))>=2:
-				name0 = key.split('_')[-2]
-				name1 = key.split('_')[-1]
-				modelName ='%s_%s'%(name0,name1)
-				#print(modelName0)
-				if modelName in fvDAvarage:
-					if modelName not in fvDAvarageNew:
-						fvDAvarageNew[modelName] = fvDAvarage[modelName]
+		
+		self.fvDAvarage = fvDAvarage
+		fvDNew =fvD
+		fvD0New = fvD0
+		if isLoad:
+			fvDNew ={}
+			fvD0New = {}
+			fvDAvarageNew ={'models/prem':fvDAvarage['models/prem']}
+			self.fvDAvarage = fvDAvarageNew
+			for corr in self.corrL1:
+				key = corr.modelFile
+				fvDNew[key]=fvD[key]
+				fvD0New[key]=fvD0[key]
+				if len(key.split('_'))>=2:
+					name0 = key.split('_')[-2]
+					name1 = key.split('_')[-1]
+					modelName ='%s_%s'%(name0,name1)
+					#print(modelName0)
+					if modelName in fvDAvarage:
+						if modelName not in fvDAvarageNew:
+							fvDAvarageNew[modelName] = fvDAvarage[modelName]
 		self.fvD    = fvDNew
 		self.fvD0   = fvD0New
-		self.fvDAvarage = fvDAvarageNew
 		self.quakes = quakes
 		self.stations = stations
-	def train(self,up=1,isRand=True,isShuffle=False,isAverage=False):
+	def loadFvL(self,trainSetDir=defaultTrainSetDir):
+		self.fvL = loadListStr(trainSetDir+'fvL')
+		self.fvTrain = loadListStr(trainSetDir+'fvTrain')
+		self.fvTest = loadListStr(trainSetDir+'fvTest')
+		self.fvValid = loadListStr(trainSetDir+'fvValid')
+	def getDisCover(self,filename='disCover'):
+		fL = 1/np.array([np.float(self.config.para['T'][0]*0.9)]+(self.config.para['T'].tolist())+[np.float(self.config.para['T'][-1]*1.1)])
+		minDis,maxDis,minI,maxI=d.getDisCover(self.fvDAvarage,self.stations,fL)
+		self.minDis = minDis
+		self.maxDis = maxDis
+		self.coverFL= fL
+		self.minI   = minI
+		self.maxI   = maxI
+		self.coverR = 0.1
+		data = np.array([fL,minDis,maxDis])
+		np.savetxt(filename,data)
+	def loadDisCover(self,filename='disCover'):
+		data=np.loadtxt(filename)
+		fL,minDis,maxDis=data
+		minI=interpolate.interp1d(fL,minDis)
+		maxI=interpolate.interp1d(fL,maxDis)
+		self.minDis = minDis
+		self.maxDis = maxDis
+		self.minI   = minI
+		self.maxI   = maxI
+		self.coverR = 0.1
+		self.coverFL= fL
+	def train(self,isRand=True,isShuffle=False,isAverage=False):
 		para    = self.config.para
 		tTrain = para['T']
 		if isRand:
@@ -220,9 +261,9 @@ class run:
 				for i in range(len(fvL)):
 					index = indexL[i]
 					print(i,index,disL[index],fvL[index])
-					if i%10==3:
+					if i%10==1:
 						fvValid.append(fvL[index])
-					elif i%10==4:
+					elif i%10==2:
 						fvTest.append(fvL[index])
 					else:
 						fvTrain.append(fvL[index])
@@ -242,9 +283,9 @@ class run:
 			self.corrLTest  = d.corrL(self.corrL1,specThreshold=specThreshold,fvD=self.fvTest)
 			#corrLQuakePTrain = d.corrL(corrLQuakePCEA[:-1000])
 			self.corrLValid = d.corrL(self.corrL1,specThreshold=specThreshold,fvD=self.fvValid)
-			if up>1:
+			if para['up']>0:
 				for corrL  in [self.corrLTrain,self.corrLValid,self.corrLTest]:
-					corrL.reSetUp(up)
+					corrL.reSetUp(para['up'])
 			#corrLQuakePTest  = d.corrL(corrLQuakePNE)
 			#random.shuffle(corrLQuakePTrain)
 			#random.shuffle(corrLQuakePValid)
@@ -264,10 +305,10 @@ class run:
 		set2One=False,move2Int=True,randMove=True,randA=para['randA'],midV=para['midV'])
 		#self.loadModel()
 		fcn.trainAndTest(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
-	   		outputDir=para['trainDir'],sigmaL=[2.0],tTrain=tTrain,perN=100,count0=30,w0=1*2.0/1.5,k0=3e-3)#w0=3#4
+                        outputDir=para['trainDir'],sigmaL=[2],tTrain=tTrain,perN=100,count0=30,w0=1*2/1.5,k0=3e-3)#w0=3#4
 		#fcn.trainAndTest(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
 	   	#	outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=50,count0=200,w0=1.5)#w0=3
-	def saveTrainSet(self,saveDir='/fastDir/trainSet/',isMat=False):
+	def saveTrainSet(self,saveDir=defaultTrainSetDir,isMat=False):
 		if isMat:
 			self.corrL.save(saveDir)
 		saveListStr(saveDir+'fvL',self.fvL)
@@ -348,6 +389,7 @@ class run:
 			self.model.load_weights(file, by_name= True)
 	def loadModelUp(self,file=''):
 		if self.model == None:
+			fcn.defProcess()
 			self.model = fcn.modelUp(channelList=[0,1])
 		if file != '':
 			self.model.load_weights(file, by_name= True)
@@ -380,6 +422,7 @@ class run:
 			q       = seism.QuakeL(para['quakeFileL'][i])
 			print(para['quakeFileL'][i],len(q))
 			self.stations = sta
+			self.q=q
 			q.set('sort','sta')
 			q.sort()
 			perN= self.config.para['perN']
@@ -393,7 +436,7 @@ class run:
 				self.corrL  = d.corrL(corrL0,maxCount=para['maxCount'])
 				if len(self.corrL)==0:
 					continue
-				self.corrL.reSetUp(up=5)
+				self.corrL.reSetUp(up=para['up'])
 				#self.calRes()
 				para = self.config.para
 				self.corrL.setTimeDis(fvDAvarage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
@@ -420,7 +463,8 @@ class run:
 		self.stations.inR(self.config.para['lalo'])
 		print(len(self.stations))
 		para    = self.config.para
-		fvDGet,quakesGet = para['dConfig'].loadQuakeNEFV(self.stations,quakeFvDir=para['resDir'])
+		q = seism.QuakeL(self.config.para['quakeFileL'][0])
+		fvDGet,quakesGet = para['dConfig'].loadQuakeNEFV(self.stations,quakeFvDir=para['resDir'],quakeD=q)
 		self.fvDGet  = fvDGet
 		d.qcFvD(self.fvDGet)
 		#self.getAv()
@@ -450,7 +494,7 @@ class run:
 		#for fv in self.fvAvGet:
 		#	self.fvAvGet[fv].qc(threshold=para['threshold'])
 		d.qcFvD(self.fvAvGet,threshold=self.config.para['threshold'])
-	def getAv(self):
+	def getAv(self,isDisQC=False,isCoverQC=False):
 		for fv in self.fvDGet:
 			self.fvDGet[fv].qc(threshold=-self.config.para['minP'])
 		para = self.config.para
@@ -460,7 +504,10 @@ class run:
 		#print(self.fvAvGet)
 		fvRef=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
 		#d.disQC(fvDA,stations,fvDAvarage['models/prem'],randA=0.1)
-		d.disQc(self.fvAvGet,self.stations,fvRef,randA=0.12,maxR=2)
+		if isDisQC:
+			d.disQC(self.fvAvGet,self.stations,fvRef,randA=disRandA,maxR=disMaxR)
+		if isCoverQC:
+			d.coverQc(self.fvAvGet,self.stations,self.minI,self.maxI,R=self.coverR)
 		for fv in self.fvAvGet:
 			self.fvAvGet[fv].qc(threshold=self.config.para['threshold'])
 		d.qcFvD(self.fvAvGet)
@@ -480,14 +527,30 @@ class run:
 		self.areas.getAv()
 		self.areas.limit(self.fvAvGet,threshold=self.config.para['areasLimit'])
 		d.qcFvD(self.fvAvGet)
-	def preDS(self,do=True):
+	def preDS(self,do=True,isByTrain=False):
 		para    = self.config.para
 		tSur = para['tSur']
 		z= para['z'];surPara= para['surPara'];DSConfig = DSur.config(para=surPara,z=z)
 		DS = DSur.DS(config=DSConfig,runPath=para['runDir'])
 		self.DS = DS
+		if not isByTrain:
+			fvAvGet=self.fvAvGet
+		else:
+			keyL = self.fvDAvarage.keys()
+			print('by keyL')
+			fvAvGet={}
+			for key in keyL:
+				if '_' not in key:
+					continue
+				name0 = key
+				sta0,sta1 = key.split('_')
+				name1 = '%s_%s'%(sta1,sta0)
+				if name0 in self.fvAvGet:
+					fvAvGet[name0]=self.fvAvGet[name0]
+				if name1 in self.fvAvGet:
+					fvAvGet[name1]=self.fvAvGet[name1]
 		if do:
-			indexL,vL = d.fvD2fvL(self.fvAvGet,self.stations,1/tSur)
+			indexL,vL = d.fvD2fvL(fvAvGet,self.stations,1/tSur)
 			self.indexL = indexL
 			self.vL   = vL
 			DS.test(vL,indexL,self.stations)
@@ -509,89 +572,84 @@ class run:
 		DS = DSur.DS(config=DSConfig,runPath=para['runDir']+'train/')
 		self.DSTrain = DS
 		if do:
-			indexL,vL = d.fvD2fvL(self.fvDAvarage,self.stations[::3],1/tSur)
+			indexL,vL = d.fvD2fvL(self.fvDAvarage,self.stations,1/tSur)
 			self.indexL = indexL
 			self.vL   = vL
-			DS.test(vL,indexL,self.stations[::3])
-	def loadAndPlotTrain(self,isPlot=True):
-		self.DSTrain.loadRes()
+			DS.test(vL,indexL,self.stations)
+	def loadAndPlot(self,DS=[],isPlot=True):
+		if isinstance(DS,list):
+			DS = self.DS
+		DS.loadRes()
 		if isPlot:
-			self.DSTrain.plotByZ(p2L=self.config.para['p2L'],R=self.config.para['R'])
-	def preDSSyn(self,do=True):
+			DS.plotByZ(p2L=self.config.para['p2L'],R=self.config.para['R'])
+	def compare(self,DS,DS0,isCompare=False):
+		DS.plotByZ(p2L=self.config.para['p2L'],R=self.config.para['R'],self1=DS0,isCompare=isCompare)
+	def preDSSyn(self,do=True,isByTrain=False,M=1):
 		para    = self.config.para
 		tSur = para['tSur']
 		z= para['z']
 		surPara= para['surPara']
 		DSConfig = DSur.config(para=surPara,z=z)
 		DS = DSur.DS(config=DSConfig,runPath=para['runDir']+'syn/',mode='syn')
-		self.DS = DS
+		self.DSSyn = DS
+		if not isByTrain:
+			fvAvGet=self.fvAvGet
+		else:
+			keyL = self.fvDAvarage.keys()
+			print('by keyL')
+			fvAvGet={}
+			for key in keyL:
+				if '_' not in key:
+					continue
+				name0 = key
+				sta0,sta1 = key.split('_')
+				name1 = '%s_%s'%(sta1,sta0)
+				if name0 in self.fvAvGet:
+					fvAvGet[name0]=self.fvAvGet[name0]
+				if name1 in self.fvAvGet:
+					fvAvGet[name1]=self.fvAvGet[name1]
 		if do:
-			indexL,vL = d.fvD2fvL(self.fvAvGet,self.stations[-1::-1],1/tSur)
+			indexL,vL = d.fvD2fvL(fvAvGet,self.stations[-1::-1],1/tSur)
 			self.indexL = indexL
 			self.vL   = vL
-			DS.testSyn(vL,indexL,self.stations[-1::-1])
-	def preDSSynOld(self,do=True):
-		para    = self.config.para
-		tSur = para['tSur']
-		z= para['z']
-		surPara= para['surPara']
-		DSConfig = DSur.config(para=surPara,z=z)
-		DS = DSur.DS(config=DSConfig,runPath=para['runDir']+'syn/',mode='syn')
-		self.DS = DS
-		if do:
-			indexL,vL = d.fvD2fvL(self.fvAvGet,self.stations,1/tSur)
-			self.indexL = indexL
-			self.vL   = vL
-			DS.testSyn(vL,indexL,self.stations)
-	def preDSOld(self):
-		para    = self.config.para
-		tSur = para['tSur']
-		z= para['z']
-		surPara= para['surPara']
-		DSConfig = DSur.config(para=surPara,z=z)
-		DS = DSur.DS(config=DSConfig,runPath=para['runDir'])
-		self.DS = DS
-		indexL,vL = d.fvD2fvL(self.fvAvGet,self.stations,1/tSur)
-		self.indexL = indexL
-		self.vL   = vL
-		DS.test(vL,indexL,self.stations)
-	def loadAndPlot(self,isPlot=True):
-		self.DS.loadRes()
-		if isPlot:
-			self.DS.plotByZ(p2L=self.config.para['p2L'],R=self.config.para['R'])
-	def test(self):
-		self.loadCorr()
-		self.train()
-	def plotTrainDis(self):
+			DS.testSyn(vL,indexL,self.stations[-1::-1],M=1)
+	def plotTrainDis(self,isAverage=False):
 		para = self.config.para
 		R = self
+		if isAverage:
+			fvD = self.fvD
+		else:
+			fvD = self.fvD0
 		disL,vL,fL,fvAverage = d.outputFvDist(self.fvD0,R.stations,t=R.config.para['T'],keys=R.fvTrain)
-		d.plotFvDist(disL,vL,fL,'predict/fvDistTrain.eps')
+		d.plotFvDist(disL,vL,fL,'predict/fvDistTrain.eps',isCover=True,minDis=R.minDis,maxDis=R.maxDis,fLDis=R.coverFL,R=self.coverR)
 
 		disL,vL,fL,fvAverage = d.outputFvDist(self.fvD0,R.stations,t=R.config.para['T'],keys=R.fvValid)
-		d.plotFvDist(disL,vL,fL,'predict/fvDistValid.eps')
+		d.plotFvDist(disL,vL,fL,'predict/fvDistValid.eps',isCover=True,minDis=R.minDis,maxDis=R.maxDis,fLDis=R.coverFL,R=self.coverR)
 
 		disL,vL,fL,fvAverage = d.outputFvDist(self.fvD0,R.stations,t=R.config.para['T'],keys=R.fvTest)
-		d.plotFvDist(disL,vL,fL,'predict/fvDistTest.eps')
+		d.plotFvDist(disL,vL,fL,'predict/fvDistTest.eps',isCover=True,minDis=R.minDis,maxDis=R.maxDis,fLDis=R.coverFL,R=self.coverR)
 
 		disL,vL,fL,fvAverage = d.outputFvDist(self.fvDAvarage,R.stations,t=R.config.para['T'],keys=R.fvTrain)
 		d.plotFV(vL,fL,'predict/FVTrain.eps',isAverage=True,fvAverage=fvAverage)
+		d.plotFV(vL,fL,'predict/FVTrainRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=10,randR=0.5)
 
 		disL,vL,fL,fvAverage = d.outputFvDist(self.fvDAvarage,R.stations,t=R.config.para['T'],keys=R.fvValid)
 		d.plotFV(vL,fL,'predict/FVValid.eps',isAverage=True,fvAverage=fvAverage)
+		d.plotFV(vL,fL,'predict/FVValidRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=10,randR=0.5)
 
 		disL,vL,fL,fvAverage = d.outputFvDist(self.fvDAvarage,R.stations,t=R.config.para['T'],keys=R.fvTest)
 		d.plotFV(vL,fL,'predict/FVTest.eps',isAverage=True,fvAverage=fvAverage)
+		d.plotFV(vL,fL,'predict/FVTestRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=10,randR=0.5)
 
-		disL,vL,fL,fvAverage = d.outputFvDist(self.fvD0,R.stations,t=R.config.para['T'],keys=R.fvTrain)
+		disL,vL,fL,fvAverage = d.outputFvDist(fvD,R.stations,t=R.config.para['T'],keys=R.fvTrain)
 		d.plotFV(vL,fL,'predict/FVTrainSingle.eps',isAverage=True,fvAverage=fvAverage)
 		d.plotFV(vL,fL,'predict/FVTrainSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=10,randR=0.5)
 
-		disL,vL,fL,fvAverage = d.outputFvDist(self.fvD0,R.stations,t=R.config.para['T'],keys=R.fvTest)
+		disL,vL,fL,fvAverage = d.outputFvDist(fvD,R.stations,t=R.config.para['T'],keys=R.fvTest)
 		d.plotFV(vL,fL,'predict/FVTestSingle.eps',isAverage=True,fvAverage=fvAverage)
 		d.plotFV(vL,fL,'predict/FVTestSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=10,randR=0.5)
 
-		disL,vL,fL,fvAverage = d.outputFvDist(self.fvD0,R.stations,t=R.config.para['T'],keys=R.fvValid)
+		disL,vL,fL,fvAverage = d.outputFvDist(fvD,R.stations,t=R.config.para['T'],keys=R.fvValid)
 		d.plotFV(vL,fL,'predict/FVValidSingle.eps',isAverage=True,fvAverage=fvAverage)
 		d.plotFV(vL,fL,'predict/FVValidSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=10,randR=0.5)
 	def plotGetDis(self):
@@ -1102,28 +1160,75 @@ paraAllONew={ 'quakeFileL'  : ['../phaseLPickCEA'],\
 	'laL'         : [],\
 	'loL'         : [],\
 	'areasLimit'  :  3,\
-	'up'          :  5}
+	'up'          :  up}
 
-paraTrainTest={ 'quakeFileL'  : ['CEA.quakes'],\
+paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'stationFileL': ['../stations/CEA.sta_labeled_sort'],#**********'stations/CEA.sta_know_few'\
-	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211107-102524_model.h5',
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211127-133742_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'maxCount'    : 512*3,\
-	'randA'       : 0.025,\
+	'randA'       : 0.02,\
 	'midV'        : 4,\
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20211108NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20211130V5/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 20,\
-	'eventDir'    : '/HOME/jiangyr/eventSac/',\
-	'z'           : [0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,175,200,250,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
+	'z'           : [0,5,10,15,20,30,40,50,60,70,80,100,120,160,200,250,300,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
 	'T'           : (16**np.arange(0,1.000001,1/49))*10,\
 	'Tav'         : (16**np.arange(0-1/49,1.000001+1/49,1/49))*10,\
 	'tSur'        : (16**np.arange(0,1.000001,1/49))*10,\
-	'surPara'     : { 'nxyz':[40,60,15], 'lalo':[55,110],#[40,60,0][55,108]\
-					'dlalo':[0.5,0.5], 'maxN':60,#[0.5,0.5]\
-					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 1,\
-					'maxIT':30,'nBatch':8,'smoothDV':20,'smoothG':20,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[38.5,122.1],[39.5,113],[41.5,110.9],[43.9,110.9]]),'perAGs':0.01,'perAGc':0.01},\
+	'surPara'     : { 'nxyz':[19,28,15], 'lalo':[55,110],#[40,60,0][55,108]\
+					'dlalo':[1,1], 'maxN':60,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.3,\
+					'maxIT':20,'nBatch':1,'smoothDV':20,'smoothG':40,'vR':np.array([[41.9,114.9],[45.1,116.9],[50.1,116.9],[50.1,119.9],[53.1,119.9],[53.1,126.1],[50.1,127.1],[50.1,132.1],[41.9,132.1],[41.9,127.1],[37.9,127.9],[37.9,116.9],[40.9,116.9],[40.9,114.9],[41.9,114.9]]),'perAGs':0.01,'perAGc':0.01,'perN':[3,3,5],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.05},\
+	'runDir'      : '../DS/20211016_CEA160_TrainTest/',#_man/',\
+	'gpuIndex'    : 0,\
+	'gpuN'        : 1,\
+	'lalo'        :[37.5,55,110,136.5],#[-90,90,0,180],#[38,54,110,134],#[20,34,96,108][]*******,\
+	'minThreshold':0.015,\
+	'thresholdTrain'   :0.015,\
+	'threshold'   :0.02,\
+	'qcThreshold': 2,\
+	'minProb'     :0.5,\
+	'minP'        :0.5,\
+	'minSta'      : 3,\
+	'laL'         : [],\
+	'loL'         : [],\
+	'areasLimit'  :  3,\
+	'up'          :  up,\
+	'refModel'    : 'models/prem',\
+	'p2L':[
+		[[42,115],[11,22]],
+	],
+	'R':[36,55,108,136]}
+'''
+[[45,115],[35,115]],\
+	[[45,110],[35,105]],
+	[[45,115],[35,110]],
+	[[41,105],[41,125]],
+	[[33,105],[50,130]],
+'''
+paraSC={ 'quakeFileL'  : ['CEA_quakesAll'],\
+	'stationFileL': ['../stations/CEA.sta_labeled_sort'],#**********'stations/CEA.sta_know_few'\
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211127-133742_model.h5',
+	'isLoadFvL'   : [True],#False********\
+	'byRecordL'   : [True],\
+	'maxCount'    : 512*3,\
+	'randA'       : 0.02,\
+	'midV'        : 4,\
+	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
+	'resDir'      : '/media/jiangyr/MSSD/20211128V1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'perN'        : 20,\
+	'eventDir'    : '/HOME/jiangyr/eventSac/',\
+	'z'           : [0,5,10,15,20,30,40,50,60,70,80,100,120,160,200,250],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+	'T'           : (10**np.arange(0,1.000001,1/49))*10,\
+	'Tav'         : (10**np.arange(0-1/49,1.000001+1/49,1/49))*10,\
+	'tSur'        : (10**np.arange(0,1.000001,1/24.5))*10,\
+	'surPara'     : { 'nxyz':[22,30,15], 'lalo':[55,110],#[40,60,0][55,108]\
+					'dlalo':[1,1], 'maxN':60,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.3,\
+					'maxIT':20,'nBatch':1,'smoothDV':20,'smoothG':20,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[38.5,122.1],[39.5,113],[41.5,110.9],[43.9,110.9]]),'perAGs':0.01,'perAGc':0.01,'perN':[2,2,4],'noiselevel':0.000,'perA':0.05},\
 	'runDir'      : '../DS/20211016_CEA160_TrainTest/',#_man/',\
 	'gpuIndex'    : 0,\
 	'gpuN'        : 1,\
@@ -1131,14 +1236,14 @@ paraTrainTest={ 'quakeFileL'  : ['CEA.quakes'],\
 	'minThreshold':0.015,\
 	'thresholdTrain'   :0.015,\
 	'threshold'   :0.015,\
-	'qcThreshold': 3,\
+	'qcThreshold': 2,\
 	'minProb'     :0.5,\
 	'minP'        :0.5,\
-	'minSta'      : 5,\
+	'minSta'      : 3,\
 	'laL'         : [],\
 	'loL'         : [],\
 	'areasLimit'  :  3,\
-	'up'          :  5,\
+	'up'          :  up,\
 	'refModel'    : 'models/prem',\
 	'p2L':[\
 	[[45,115],[35,115]],\
@@ -1148,40 +1253,39 @@ paraTrainTest={ 'quakeFileL'  : ['CEA.quakes'],\
 	[[33,105],[50,130]],
 	],\
 	'R':[38,55,110,135]}
-
-paraNorth={ 'quakeFileL'  : ['CEA.quakes'],\
+paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'stationFileL': ['../stations/CEA.sta_know_few'],\
-	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211109-151636_model.h5',
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211130-185235_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'maxCount'    : 512*3,\
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20211119NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
-	'perN'        : 3,\
+	'resDir'      : '/media/jiangyr/MSSD/20211201NorthV6/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'perN'        : 2,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           : [0,5,10,15,20,25,30,40,50,60,70,80,100,120,150,175,200,240,300],#[0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,175,200,250,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
 	'T'           : (16**np.arange(0,1.000001,1/49))*10,\
 	'Tav'         : (16**np.arange(0-1/49,1.000001+1/49,1/49))*10,\
 	'tSur'        : (16**np.arange(0,1.000001,1/49))*10,\
-	'surPara'     : { 'nxyz':[52,74,15], 'lalo':[55,103],#[40,60,0][55,108]\
-					'dlalo':[0.5,0.5], 'maxN':300,#[0.5,0.5]\
-					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 2,\
-					'maxIT':50,'nBatch':40,'smoothDV':20,'smoothG':40,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[32,122.5],[32,103],[40,103],[43.9,110.9]]),'perA':0.05,'perAGs':0.01,'perAGc':0.01},\
+	'surPara'     : { 'nxyz':[26,37,15], 'lalo':[55,103],#[40,60,0][55,108]\
+					'dlalo':[1,1], 'maxN':300,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.3,\
+					'maxIT':36,'nBatch':40,'smoothDV':20,'smoothG':40,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[32,122.5],[32,103],[40,103],[43.9,110.9]]),'perAGs':0.01,'perAGc':0.01,'perN':[3,3,5],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.05},\
 	'runDir'      : '../DS/20211016_CEA160_TrainTest_North/',#_man/',\
 	'gpuIndex'    : 0,\
 	'gpuN'        : 1,\
 	'lalo'        :[32,180,103,135],#,#[-90,90,0,180],#[38,54,110,134],#[20,34,96,108][]*******,\
 	'minThreshold':0.015,\
 	'thresholdTrain'   :0.015,\
-	'threshold'   :0.010,\
-	'qcThreshold': 3,\
+	'threshold'   :0.02,\
+	'qcThreshold': 2.5,\
 	'minProb'     :0.5,\
 	'minP'        :0.5,\
-	'minSta'      : 5,\
+	'minSta'      : 3,\
 	'laL'         : [],\
 	'loL'         : [],\
 	'areasLimit'  :  3,\
-	'up'          :  5,\
+	'up'          :  up,\
 	'refModel'    : 'models/prem',\
 	'p2L':[\
 	[[45,115],[35,115]],\
@@ -1190,4 +1294,10 @@ paraNorth={ 'quakeFileL'  : ['CEA.quakes'],\
 	[[41,105],[41,125]],
 	[[33,105],[50,130]],
 	],\
-	'R':[32,55,103,135]}
+	'R':[32,55,103,136]}
+'''
+	'surPara'     : { 'nxyz':[40,60,15], 'lalo':[55,110],#[40,60,0][55,108]\
+					'dlalo':[0.5,0.5], 'maxN':60,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.3,\
+					'maxIT':20,'nBatch':1,'smoothDV':20,'smoothG':20,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[38.5,122.1],[39.5,113],[41.5,110.9],[43.9,110.9]]),'perAGs':0.01,'perAGc':0.01},\
+'''

@@ -7,10 +7,11 @@ from netCDF4 import Dataset
 from ..mapTool import mapTool as mt
 from ..mathTool.distaz import DistAz
 from ..mathTool.mathFunc_bak import Model as Model0,outR
-import cmath
+#import cmath
 
 #cmap = pycpt.load.gmtColormap('cpt/temperatureInv')
 cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
+#cmap = 'bwr_r'
 ##程序中又控制的大bug
 ##必须按顺序(period source)
 faultL = mt.readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
@@ -34,7 +35,7 @@ class config:
         'kmaxRc':10,'rcPerid':np.arange(1,11).tolist(),'kmaxRg':0,'rgPeriod':[],\
         'kmaxLc':0,'lcPeriod':[],'kmaxLg':0,'lgPeriod':[],'isSyn':0,'noiselevel':0.02,'threshold':0.05,\
         'vnn':[0,100,50],'iso':'F','c':'c','smoothDV':10,'smoothG':20,'Damp':0,'perN':[6,6,4],'perA':0.05,\
-        'modelPara': {'config':self,'mode':'prem','runPath':'','file':'../models/ref','la':'','lo':'','z':'','self1':'',\
+        'modelPara': {'config':self,'mode':'prem','runPath':'','file':'../models/prem','la':'','lo':'','z':'','self1':'',\
         },'rayT':'F','noise':0,\
         'GSPara': {'config':self,'mode':'GS','runPath':'','file':'','la':'','lo':'','z':'','self1':'',\
         },\
@@ -176,6 +177,7 @@ class DS:
                         f.write('# %.3f %.3f %d 2 0\n'%(la,lo,j+1))
                     for k in range(len(indexL[i])):
                         kk = indexL[i][k]
+                        #print(kk)
                         if vL[k]>2 and vL[k]<6:
                             la,lo=self.config.findLaLo(stations[kk]['la'],\
                             stations[kk]['lo'])
@@ -195,23 +197,23 @@ class DS:
             self.GS    = Model(**self.config.para['GSPara'])
             self.model.write(self.runPath+'/MODVs.true',la,lo,z,isDiff=True,N=self.config.para['perN']\
                 ,A=self.config.para['perA'])
-            self.GS.write(self.runPath+'/MODGs.true',la,lo,z,isDiff=True,N=self.config.para['perN']\
-                ,A=self.config.para['perAGs'])
-            self.GC.write(self.runPath+'/MODGc.true',la,lo,z,isDiff=True,N=self.config.para['perN']\
-                ,A=self.config.para['perAGc'])
+            self.GS.write(self.runPath+'/MODGs.true',la,lo,z,isDiff=True,N=self.config.para['perNG']\
+                ,A=self.config.para['perAGs']*0,base=0)
+            self.GC.write(self.runPath+'/MODGc.true',la,lo,z,isDiff=True,N=self.config.para['perNG']\
+                ,A=self.config.para['perAGc'],base=0)
         for i in range(nz):
           print (dep1[i]),
     def test(self,fvLL,indexL,stations):
         self.writeInput()
         self.writeMod()
         self.writeData(fvLL,indexL,stations)
-    def testSyn(self,fvLL,indexL,stations):
+    def testSyn(self,fvLL,indexL,stations,M=1):
         self.writeMod()
         periods = ['' for i in range(self.config.para['kmaxRc'])]
         for i in range(self.config.para['kmaxRc']):
             self.writeInput(perI=i)
-            for j in range(3):
-                self.writeData(fvLL,indexL,stations,perI=i,perJ=j,M=3)
+            for j in range(M):
+                self.writeData(fvLL,indexL,stations,perI=i,perJ=j,M=M)
                 os.system('cd %s;SurfAAForward dssyn'%self.runPath)
                 with open('%s/surfphase_forward.dat'%self.runPath,'r') as res:
                     for line in res.readlines():
@@ -226,7 +228,7 @@ class DS:
                         else:
                             tmp = line.split()
                             v   = float(tmp[-1])
-                            v   *= 1+2*(np.random.rand()-0.5)*0.005
+                            v   *= 1+2*(np.random.rand()-0.5)*self.config.para['noiselevel']
                             tmp[-1] = '%.6f'%v
                             line=''
                             for t in tmp:
@@ -238,27 +240,36 @@ class DS:
             with open('%s/dsin_syn'%self.runPath,'w+') as f:
                 for period in periods:
                     f.write(period)
-    def plotByZ(self,p2L=[],R=[],self1=''):
+    def plotByZ(self,p2L=[],R=[],self1='',isCompare=False):
         if self.mode == 'syn':
-            self.modelTrue.plotByZ(self.runPath,head='true',R=R)
+            self.modelTrue.plotByZ(self.runPath,self1=self.fastTrue,head='true',R=R,isVol=False)
+            self.modelRes.plotByZ(self.runPath,self1=self.fast,R=R,head='depth',isVol=False)
+            #self.fast.plotArrByZ(self.runPath,head='fast')
+            self.modelPeriod.plotByZ(self.runPath,self1=self.fastP,head='period',R=R,isVol=False)
+            return
         '''
         for p2 in p2L:
             self.modelRes.plotByP2(self.runPath,head='P2',P2=p2,vR=self.config.para['vR'])
         '''
-        self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth')
-        self.fast.plotArrByZ(self.runPath,head='fast')
-        self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R)
-        if self1!='':
+        if self1!='' and isCompare:
             self.fastDiff = self.fast.copy()
             self.fastDiff.v = self.fastDiff.v - self1.fast.v
             self.fastPDiff = self.fastP.copy()
-            self.fastPDiff.v = self.fastDiffP.v - self1.fastP.v
-            self.modelRes = self.modelRes.copy()
-            self.modelResDiff.v = self.modelResDiff.v - self1.modelRes.v
+            self.fastPDiff.v = self.fastPDiff.v - self1.fastP.v
+            self.modelResDiff = self.modelRes.copy()
+            self.modelResDiff.v = self.modelResDiff.v/self1.modelRes.v-1
             self.modelPeriodDiff = self.modelPeriod.copy()
-            self.modelPeriodDiff.v = self.modelPeriodDiff.v - self1.modelPeriod.v
+            self.modelPeriodDiff.v = self.modelPeriodDiff.v/self1.modelPeriod.v-1
             self.modelResDiff.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastDiff,R=R,head='depth',isDiff=True)
             self.modelPeriodDiff.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastPDiff,head='period',R=R,isDiff=True)
+        if self1!='' :
+            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth',selfRef=self1.modelRes)
+            self.fast.plotArrByZ(self.runPath,head='fast')
+            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R,selfRef=self1.modelPeriod)
+        else:
+            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth')
+            self.fast.plotArrByZ(self.runPath,head='fast')
+            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R)
     def plotTK(self):
         nxyz,la,lo,z = self.config.output()
         la = la[::-1]
@@ -298,6 +309,7 @@ class DS:
         vR = ''#self.config.para['vR']
         if self.mode == 'syn':
             self.modelTrue = Model(self.config,mode='DSFile',runPath=self.runPath,file='MODVs.true',vR =vR)
+            self.fastTrue      = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.real',vR =vR)
         self.model0 = Model(self.config,mode='DSFile',runPath=self.runPath,file='MOD',vR =vR)
         self.modelPeriod = Model(self.config,mode='DSP',runPath=self.runPath,file='period_Azm_tomo.inv',vR =vR)
         #self.GsTrue = Model(self.config,mode='GSO',runPath=self.runPath,file='MODGs.true')
@@ -446,7 +458,7 @@ class Model(Model0):
             #print(out)
             self.v[out]=np.nan
     def copy(self):
-        self1 = Model(self.config,'byModel',self.runPath,'',self.la,self.lo,self.z,self,Gs='',Gc='',vR='')
+        self1 = Model(self.config,'byModel','','',self.la,self.lo,self.z,self,Gs='',Gc='',vR='')
         self1.mode = self.mode
         return self1
     def __call__(self,la,lo,z):
@@ -456,7 +468,7 @@ class Model(Model0):
         v = self.v[i0,i1,i2]
         return v 
     
-    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False):
+    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False,selfRef='',isVol=True):
         R0=R
         resDir = runPath+'/'+'plot/'
         if not os.path.exists(resDir):
@@ -465,6 +477,7 @@ class Model(Model0):
         if self.mode=='DSP':
             nxyz,la,lo,z = self.config.outputP()
         Lo,La,Z    =  np.meshgrid(lo,la,z)
+        laO,loO = [la,lo]
         #V            =  self.output(la,lo,z)
         V = self.v
         if vR !='':
@@ -478,6 +491,11 @@ class Model(Model0):
             V1  = self1.v
             if vR!='':
                 out1  = outR(vR,la1,lo1)
+        if selfRef!='':
+            nxyzRef,laRef,loRef,zRef       =  selfRef.config.output()
+            VRef  = selfRef.v
+            if vR!='':
+                outRef  = outR(vR,laRef,loRef)
         for i in range(self.nxyz[-1]):
             plt.close()
             if len(R0)==0:
@@ -488,13 +506,13 @@ class Model(Model0):
             if vR!='':
                 #pass
                 v[out]=np.nan
-            #print('find')
-            #print(vR)
-            #print(v)
-            #print(v[:10,:10])
-            laN, loN = v.shape
-            midLaN = int(1.2/4*laN)
-            midLoN = int(1.2/4*loN)
+            if selfRef!='':
+                vRef = VRef[:,:,i]
+                vRef[outRef]=np.nan
+                mean = vRef[np.isnan(v)==False].mean()
+                print('###by ref mean###')
+            else:
+                mean = v[np.isnan(v)==False].mean()
             '''
             if len(v[np.isnan(v)==False])==0:
                 print(z[i],'nan')
@@ -503,6 +521,10 @@ class Model(Model0):
             print(mean)
             Per   = (v-mean)/mean
             '''
+            dLaO = laO.max()-la.min()
+            dLoO = loO.max()-lo.min()
+            if len(R)==0:
+                R = [laO.min()-dLaO*0.1,la.max()+dLaO*0.1,lo.min()-dLoO*0.1,lo.max()+dLoO*0.1]
             la,lo,per=self.denseLaLoGrid(v.copy(),doDense=True,N=300,dIndex=1)
             #print(per)
             if isinstance(per,type(None)):
@@ -513,8 +535,6 @@ class Model(Model0):
                 plt.close()
                 print('no enough data in depth:',z)
                 continue
-            if len(R)==0:
-                R = [la.min(),la.max(),lo.min(),lo.max()]
             m = mt.genBaseMap(R)
             x,y= m(lo,la)
             #X,Y=m(vR[:,1],vR[:,0])
@@ -522,47 +542,50 @@ class Model(Model0):
             #if vR !='':
             #    OUT  = outR(vR,la,lo)
             #    per[OUT]=np.nan
-            mean = per[np.isnan(per)==False].mean()
-            perMid = per[midLaN:-midLaN,midLoN:-midLoN]
-            mean = perMid[np.isnan(perMid)==False].mean()
-            mean = v[np.isnan(v)==False].mean()
+            
             if isDiff:
-                vmin=-0.1
-                vmax=+0.1
+                vmin=-0.05
+                vmax=+0.05
+                mean = np.abs(v[np.isnan(v)==False]).std()
             else:
                 per/=mean
                 per-=1
                 if z[i]<20:
                     perA=0.05
                 else:
-                    perA=0.03
+                    perA=0.05
                 vmin=-np.abs(per[np.isnan(per)==False]).max()*0-perA
                 vmax=np.abs(per[np.isnan(per)==False]).max()*0+perA
             if isDiff:
-                plotPlane(m,x,y,per,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False,cLabel='V. D.(km/s)')
+                plotPlane(m,x,y,per*100,R,z[i],mean*100,vmin*100,vmax*100,isFault=True,head=head,isVol=False,cLabel='V. D.(%)',meanLabel='%',midName='std',cmap='bwr_r')
             else:
-                plotPlane(m,x,y,per,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False,cLabel='V. A.(%)')
+                plotPlane(m,x,y,per*100,R,z[i],mean,vmin*100,vmax*100,isFault=True,head=head,isVol=isVol,cLabel='V. A.(%)',midName='$v_0$',cmap=cmap)
             #plotPlane(m,x,y,out,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False)
             plt.gca().set(facecolor='w')
             if self1 !='':
+                color='limegreen'
                 v1 = V1[:,:,i]
                 x1,y1= m(lo1,la1)
                 dx1 = (x1.max()-x1.min())/maxA/nxyz1[1]
                 x0,y0= m(R[2],R[1])
                 #printplt.arrow(x0+0.01*dx1,y0-0.05*dx1,0,0.03*dx1,color='b')
                 plt.plot([x0+0.01*dx1,x0+0.01*dx1],\
-                    [y0-0.05*dx1,y0-0.05*dx1+0.03*dx1],color='k',linewidth=0.5)
+                    [y0-0.05*dx1,y0-0.05*dx1+0.03*dx1],color=color,linewidth=1)
                 plt.text(x0+0.01*dx1,y0-0.05*dx1,'0.03',ha='left',va='top',color='r',size=10)
                 for ii in range(v1.shape[0]):
                     for jj in range(v1.shape[1]):
-                        if out1[ii,jj]:
-                            continue
+                        if vR!='':
+                            if out1[ii,jj]:
+                                continue
                         dX,dY=[np.imag(v1[ii,jj])*dx1,np.real(v1[ii,jj])*dx1]
                         #plt.arrow(x1[jj]-0.5*dX,y1[ii]-0.5*dY,dX,dY,color='b',)
                         plt.plot([x1[jj]-0.5*dX,x1[jj]+0.5*dX],\
-                            [y1[ii]-0.5*dY,y1[ii]+0.5*dY],color='k',linewidth=0.5)
+                            [y1[ii]-0.5*dY,y1[ii]+0.5*dY],color=color,linewidth=1)
             fig.tight_layout()
-            plt.savefig('%s/%s_%f.jpg'%(resDir,head,self.z[i]),dpi=500)
+            headNew = head
+            if isDiff:
+                headNew=head+'Diff'
+            plt.savefig('%s/%s_%f.jpg'%(resDir,headNew,self.z[i]),dpi=500)
             plt.close()
     def plotByP2(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,P2=[],N=300):
         resDir = runPath+'/'+'plot/'
@@ -640,27 +663,35 @@ class Model(Model0):
                     fault.plot(m,markersize=0.3)
             plt.savefig('%s/%s_%f.jpg'%(resDir,head,self.z[i]),dpi=500)
             plt.close()
-    def write(self,filename,la,lo,z,isDiff=False,N=[2,2,2],A=0.05):
+    def write(self,filename,la,lo,z,isDiff=False,N=[2,2,2],A=0.05,base=0):
         with open(filename,'w') as fp:
             if self.mode != 'GS' and self.mode!='GC':
                 for i in range(len(z)):
                     fp.write('%9.1f' % (z[i]))
                 fp.write('\n')
             v = self.output(la,lo,z)
-            for k in range(len(z)):
-                for j in range(len(lo)):
-                    for i in range(len(la)):
-                        per=self.diff(isDiff,N,i,j,k,A)
-                        #print(N,i,j,k,per)
-                        fp.write('%9.3f' % (v[i,j,k]*(1+per)))
-                    fp.write('\n')
-    def diff(self,isDiff,N,i,j,k,A):
+            if self.mode != 'GS' and self.mode!='GC':
+                for k in range(len(z)):
+                    for j in range(len(lo)):
+                        for i in range(len(la)):
+                            per=self.diff(isDiff,N,i,j,k,A,base=base)
+                            #print(N,i,j,k,per)
+                            fp.write('%9.3f' % (v[i,j,k]*(1+per)))
+                        fp.write('\n')
+            else:
+                for k in range(1,len(z)):
+                    for j in range(1,len(lo)-1):
+                        for i in range(1,len(la)-1):
+                            per=self.diff(isDiff,N,i,j,k,A,base=base)
+                            fp.write('%9.3f' % (per))
+                        fp.write('\n')
+    def diff(self,isDiff,N,i,j,k,A,base=0):
         if isDiff:
             I = int(float(i)/float(N[0]))
             J = int(float(j)/float(N[1]))
             K = int(float(k)/float(N[2]))
-            #print(I+J+K)
-            return ((I+J+K)%2-0.5)*2*A
+            #print(i,j,k,I,J,K,((I+J+K+base)%2-0.5)*2*A)
+            return ((I+J+K+base)%2-0.5)*2*A
         else:
             return 0
     def compare(self,self1,runPath='DS',head='compare'):
@@ -725,12 +756,12 @@ class Model(Model0):
                 f.write('%.2f       %.3f     %.3f     2.800    1400.0     600.0\n'%(z,v*1.7,v))
 
 def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
-    ,isVol=False,cLabel='velocity anomal'):
+    ,isVol=False,cLabel='velocity anomal',meanLabel='(km/s)',midName='mean',cmap=cmap):
     dLa,dLo=getDlaDlo(R)
     if isFault:
         for fault in faultL:
             if fault.inR(R):
-                fault.plot(m,markersize=0.3)
+                fault.plot(m,markersize=0.3,)
     if isVol:
         vX,vY=m(mt.volcano[:,0],mt.volcano[:,1])
         m.plot(vX, vY,'^r')
@@ -739,9 +770,9 @@ def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
     plt.clim(vmin=vmin,vmax=vmax)
     cbar=plt.colorbar()
     cbar.set_label(cLabel)
-    plt.title('%s %.2f km mean: %.3f km/s'%(head,z,mean))
-    if head=='period':
-        plt.title('%s %.2f s mean: %.3f km/s'%(head,z,mean))
+    plt.title('%s %.2f km %s: %.3f %s'%(head,z,midName,mean,meanLabel))
+    if 'period' in head:
+        plt.title('%s %.2f s %s: %.3f %s'%(head,z,midName,mean,meanLabel))
     dLa,dLo=getDlaDlo(R)
     plotLaLoLine(m,dLa,dLo)
 
