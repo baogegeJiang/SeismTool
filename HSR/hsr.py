@@ -19,12 +19,13 @@ from ..mathTool.mathFunc import getDetec
 import  torch 
 from ..io.parRead import hander,DataLoader
 from ..mathTool import mathFunc_bak
+from matplotlib import colors
 #多台联合测量车速似乎由于波场速度复杂，似乎不好测量，
 #但如果不矫正直接叠加也可以
 #set_per_process_memory_fraction
 #torch.cuda.set_per_process_memory_fraction(0.1, 0)
 dtype= torch.float32
-device='cuda:0'
+device='cpu'#cuda:0
 #matplotlib.rcParams['font.family']='Simhei'
 class hsr:
     def __init__(self,f0=3.2,fmax=50,fL0=np.arange(0,25,0.01),uL=np.arange(1,10000,20)):
@@ -417,7 +418,7 @@ class hsr:
         plt.close()
         plt.figure(figsize=[5,5])
         plt.subplot(2,1,1)
-        plt.pcolormesh(self.fL0*f/f0,uL,np.array(np.abs(specL)),cmap='jet',shading='gouraud',rasterized=True)
+        plt.pcolormesh(self.fL0*f/f0,uL,np.array(np.abs(specL)),cmap='hot',shading='gouraud',rasterized=True,norm=colors.LogNorm())
         #plt.xlim([self.fL0[0]*f/f0,fmax])
         plt.xlabel('f Hz')
         plt.ylabel('u (m/s)')
@@ -432,6 +433,29 @@ class hsr:
         plt.xlabel('f/Hz')
         print(uL[i])
         plt.xlim([self.fL0[0],self.fL0[-1]])
+        plt.tight_layout()
+        plt.savefig(filename,dpi=600)
+        plt.close()
+    def plotSSpec(self,f,specL,sL,filename,f0=3.2):
+        plt.close()
+        plt.figure(figsize=[5,8])
+        plt.subplot(2,1,1)
+        plt.pcolormesh(self.fL0*f/f0,sL,np.array(np.abs(specL)),cmap='jet',shading='gouraud',rasterized=True)
+        #plt.xlim([self.fL0[0]*f/f0,fmax])
+        plt.xlabel('f Hz')
+        plt.ylabel('slowness (s/km)')
+        ##plt.colorbar()
+        plt.subplot(2,1,2)
+        specLNew = specL
+        fNew = self.fL0
+        i=np.abs(specLNew).max(axis=1).argmax()
+        plt.plot(fNew,np.abs(specLNew[i]))
+        index = np.abs(specLNew[i]).argmax()
+        print(self.fL0[index])
+        plt.xlabel('f/Hz')
+        print(sL[i])
+        plt.xlim([self.fL0[0],self.fL0[-1]])
+        plt.tight_layout()
         plt.savefig(filename,dpi=600)
         plt.close()
     def handleDayUSpec(self,stations,day,workDir='../hsrRes/',comp=0,rotate=0,bSec=20,eSec=28,T3L=[],V=82,maxDV=2,V0=80,f0=3.2,DL=[]):

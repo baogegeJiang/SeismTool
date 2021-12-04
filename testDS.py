@@ -2,15 +2,17 @@ import os
 import sys
 from imp import reload
 from SeismTool.SurfDisp import run
+from tensorflow.python.framework.tensor_util import FastAppendBFloat16ArrayToTensorProto
 R = run.run(run.runConfig(run.paraTrainTest))
+run.d.Vav=-1
 #R.loadCorr()
 #R.saveTrainSet(isMat=True)
 
 
 #R.plotGetDis()
-R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=False)
+R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=False,isDisQC=False)#True
 R.getDisCover()
-R.plotTrainDis()
+#R.plotTrainDis()
 
 R.loadModelUp()
 run.run.train(R,isAverage=False,isRand=True,isShuffle=True)
@@ -26,10 +28,11 @@ R.model=None
 run.run.loadModelUp(R)
 run.run.train(R,up=5,isRand=True,isShuffle=False,isAverage=False)
 reload(run)
+run.run.loadRes(R,isCoverQC=True)
 R.config=run.runConfig(run.paraTrainTest)
-run.run.preDS(R,isByTrain=True)
+run.run.preDS(R,isByTrain=False)
 run.run.preDSTrain(R)
-run.run.preDSSyn(R,isByTrain=True)
+run.run.preDSSyn(R,isByTrain=False)
 
 R.corrL1.reSetUp(5)
 run.run.calRes(R)
@@ -46,7 +49,7 @@ run.run.preDS(R,isByTrain=True)
 
 run.d.qcFvD(R.fvAvGet)
 run.d.qcFvD(R.fvDGet)
-run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compare120/')
+run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compare160/')
 reload(run.d)
 run.d.plotPair(R.fvAvGet,R.stations)
 
@@ -58,14 +61,14 @@ run.fcn.modelUp.show(R.model,R.corrLTest.x[::100],R.corrLTest.y[::100],outputDir
 reload(run.d)
 run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compareV10/')
 run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroAll.eps',t=R.config.para['T'],keys=[],fStrike=1,title='error_distribution')
-run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=1,title='error_distribution')
+run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=1,title='error_distribution',threshold=0.015)
 run.d.compareFVD(R.fvD0,R.fvDGet,R.stations,'predict/erroTestSingle.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=1,title='error_distribution')
 run.d.compareFVD(R.fvAvGet,R.fvDGet,R.stations,'predict/stdTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=1,title='error_distribution')
 run.d.compareFVD(R.fvD,R.fvD0,R.stations,'predict/erro0.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
 run.d.compareFVD(R.fvDGet,R.fvD,R.stations,'predict/erroSingle.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
 run.d.plotFVM(R.fvMGet,R.fvAvGet,resDir=R.config.para['trainDir']+'pairsTrainTest5/',isDouble=True,fL0=1/R.config.para['T'],stations=R.stations)
 
-
+M,V0,V1=run.d.compareInF(R.fvDAvarage,R.fvAvGet,R.stations,1/R.config.para['T'],R=R.config.para['R'])
 from SeismTool.mathTool import mathFunc
 mathFunc.showQC('predict/QC.eps')
 reload(run)

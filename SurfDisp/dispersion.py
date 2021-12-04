@@ -27,6 +27,7 @@ the specific meaning of them you can find in Chen Xiaofei's paper
 形成分区域的代码
 '''
 gpdcExe = '/home/jiangyr/program/geopsy/bin/gpdc'
+Vav = -1
 class config:
     def __init__(self,originName='models/prem',srcSacDir='/home/jiangyr/home/Surface-Wave-Dispersion/',\
         distance=np.arange(400,1500,100),srcSacNum=100,delta=0.5,layerN=1000,\
@@ -1075,15 +1076,15 @@ class fv:
             f = 1/np.array(T)
             v = np.array(v)
             std = np.array(std)
-            f = f[std<threshold]
-            v = v[std<threshold]
+            f = f[std<=threshold]
+            v = v[std<=threshold]
             if len(f) <=1:
                 f = np.array([-1,0])
                 v = np.array([-1,0])
                 std = np.array([-1,0])
             self.f = f 
             self.v = v
-            self.std = std[std<threshold]
+            self.std = std[std<=threshold]
         if mode == 'NEFileNew':
             T = []
             v = []
@@ -1098,14 +1099,14 @@ class fv:
             f = 1/np.array(T)
             v = np.array(v)
             std = np.array(std)
-            f = f[std<threshold]
-            v = v[std<threshold]
+            f = f[std<=threshold]
+            v = v[std<=threshold]
             if len(f) <=1:
                 f = np.array([-1,0])
                 v = np.array([-1,0])
             self.f = f 
             self.v = v
-            self.std = std[std<threshold] 
+            self.std = std[std<=threshold] 
         if mode == 'fileP':
             print(input+'_/*')
             fileL = glob(input+'_/*')
@@ -1180,7 +1181,7 @@ class fv:
         return vL.reshape(shape0)
         '''
         dfR = (np.abs(f.reshape([-1,1])- self.f.reshape([1,-1]))).min(axis=1)/f
-        vL[dfR>threshold]=vL[dfR>threshold]*0+1e-8
+        vL[dfR>=threshold]=vL[dfR>=threshold]*0+1e-8
         return vL.reshape(shape0)
     def save(self,filename,mode='num'):
         if not os.path.exists(os.path.dirname(filename)):
@@ -1201,13 +1202,13 @@ class fv:
     def update(self,self1,isReplace=True,threshold=0.10):
         v = self1(self.f).reshape([-1])
         dv = np.abs(v-self.v)
-        if (dv<threshold*v).sum()>1:
-            self.f = self.f[dv<threshold*v]
+        if (dv<=threshold*v).sum()>1:
+            self.f = self.f[dv<=threshold*v]
             if isReplace:
                 self.v = v[dv<threshold*v]
             else:
                 self.v = self.v[dv<threshold*v]
-            self.std = self.std[dv<threshold*v]
+            self.std = self.std[dv<=threshold*v]
         else:
             self.v[:] = 1e-9
         self.interp = self.genInterp()
@@ -1215,9 +1216,9 @@ class fv:
         v = self.v.copy()
         if threshold<0:
             v= v*0+1
-        self.f = self.f[self.std<threshold*v]
-        self.v = self.v[self.std<threshold*v]
-        self.std = self.std[self.std<threshold*v]
+        self.f = self.f[self.std<=threshold*v]
+        self.v = self.v[self.std<=threshold*v]
+        self.std = self.std[self.std<=threshold*v]
         if len(self.f)>2:
             self.interp = self.genInterp()
     def disQC(self,fvRef,dis,randA=0.15,maxR=2):
@@ -1274,13 +1275,13 @@ def disQC(fvD,stations,fvRef,randA=0.15,maxR=2):
     for key in fvD:
         fv = fvD[key]
         dis = keyDis(key,stations)
-        print(dis)
+        #print(dis)
         fv.disQC(fvRef,dis,randA=randA,maxR=maxR)
-def coverQc(fvD,stations,minI,maxI,R=0.1):
+def coverQC(fvD,stations,minI,maxI,R=0.1):
     for key in fvD:
         fv = fvD[key]
         dis = keyDis(key,stations)
-        print(dis)
+        #print(dis)
         fv.coverQC(dis,minI,maxI,R)
 def keyValue(time,la,lo):
     return float(time)+1j*(float(la)+float(lo))
@@ -1430,15 +1431,22 @@ def plotFV(vL,fL,filename,fStrike=1,title='',isAverage=True,thresL=[0.01,0.02,0.
     plt.savefig(filename[:-4]+'_f'+filename[-4:],dpi=300)
     #np.savetxt(a[0],filename[:-4]+'_f.txt')
 
-def compareFVD(fvD,fvDGet,stations,filename,t=(12**np.arange(0,1.000001,1/49))*10,keys=[],fStrike=1,title='err0_dis'):
+def compareFVD(fvD,fvDGet,stations,filename,t=(12**np.arange(0,1.000001,1/49))*10,keys=[],fStrike=1,title='err0_dis',threshold=0.015,delta=1,thresholdForGet=0):
     disL,vL,fL,fvAverage = outputFvDist(fvD,stations,t=t,keys=keys,keysL=fvD.keys())
     disLGet,vLGet,fLGet,fvAverageGet = outputFvDist(fvDGet,stations,t=t,keys=keys,keysL=fvD.keys())
     VL    = vL.reshape([-1])
+    DISL  = (disL.reshape([-1,1])+vL*0).reshape([-1])
     FL    = (fL.reshape([1,-1])+vL*0).reshape([-1])
     VLGet    = vLGet.reshape([-1])
     FLGet    = (fLGet.reshape([1,-1])+vLGet*0).reshape([-1])
     dv = VLGet-VL
     dvR = dv/VL
+    thresholdText = '$d_r \leq %.1f \%$\n'%(threshold*100)
+    if thresholdForGet>0:
+        thresholdText=thresholdText+'$\sigma \leq %.1f\%$'%(thresholdForGet*100)
+    elif thresholdForGet<0:
+        thresholdText=thresholdText+'$Prob \geq %.2f$'%(-thresholdForGet)
+    #thresholdText = r'$d_r \le %.1f %%$\n'%(threshold*100)
     print((vL>1).sum())
     print(dvR*100,FL)
     plt.close()
@@ -1446,39 +1454,116 @@ def compareFVD(fvD,fvDGet,stations,filename,t=(12**np.arange(0,1.000001,1/49))*1
     binF.sort()
     binF[-1]*=1.00000001
     binF[0]*=1-0.00000001
-    binDVR  = np.arange(-0.04,0.04,0.002)
-    plt.figure(figsize=[4,3])
+    binDVR  = np.arange(-0.08,0.08,0.001)
+    TL = DISL/Vav
+    THRESHOLD = delta/TL
+    #print((THRESHOLD>threshold).sum())
+    THRESHOLD[THRESHOLD<=threshold]=threshold
+    plt.figure(figsize=[3,3])
     plt.hist2d(dvR[(VL>1)*(VLGet>1)],FL[(VL>1)*(VLGet>1)],bins=(binDVR,binF),rasterized=True,cmap='Greys')#,norm=colors.LogNorm()
     plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('$dv/v_0$')
-    plt.ylabel('frequency(Hz)')
+    plt.ylabel('$f$(Hz)')
     plt.title(title)
+    plt.tight_layout()
+    plt.text(binDVR[2],binF[-2],thresholdText,va='top',ha='left')
     plt.savefig(filename,dpi=300)
-    plt.figure(figsize=[4,3])
+    plt.figure(figsize=[3,3])
     plt.hist(FL[(VL>1)],bins=binF)
     plt.hist(FL[(VL>1)*(VLGet>1)],bins=binF)
-    plt.hist(FL[(VL>1)*(VLGet>1)*(dvR<0.015)],bins=binF)#,norm=colors.LogNorm()
+    plt.hist(FL[(VL>1)*(VLGet>1)*(dvR<=THRESHOLD)],bins=binF)#,norm=colors.LogNorm()
     countAll,a=np.histogram(FL[(VL>1)],bins=binF)
     countR,a=np.histogram(FL[(VL>1)*(VLGet>1)],bins=binF)
-    countP,a=np.histogram(FL[(VL>1)*(VLGet>1)*(dvR<0.015)],bins=binF)
+    countP,a=np.histogram(FL[(VL>1)*(VLGet>1)*(dvR<=THRESHOLD)],bins=binF)
     binMid = (binF[1:]+binF[:-1])/2
     #plt.colorbar(label='count')
     ax1 =plt.gca()
     ax2 = ax1.twinx()
     ax2.plot(binMid,countP/countAll*100,'k-o',markersize=2,linewidth=1)
     ax2.plot(binMid,countP/countR*100,'r-d',markersize=2,linewidth=1)
+    print((countP/countAll)[-2:])
     plt.gca().set_xscale('log')
     ax1.set_ylabel('count')
-    ax1.set_xlabel('frequency(Hz)')
+    ax1.set_xlabel('$f$(Hz)')
     ax2.set_ylabel('Rate(%)')
     ax1.set_ylim([0,1.25*countR.max()])
-    ax2.set_ylim([min(np.min(countP/countAll*100)-5,50),105])
+    ax2.set_ylim([min(np.min(countP/countAll*100)-5,50),106])
     plt.xlim([1/1e1,1/16e1])
+    ax2.text(binF[-2],105,thresholdText,va='top',ha='left')
     plt.title(title)
     plt.tight_layout()
     plt.savefig(filename[:-4]+'FCount'+filename[-4:],dpi=300)
     plt.close()
+
+def compareInF(fvD0,fvD1,stations,fL,isSave=True,saveDir='predict/compareInF/',R=[]):
+    M = np.zeros([len(fL),len(stations),len(stations)])
+    if not os.path.exists(saveDir):
+        os.makedirs(saveDir)
+    V0 = M*0
+    V1 = M*0
+    for key in fvD0:
+        if '_' not in key:
+            continue
+        fv0 = fvD0[key]
+        netSta0,netSta1 = key.split('_')[-2:]
+        key0 = '%s_%s'%(netSta0,netSta1)
+        key1 = '%s_%s'%(netSta1,netSta0)
+        net0,sta0=netSta0.split('.')
+        net1,sta1=netSta1.split('.')
+        i0  = stations.index(net0,sta0)
+        i1  = stations.index(net1,sta1)
+        v0  = fv0(fL)
+        if key0 in fvD1:
+            fv1 = fvD1[key0]
+        elif key1 in fvD1:
+            fv1 = fvD1[key1]
+        else:
+            continue
+        v1  = fv1(fL)
+        V0[:,i0,i1]=v0
+        V1[:,i0,i1]=v1
+        M[:,i0,i1]=(v1-v0)/v0
+        M[v1<1,i0,i1]=0
+        M[v0<1,i0,i1]=0
+    MS = np.abs(M).sum(axis=0)/(np.abs(M)>0).sum(axis=0)
+    if isSave:
+        if not os.path.exists(saveDir):
+            os.makedirs(saveDir)
+        with open(saveDir+'anormStation','w+') as F:
+            for i in range(len(fL)):
+                plt.close()
+                plt.figure(figsize=[3,6])
+                plt.subplot(2,1,1)
+                plt.pcolor(np.abs(M[i]),vmax=0.05,vmin=0,cmap='bwr')
+                plt.title('%.3f mHz'%(fL[i]*1000))
+                plt.subplot(2,1,2)
+                for j in range(len(stations)):
+                    for k in range(len(stations)):
+                        if np.abs(M[i,j,k])>0.03:
+                            plt.plot([stations[j]['lo'],stations[k]['lo']],[stations[j]['la'],stations[k]['la']],'.-k',linewidth=1)
+                            F.write('%.1f mHz %.2f  %d %s %s %d %s %s\n'%(fL[i]*1000,M[i,j,k]*100,j,stations[j]['net'],stations[j]['sta'],k,stations[k]['net'],stations[k]['sta']))
+                if len(R)>0:
+                    plt.ylim(R[:2])
+                    plt.xlim(R[2:])
+                plt.savefig('%s/%.1fmHz.eps'%(saveDir,(fL[i]*1000)))
+                plt.close()
+            plt.close()
+            plt.figure(figsize=[3,3])
+            plt.pcolor(MS,vmax=0.05,vmin=0,cmap='bwr')
+            plt.title('%s'%'mean')
+            plt.savefig('%s/%s.eps'%(saveDir,'mean'))
+            plt.close()
+            plt.close()
+            plt.figure(figsize=[3,3])
+            for i in range(len(stations)):
+                for j in range(len(stations)):
+                    if MS[i,j]>0.025:
+                        plt.plot([stations[i]['la'],stations[j]['la']],[stations[i]['lo'],stations[j]['lo']],'-.k',linewidth=1)
+            plt.savefig('%s/%s.eps'%(saveDir,'two-station'))
+            plt.close()
+    return M,V0,V1
+
 def getFVFromPairFile(file,fvD={},quakeD=seism.QuakeL(),isPrint=False,isAll=False):
     with open(file) as f :
         lines = f.readlines()
@@ -1761,10 +1846,18 @@ def getFVFromPairFileDis(file,fvD={},quakeD={},isPrint=True):
         if isPrint:
             print(len(quakeD.keys()))
 
-def qcFvD(fvD,threshold=-1,minCount=3):
+def qcFvD(fvD,threshold=-1,minCount=3,delta=-1,stations=''):
     keyL = []
+    threshold0 =threshold
     for key in fvD:
-        if threshold>0:
+        if threshold0>0:
+            threshold = threshold0
+            if delta >0 and '_' in key:
+                dis = keyDis(key,stations)
+                T   = dis/Vav
+                threshold = max(delta/T,threshold0)
+                if threshold>threshold0:
+                    print(dis,delta/T,threshold)
             fvD[key].qc(threshold)
         if len(fvD[key].f)<minCount:
             keyL.append(key)
@@ -2001,23 +2094,37 @@ def getDisCover(fvD,stations,fL):
     minI=interpolate.interp1d(fL,minDis)
     maxI=interpolate.interp1d(fL,maxDis)
     return minDis,maxDis,minI,maxI
-def replaceByAv(fvD,fvDAv,**kwags):
+def replaceByAv(fvD,fvDAv,threshold=0,delta=-1,stations='',**kwags):
     notL = []
+    threshold0 = threshold
     for modelName in fvD:
         if len(modelName.split('_'))>=2:
             name0 = modelName.split('_')[-2]
             name1 = modelName.split('_')[-1]
             modelName0 ='%s_%s'%(name0,name1)
             modelName1 ='%s_%s'%(name1,name0)
-        if modelName0 in fvDAv:
-            fvD[modelName].update(fvDAv[modelName0],**kwags)
-        if modelName1 in fvDAv:
-            fvD[modelName].update(fvDAv[modelName1],**kwags)
-        if modelName0 not in fvDAv and modelName1 not in fvDAv:
+        else:
             notL.append(modelName)
-
+            continue
+        threshold = threshold0
+        if delta >0 and '_' in modelName:
+            dis = keyDis(modelName,stations)
+            T   = dis/Vav
+            threshold = max(delta/T,threshold0)
+            if threshold>threshold0:
+                print(dis,delta/T,threshold)
+        if modelName0 in fvDAv:
+            fvD[modelName].update(fvDAv[modelName0],threshold=threshold,**kwags)
+        elif modelName1 in fvDAv:
+            fvD[modelName].update(fvDAv[modelName1],threshold=threshold,**kwags)
+        else:
+            notL.append(modelName)
+            continue
+        if len(fvD[modelName].f)<2:
+            notL.append(modelName)
     for name in notL:
         fvD.pop(name)
+        print(name)
 def compareFvD_(fvD, fvDRef,resDir='results/'):
     if not os.path.exists(resDir):
         os.makedirs(resDir)
@@ -2364,8 +2471,8 @@ class corr:
         dPosR   = dPos/posIn
         #dPos[aIn<0.5] = dPos[aIn<0.5]*0-100000
         #dPosR[aIn<0.5] = dPosR[aIn<0.5]*0-10000
-        dPos[aOut<threshold] = dPos[aOut<threshold]*0-100000
-        dPosR[aOut<threshold] = dPosR[aOut<threshold]*0-10000
+        dPos[aOut<=threshold] = dPos[aOut<=threshold]*0-100000
+        dPosR[aOut<=threshold] = dPosR[aOut<=threshold]*0-10000
         return dPos, dPosR, dPos*0 + self.dDis
     def getV(self,yout):
         posOut = yout.argmax(axis=0).reshape([-1])

@@ -106,8 +106,8 @@ class lossFuncSoft:
     # 这样可以保持结构的一致性
     def __init__(self,w=1):
         w0 = np.ones(50)
-        w0[:25]=1.5/(1.5+3*np.arange(25)/25)
-        w0[25:]=1.5/(1.5+3*np.arange(24,-1,-1)/25)
+        w0[:20]=5/(1+4*np.arange(0,20)/19)
+        w0[20:]=10/(1+9*np.arange(29,-1,-1)/29)
         w0/=w0.mean()
         channelW = K.variable(w0.reshape([1,1,1,-1]))
         self.channelW = channelW
@@ -153,13 +153,15 @@ def hitRate(yin,yout,maxD=10):
     hitCount= K.sum(K.sign(-d+maxD))
     return hitCount/count
 
+up=-1
 def rateNp(yinPos,youtPos,yinMax,youtMax,maxD=0.03,K=np,minP=0.5):
     threshold = yinPos*maxD
+    threshold[threshold<up]=up
     d0      = youtPos-yinPos
     d       = K.abs(yinPos - youtPos)
     count0   = K.sum(yinMax>0.5)
     count1   = K.sum((yinMax>0.5)*(youtMax>minP))
-    hitCount= K.sum((d<threshold)*(yinMax>0.5)*(youtMax>minP))
+    hitCount= K.sum((d<=threshold)*(yinMax>0.5)*(youtMax>minP))
     recall = hitCount/count0
     right  = hitCount/count1
     F = 2/(1/recall+1/right)
@@ -701,7 +703,7 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
         corrLTest.iL=np.array([])
         model.compile(loss=model.config.lossFunc, optimizer='Nadam')
         xTest, yTest, tTest =corrLValid(np.arange(len(corrLValid)))
-        resStrTmp, trainTestLoss=model.trainByXYT(corrLTrain,xTest=xTest,yTest=yTest, count0=count0, perN=perN,N=20000,k0=k0)
+        resStrTmp, trainTestLoss=model.trainByXYTNew(corrLTrain,xTest=xTest,yTest=yTest, count0=count0, perN=perN,N=20000,k0=k0)
         resStr += resStrTmp
         trainTestLossL.append(trainTestLoss)
    # xTest, yTest, tTest =corrLValid(np.arange(len(corrLValid)))
@@ -886,7 +888,7 @@ def trainAndTestCross(model0,model1,corrLTrain0,corrLTrain1,corrLTest,outputDir=
     T=tTrain,outputDir=outputDir+'_1_')
 
 class fcnConfig:
-    def __init__(self,mode='surf'):
+    def __init__(self,mode='surf',up=1):
         self.mode=mode
         if mode=='surf':
             self.inputSize     = [512*3,1,4]
@@ -949,11 +951,17 @@ class fcnConfig:
             self.inAndOutFunc = inAndOutFuncNewV6
             self.deepLevel = 1
         if mode=='surfUp':
-            up=2
             self.inputSize     = [512*3,1,4]
             self.outputSize    = [512*3*up,1,50]
             self.featureL      = [8,12,24,48,96,160,320,360,720]
             self.featureL      = [8,15,30,60,120,180,360,450,900]
+            self.featureL      = [10,15,30,60,120,160,320,640,800]
+            self.featureL      = [8,16,32,64,128,256,512,768,1024]
+            self.featureL      = [8,24,36,60,80,120,160,240,300]
+            self.featureL      = [8,16,24,32,36,64,96,128,160]
+            self.featureL      = [8,16,24,32,36,48,64,96,128]
+            self.featureL      = [8,12,16,24,28,32,36,48,64]
+            self.featureL      = [8,12,16,24,28,32,36,42,48]
             #self.featureL      = [10,15,20,30,40,60,80,100,120]
             #self.featureL      = [10,15,20,30,50,80,100,120,160]
             #self.featureL      = [12,16,24,32,64,128,256,512,512]
@@ -1446,9 +1454,9 @@ class model(Model):
 
 class modelUp(Model):
     def __init__(self,weightsFile='',metrics=rateNp,\
-        channelList=[0],onlyLevel=-1000):
+        channelList=[0],onlyLevel=-1000,up=1):
         #channelList=[0]
-        config=fcnConfig('surfUp')
+        config=fcnConfig('surfUp',up=up)
         #defProcess()
         config.inputSize[-1]=len(channelList)
         self.genM(config, onlyLevel)
@@ -1508,7 +1516,7 @@ class modelUp(Model):
             t = ''
         XYT = xyt(x,y,t)
         self.trainByXYT(XYT,**kwarg)
-    def trainByXYT(self,XYT,N=2000,perN=200,batchSize=None,xTest='',\
+    def trainByXYT(self,XYT,N=2000,perN=200,batchSize=32,xTest='',\
         yTest='',k0 = 2e-3,t='',count0=3,resL=globalFL):
         resL.append(0)
         if k0>0:
@@ -1577,6 +1585,79 @@ class modelUp(Model):
             if i>10 and i%50==0:
                 perN += int(perN*0.05)
                 perN = min(500, perN)
+        self.set_weights(w0)
+        return resStr,trainTestLoss
+    def trainByXYTNew(self,XYT,N=2000,perN=200,batchSize=32,xTest='',\
+        yTest='',k0 = 2e-3,t='',count0=20,resL=globalFL):
+        resL.append(0)
+        if k0>0:
+            K.set_value(self.optimizer.lr, k0)
+        indexL = range(len(XYT))
+        sampleDone = np.zeros(len(XYT))
+        #print(indexL)
+        lossMin =100
+        count   = count0
+        w0 = self.get_weights()
+        resStr=''
+        trainTestLoss = []
+        iL = random.sample(indexL,xTest.shape[0])
+        xTrain, yTrain , t0LTrain = XYT(iL)
+        #print(self.metrics)
+        sampleTime=0
+        for i in range(N):
+            gc.collect()
+            iL = random.sample(indexL,perN)
+            for ii in iL:
+                sampleDone[ii]+=1
+            x, y , t0L = XYT(iL)
+            print('loop:',sampleDone.mean())
+            self.fit(x ,y,batchSize=batchSize)
+            if int(sampleDone.mean())>sampleTime:
+                sampleTime = int(sampleDone.mean())
+                if len(xTest)>0:
+                    lossTrain = self.evaluate(self.inx(xTrain),yTrain)
+                    lossTest    = self.evaluate(self.inx(xTest),yTest)
+                    print('train loss',lossTrain,'test loss: ',lossTest,\
+                        'sigma: ',XYT.timeDisKwarg['sigma'],\
+                        'w: ',self.config.lossFunc.w, \
+                        'no sampleRate:', 1 - np.sign(sampleDone).mean(),\
+                        'sampleTimes',sampleDone.mean(),'last F:',resL[-1],'min Loss:',lossMin,'count:',count)
+                    resStr+='\n %d train loss : %f valid loss :%f F: %f sampleTime: %d'%(i,lossTrain,lossTest,resL[-1],sampleTime)
+                    #lossTest-=resL[-1]
+                    trainTestLoss.append([i,lossTrain,lossTest])
+                    if True:#i%90==0 and i>10:
+                        youtTrain = 0
+                        youtTest  = 0
+                        youtTrain = self.predict(xTrain)
+                        youtTest  = self.predict(xTest)
+                        for level in range(youtTrain.shape[-2]):
+                            print('level',len(self.config.featureL)\
+                                -youtTrain.shape[-2]+level+1)
+                            resStr +='\nlevel: %d'%(len(self.config.featureL)\
+                                -youtTrain.shape[-2]+level+1)
+                            resStr+='\ntrain '+printRes_old(yTrain, youtTrain[:,:,level:level+1])
+                            resStr+='\ntest '+printRes_old(yTest, youtTest[:,:,level:level+1],isUpdate=True)
+                    if lossTest >= lossMin:
+                        count -= 1
+                    if lossTest > 3*lossMin and lossMin>0:
+                        self.set_weights(w0)
+                        #count = count0
+                        print('reset to smallest')
+                    if lossTest < lossMin:
+                        count = count0
+                        lossMin = lossTest
+                        w0 = self.get_weights()
+                        print('find better')
+                    if count <=0:
+                        break
+                    #print(self.metrics)
+                    if True:#i%15==0:
+                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.75)
+                        print('learning rate: ',self.optimizer.lr)
+                    if True:#i>10 and i%50==0:
+                        batchSize += batchSize
+                        batchSize = min(128, perN)
+                        print('batchSize ',batchSize)
         self.set_weights(w0)
         return resStr,trainTestLoss
     def trainByXYTCross(self,self1,XYT0,XYT1,N=2000,perN=100,batchSize=None,\
