@@ -3221,24 +3221,6 @@ class corrL(list):
          v, prob, vM, probM)
 
     def saveV(self, v, prob, T, iL=[], stations=[], minProb=0.7, resDir='models/predict/'):
-        """
-        if len(iL) ==0:
-            iL=self.iL
-        for i in range(v.shape[0]):
-            index = iL[i]
-            corr  = self[index]
-            f.write('%s %s %s %s | '%(corr.srcSac, corr.modelFile, corr.name0, corr.name1))
-            for tmp in T:
-                f.write(' %.3f '% (1/tmp))
-            f.write('|')
-            for tmp in v[i]:
-                f.write(' %.3f '% tmp)
-            f.write('|')
-            for tmp in prob[i]:
-                f.write(' %.3f '% tmp)
-            f.write('
-')
-        """
         if len(iL) == 0:
             iL = self.iL
         for i in range(v.shape[0]):
@@ -3279,24 +3261,6 @@ class corrL(list):
                         f.write('%f %f\n' % (v[i][ii], -prob[i][ii]))
 
     def saveVAll(self, v, prob, T, iL=[], stations=[], minProb=0.7, resDir='models/predict/'):
-        """
-        if len(iL) ==0:
-            iL=self.iL
-        for i in range(v.shape[0]):
-            index = iL[i]
-            corr  = self[index]
-            f.write('%s %s %s %s | '%(corr.srcSac, corr.modelFile, corr.name0, corr.name1))
-            for tmp in T:
-                f.write(' %.3f '% (1/tmp))
-            f.write('|')
-            for tmp in v[i]:
-                f.write(' %.3f '% tmp)
-            f.write('|')
-            for tmp in prob[i]:
-                f.write(' %.3f '% tmp)
-            f.write('
-')
-        """
         if len(iL) == 0:
             iL = self.iL
         for i in range(len(v)):
@@ -3346,24 +3310,6 @@ class corrL(list):
                         f.write('\n')
 
     def saveVAllSq(self, v, prob, T, iL=[], stations=[], minProb=0.7, resDir='models/predict/'):
-        """
-        if len(iL) ==0:
-            iL=self.iL
-        for i in range(v.shape[0]):
-            index = iL[i]
-            corr  = self[index]
-            f.write('%s %s %s %s | '%(corr.srcSac, corr.modelFile, corr.name0, corr.name1))
-            for tmp in T:
-                f.write(' %.3f '% (1/tmp))
-            f.write('|')
-            for tmp in v[i]:
-                f.write(' %.3f '% tmp)
-            f.write('|')
-            for tmp in prob[i]:
-                f.write(' %.3f '% tmp)
-            f.write('
-')
-        """
         if len(iL) == 0:
             iL = self.iL
         for i in range(v.shape[0]):
@@ -3412,24 +3358,6 @@ class corrL(list):
                             f.write('\n')
 
     def saveVByPair(self, v, prob, T, iL=[], stations=[], minProb=0.7, resDir='models/predict/'):
-        """
-        if len(iL) ==0:
-            iL=self.iL
-        for i in range(v.shape[0]):
-            index = iL[i]
-            corr  = self[index]
-            f.write('%s %s %s %s | '%(corr.srcSac, corr.modelFile, corr.name0, corr.name1))
-            for tmp in T:
-                f.write(' %.3f '% (1/tmp))
-            f.write('|')
-            for tmp in v[i]:
-                f.write(' %.3f '% tmp)
-            f.write('|')
-            for tmp in prob[i]:
-                f.write(' %.3f '% tmp)
-            f.write('
-')
-        """
         if len(iL) == 0:
             iL = self.iL
         sta0, sta1 = self[iL[0]].getStaName()
@@ -3674,7 +3602,7 @@ class corrL(list):
         return corrL(self)
 
 
-class corrD(Dict):
+class corrD(dict):
 
     def __init__(self, corrL):
         self.corrL = corrL
@@ -3712,7 +3640,11 @@ class corrD(Dict):
 
                 else:
                     iL += random.sample(self[key], N)
-
+        if len(iL)>0:
+            iL = np.array(iL)
+            iLNew = iL.reshape([-1,mul])
+            np.random.shuffle(iLNew)
+            iL = iLNew.reshape([-1])
         print(len(iL))
         x, y, t = self.corrL(np.array(iL))
         return (x.reshape([-1, mul, x.shape[1], x.shape[(-1)]]).transpose([0, 2, 1, 3]), y.reshape([-1, mul, y.shape[1], y.shape[(-1)]]).transpose([0, 2, 1, 3]), t.reshape([-1, mul]))

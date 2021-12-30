@@ -141,7 +141,23 @@ class lossFuncSoft:
                              y0*K.log(yout0)+y1*K.log(yout1)\
                                                                      )*\
                          K.max(y0,axis=1, keepdims=True),\
-                         axis=-1\
+                                                                         )
+class lossFuncSoftNP:
+    # 当有标注的时候才计算权重
+    # 这样可以保持结构的一致性
+    def __init__(self,w=1):
+        self.__name__ = 'lossFuncSoft'
+    def __call__(self,y0,yout0):
+        K=np
+        y1 = 1-y0
+        yout1 = 1-yout0
+        yout0 = K.clip(yout0,1e-7,1)
+        yout1 = K.clip(yout1,1e-7,1)
+        return -K.mean(\
+                         (\
+                             y0*K.log(yout0)+y1*K.log(yout1)\
+                                                                     )*\
+                         K.max(y0,axis=1, keepdims=True),\
                                                                          )
 class lossFuncSoftSq:
     # 当有标注的时候才计算权重
@@ -360,30 +376,21 @@ def inAndOutFuncNewNetUp(config, onlyLevel=-10000):
             strides=(1,1),padding='same',name=name+layerStr+'0',\
             kernel_initializer=config.initializerL[i],\
             bias_initializer=config.bias_initializerL[i])(last)
-
-        last = BatchNormalization(axis=BNA,trainable=True,name='BN'+layerStr+'0')(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,trainable=True,name='BN'+layerStr+'0')(last)
 
         last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
-
         convL[i] =last
 
         last = Conv2D(config.featureL[i],kernel_size=config.kernelL[i],\
             strides=(1,1),padding='same',name=name+layerStr+'1',\
             kernel_initializer=config.initializerL[i],\
             bias_initializer=config.bias_initializerL[i])(last)
-
-        if i in config.dropOutL:
-            ii   = config.dropOutL.index(i)
-            last =  Dropout(config.dropOutRateL[ii],name='Dropout'+layerStr+'0')(last)
-        else:
-            last = BatchNormalization(axis=BNA,trainable=True,name='BN'+layerStr+'1')(last)
-
         last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
-
         last = config.poolL[i](pool_size=config.strideL[i],\
             strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
-
     convL[depth] =last
+    dConvL[depth] = convL[depth]
     outputsL =[]
     for i in range(depth-1,-1,-1):
         if i <3:
@@ -391,48 +398,37 @@ def inAndOutFuncNewNetUp(config, onlyLevel=-10000):
         else:
             name = 'DCONV'
         for j in range(i,i+1):
-
             layerStr='_%d_%d'%(i,j)
-
             dConvL[j]= Conv2DTranspose(config.featureL[j],kernel_size=config.kernelL[j],\
                 strides=config.strideL[j],padding='same',name=name+layerStr+'0',\
                 kernel_initializer=config.initializerL[j],\
-                bias_initializer=config.bias_initializerL[j])(convL[j+1])
-
+                bias_initializer=config.bias_initializerL[j])(dConvL[j+1])
+            
             if j in config.dropOutL:
                 jj   = config.dropOutL.index(j)
                 dConvL[j] =  Dropout(config.dropOutRateL[jj],name='Dropout_'+layerStr+'0')(dConvL[j])
             else:
-                dConvL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'0')(dConvL[j])
-
+                if config.isBNL[j]:
+                    dConvL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'0')(dConvL[j])
             dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
             dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
             dConvL[j]  = Conv2D(config.featureL[j],kernel_size=config.kernelL[j],\
-                strides=(1,1),padding='same',name=name+layerStr+'1',\
-                kernel_initializer=config.initializerL[j],\
-                bias_initializer=config.bias_initializerL[j])(dConvL[j])
-            dConvL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'1')(dConvL[j])
-            dConvL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1')(dConvL[j])
-            convL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'1')
+                    strides=(1,1),padding='same',name=name+layerStr+'1',\
+                    kernel_initializer=config.initializerL[j],\
+                    bias_initializer=config.bias_initializerL[j])(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'1')
             if i <config.deepLevel and j==0:
-                #outputsL.append(Conv2D(config.outputSize[-1],kernel_size=(8,1),strides=(1,1),\
-                #padding='same',activation='sigmoid',name='dconv_out_%d'%i)(convL[0]))
                 if config.strideL[-1][0]>1:
-                    upL[j]= Conv2DTranspose(config.featureL[j]*2,kernel_size=config.kernelL[j],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],\
-                    bias_initializer=config.bias_initializerL[j])(convL[0])
+                    upL[j]= Conv2DTranspose(config.featureL[j],kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],\
+                    bias_initializer=config.bias_initializerL[j])(dConvL[0])
                     upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
-                    upL[j]  = Conv2D(config.featureL[j]*2,kernel_size=config.kernelL[j],\
-                        strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',\
-                        kernel_initializer=config.initializerL[j],\
-                        bias_initializer=config.bias_initializerL[j])(upL[j])
-                    upL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'1'+'_Up')(upL[j])
+                    if config.isBNL[-1]:
+                        upL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'1'+'_Up')(upL[j])
                     upL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1'+'_Up')(upL[j])
                 else: 
-                    upL[j]=convL[0]
+                    upL[j]=dConvL[0]
                 outputsL.append(Dense(config.outputSize[-1], activation='sigmoid'\
                     ,name='dense_out_%d'%i)(upL[j]))
-    #outputs = Conv2D(config.outputSize[-1],kernel_size=(8,1),strides=(1,1),\
-    #    padding='same',activation='sigmoid',name='dconv_out')(convL[0])
     if len(outputsL)>1:
         outputs = concatenate(outputsL,axis=2,name='lastConc')
     else:
@@ -1156,18 +1152,22 @@ class fcnConfig:
             self.featureL      = [60,60,60,60,60,60,60,60]
             self.featureL      = [60,60,60,80,80,80,100,100]
             self.featureL      = [30,30,30,45,45,45,60,60]
+            self.featureL      = [60,60,60,60,80,80,80,80,100,100,30*mul]
             self.featureL      = [60,60,60,80,80,80,100,30*mul]
             #self.featureL      = [8,12,16,32,48,64,96,128,160]
             #self.featureL      = [10,15,20,30,40,60,80,100,120]
             #self.featureL      = [10,15,20,30,50,80,100,120,160]
             #self.featureL      = [12,16,24,32,64,128,256,512,512]
-            self.strideL       = [(2,1),(2,1),(4,1),(4,1),(4,1),(3,1),(2,1),(1,mul),(up,1)]
-            self.kernelL       = [(6,1),(6,1),(12,1),(12,1),(12,1),(6,1),(2,1),(1,mul*2)]
+            self.strideL       = [(2,1),(2,1),(2,1),(2,1),(2,1),(2,1),(2,1),(2,1),(3,1),(2,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(2,1),(1,mul*2),(up*3,1)]
+            self.strideL       = [(4,1),(4,1),(4,1),(2,1),(2,1),(3,1),(2,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(12,1),(12,1),(12,1),(6,1),(6,1),(6,1),(2,1),(1,mul*2),(up*3,1)]
+            self.isBNL       = [True]*20
             #self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(4,1),(4,1)]
-            self.initializerL  = ['truncated_normal' for i in range(10)]
-            self.initializerL  = ['he_normal' for i in range(10)]
-            self.bias_initializerL = ['random_normal' for i in range(10)]
-            self.bias_initializerL = ['he_normal' for i in range(10)]
+            self.initializerL  = ['truncated_normal' for i in range(20)]
+            self.initializerL  = ['he_normal' for i in range(20)]
+            self.bias_initializerL = ['random_normal' for i in range(20)]
+            self.bias_initializerL = ['he_normal' for i in range(20)]
             self.dropOutL     =[]# [0,1,2]#[5,6,7]#[1,3,5,7]#[1,3,5,7]
             self.dropOutRateL = []#[0.2,0.2,0.2]#[0.2,0.2,0.2]
             #self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
@@ -1178,6 +1178,7 @@ class fcnConfig:
             MaxPooling2D,MaxPooling2D,MaxPooling2D]
             self.lossFunc     = lossFuncSoft(w=10)#10
             self.inAndOutFunc = inAndOutFuncNewNetUp#inAndOutFuncNewUp
+            self.lossFuncNP     = lossFuncSoftNP()
             self.deepLevel = 1
         elif mode=='surfdt':
             self.inputSize     = [512*3,1,4]
@@ -1660,6 +1661,7 @@ class modelUp(Model):
         if len(weightsFile)>0:
             model.load_weights(weightsFile)
         print(self.summary())
+        self.lossFunc=config.lossFuncNP
     def genM(self,config, onlyLevel=-1000):
         inputs, outputs = config.inAndOut(onlyLevel=onlyLevel)
         #outputs  = Softmax(axis=3)(last)
@@ -1677,7 +1679,8 @@ class modelUp(Model):
                 X = self.inx(x[i:min(i+maxN,NX)])
                 if len(X)>0:
                     Y.append(super().predict(X,batch_size=batch_size,**kwargs))
-            return np.concatenate(Y,axis=0)
+            Y=np.concatenate(Y,axis=0)
+            return Y
         else:
             return super().predict(x,batch_size=batch_size,**kwargs)
     def fit(self,x,y,batchSize=None,**kwargs):
@@ -1689,6 +1692,7 @@ class modelUp(Model):
     def plot(self,filename='model.png'):
         plot_model(self, to_file=filename)
     def inx(self,x):
+        x=x.copy()
         if self.config.mode=='surf' or self.config.mode=='surfUp' or self.config.mode=='surfUpMul':
             if x.shape[-1] > len(self.channelList):
                 x = x[:,:,:,self.channelList]
@@ -1882,8 +1886,12 @@ class modelUp(Model):
             if int(sampleDone.mean())>sampleTime:
                 sampleTime = int(sampleDone.mean())
                 if len(xTest)>0:
-                    lossTrain = self.evaluate(self.inx(xTrain),yTrain,batch_size=batchSize)
-                    lossTest    = self.evaluate(self.inx(xTest),yTest,batch_size=batchSize)
+                    youtTrain = 0
+                    youtTest  = 0
+                    youtTrain = self.predict(xTrain,batch_size=batchSize)
+                    youtTest  = self.predict(xTest,batch_size=batchSize)
+                    lossTrain = self.lossFunc(yTrain,youtTrain)
+                    lossTest    = self.lossFunc(yTest,youtTest)
                     print('train loss',lossTrain,'test loss: ',lossTest,\
                         'sigma: ',XYT.corrL.timeDisKwarg['sigma'],\
                         'w: ',self.config.lossFunc.w, \
@@ -1892,13 +1900,8 @@ class modelUp(Model):
                     resStr+='\n %d train loss : %f valid loss :%f F: %f sampleTime: %d'%(i,lossTrain,lossTest,resL[-1],sampleTime)
                     #lossTest-=resL[-1]
                     trainTestLoss.append([i,lossTrain,lossTest])
-                    if True:#i%90==0 and i>10:
-                        youtTrain = 0
-                        youtTest  = 0
-                        youtTrain = self.predict(xTrain,batch_size=batchSize)
-                        youtTest  = self.predict(xTest,batch_size=batchSize)
-                        resStr+='\ntrain '+printRes_old(yTrain,youtTrain)
-                        resStr+='\ntest '+printRes_old(yTest, youtTest,isUpdate=True)
+                    resStr+='\ntrain '+printRes_old(yTrain,youtTrain)
+                    resStr+='\ntest '+printRes_old(yTest, youtTest,isUpdate=True)
                     if lossTest >= lossMin:
                         count -= 1
                     if lossTest > 3*lossMin and lossMin>0:
@@ -1914,7 +1917,7 @@ class modelUp(Model):
                         break
                     #print(self.metrics)
                     if True:#i%15==0:
-                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.8)
+                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.9)
                         print('learning rate: ',self.optimizer.lr)
                     if True:#i>10 and i%50==0:
                         batchSize += batchSize
