@@ -228,6 +228,7 @@ class DS:
                         else:
                             tmp = line.split()
                             v   = float(tmp[-1])
+                            #'  32.051991 118.853989  3.00739'
                             v   *= 1+2*(np.random.rand()-0.5)*self.config.para['noiselevel']
                             tmp[-1] = '%.6f'%v
                             line=''
@@ -242,8 +243,8 @@ class DS:
                     f.write(period)
     def plotByZ(self,p2L=[],R=[],self1='',isCompare=False):
         if self.mode == 'syn':
-            self.modelTrue.plotByZ(self.runPath,self1=self.fastTrue,head='true',R=R,isVol=False)
-            self.modelRes.plotByZ(self.runPath,self1=self.fast,R=R,head='depth',isVol=False)
+            self.modelTrue.plotByZ(self.runPath,self1=self.fastTrue,head='true',R=R,isVol=False,maxDep=9000)
+            self.modelRes.plotByZ(self.runPath,self1=self.fast,R=R,head='depth',isVol=False,maxDep=9000)
             #self.fast.plotArrByZ(self.runPath,head='fast')
             self.modelPeriod.plotByZ(self.runPath,self1=self.fastP,head='period',R=R,isVol=False)
             return
@@ -468,7 +469,7 @@ class Model(Model0):
         v = self.v[i0,i1,i2]
         return v 
     
-    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False,selfRef='',isVol=True):
+    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False,selfRef='',isVol=True,maxDep=20):
         R0=R
         resDir = runPath+'/'+'plot/'
         if not os.path.exists(resDir):
@@ -546,18 +547,17 @@ class Model(Model0):
             if isDiff:
                 vmin=-0.05
                 vmax=+0.05
-                mean = np.abs(v[np.isnan(v)==False]).std()
+                mean = np.abs(v[np.isnan(v)==False]).mean()
             else:
                 per/=mean
                 per-=1
-                if z[i]<20:
-                    perA=0.05
-                else:
-                    perA=0.05
+                perA=0.05
+                if z[i]> maxDep:
+                    perA=0.03
                 vmin=-np.abs(per[np.isnan(per)==False]).max()*0-perA
                 vmax=np.abs(per[np.isnan(per)==False]).max()*0+perA
             if isDiff:
-                plotPlane(m,x,y,per*100,R,z[i],mean*100,vmin*100,vmax*100,isFault=True,head=head,isVol=False,cLabel='V. D.(%)',meanLabel='%',midName='std',cmap='bwr_r')
+                plotPlane(m,x,y,per*100,R,z[i],mean*100,vmin*100,vmax*100,isFault=True,head=head,isVol=False,cLabel='V. D.(%)',meanLabel='%',midName='abs mean',cmap='bwr_r')
             else:
                 plotPlane(m,x,y,per*100,R,z[i],mean,vmin*100,vmax*100,isFault=True,head=head,isVol=isVol,cLabel='V. A.(%)',midName='$v_0$',cmap=cmap)
             #plotPlane(m,x,y,out,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False)

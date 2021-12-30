@@ -289,8 +289,8 @@ class Station(Dist):
 			self.sensor.append(sensor)
 			self.das.append(das)
 		return self.sensor,self.das
-	def getSensorDas(self):
-		if self['sensorName'] == '' or self['dasName']=='':
+	def getSensorDas(self,isUnkown=False):
+		if self['sensorName'] == '' or self['dasName']=='' or (self['sensorName'] == 'UNKNOWN' and isUnkown):
 			sensorName,dasName,sensorNum=self['nameFunc'].getSensorDas(self['net'],self['sta'],nameMode=self['nameMode'])
 			self['sensorName'] = sensorName
 			self['dasName']    = dasName
@@ -412,9 +412,9 @@ class StationList(list):
 			sensorName, dasName, sensorNum =  station.getSensorDas()
 			if sensorName != 'UNKNOWN' and dasName != 'UNKNOWN':
 				sensor,das=station.getInventory()
-	def getSensorDas(self):
+	def getSensorDas(self,**kwargs):
 		for station in self:
-			sensorName, dasName,sensorNum =  station.getSensorDas()
+			sensorName, dasName,sensorNum =  station.getSensorDas(**kwargs)
 	def find(self,sta,net=''):
 		for station in self:
 			if station['sta'] != sta:

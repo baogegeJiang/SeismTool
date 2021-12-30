@@ -483,6 +483,7 @@ def loadOne(l):
 
 class layer:
     __doc__ = "\n    class for layered media;\n    the p velocity(vp), s velocity(vs), density(rho), [top depth, bottom depth](z) is needed; \n    p and s 's Q(Qp, Qs) is optional(default is 1200,600)\n    After specifying the above parameters, the lame parameter(lambda, miu), zeta and xi would\n     be calculate as class's attributes. \n    "
+
     def __init__(self, vp, vs, rho, z=[0, 0], Qp=1200, Qs=600):
         self.z = np.array(z)
         self.vp = np.array(vp)

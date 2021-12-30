@@ -2,26 +2,32 @@ import os
 import sys
 from imp import reload
 from SeismTool.SurfDisp import run
+from SeismTool.mathTool import mathFunc
 from tensorflow.python.framework.tensor_util import FastAppendBFloat16ArrayToTensorProto
 R = run.run(run.runConfig(run.paraTrainTest))
 run.d.Vav=-1
 #R.loadCorr()
 #R.saveTrainSet(isMat=True)
 
-
+isDisQC =True
+isCoverQC = True
 #R.plotGetDis()
-R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=False,isDisQC=False)#True
+R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=False,isDisQC=isDisQC)#True
 R.getDisCover()
 #R.plotTrainDis()
-
+R.model=None
 R.loadModelUp()
-run.run.train(R,isAverage=False,isRand=True,isShuffle=True)
+run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+#run.run.train(R,isAverage=False,isRand=True,isShuffle=True)
 #R.train(up=5,isRand=True,isShuffle=True)
 #run.run.loadCorr(R,isLoad=False)
-R.calResOneByOne()
+#R.calResOneByOne()
+R.calFromCorr()
+R.loadRes()
+#R.getAv(isCoverQC=True,isDisQC=False)
+R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.analyRes(R,format='jpg')
 #R.loadModelUp(R.config.para['modelFile'])
-R.loadModelUp()
-R.train(up=5,isRand=True,isShuffle=False)
 reload(run)
 reload(run.fcn)
 R.model=None
@@ -30,7 +36,7 @@ run.run.train(R,up=5,isRand=True,isShuffle=False,isAverage=False)
 reload(run)
 run.run.loadRes(R,isCoverQC=True)
 R.config=run.runConfig(run.paraTrainTest)
-run.run.preDS(R,isByTrain=False)
+run.run.preDS(R,isByTrain=True)
 run.run.preDSTrain(R)
 run.run.preDSSyn(R,isByTrain=False)
 
@@ -46,10 +52,13 @@ R.getDisCover()
 R.loadRes()
 run.run.getAv(R,isCoverQC=True)
 run.run.preDS(R,isByTrain=True)
+R.loadAndPlot(R.DS,isPlot=False)
+R.loadAndPlot(R.DSTrain,isPlot=False)
+R.compare(R.DS,R.DSTrain,isCompare=True)
 
 run.d.qcFvD(R.fvAvGet)
 run.d.qcFvD(R.fvDGet)
-run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compare160/')
+run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compare300/',keyL=R.fvTest,stations=R.stations)
 reload(run.d)
 run.d.plotPair(R.fvAvGet,R.stations)
 
@@ -60,13 +69,8 @@ reload(run.fcn)
 run.fcn.modelUp.show(R.model,R.corrLTest.x[::100],R.corrLTest.y[::100],outputDir='predict/raw/',delta=1,T=R.config.para['T'])
 reload(run.d)
 run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compareV10/')
-run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroAll.eps',t=R.config.para['T'],keys=[],fStrike=1,title='error_distribution')
-run.d.compareFVD(R.fvDAvarage,R.fvAvGet,R.stations,'predict/erroTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=1,title='error_distribution',threshold=0.015)
-run.d.compareFVD(R.fvD0,R.fvDGet,R.stations,'predict/erroTestSingle.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=1,title='error_distribution')
-run.d.compareFVD(R.fvAvGet,R.fvDGet,R.stations,'predict/stdTest.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=1,title='error_distribution')
-run.d.compareFVD(R.fvD,R.fvD0,R.stations,'predict/erro0.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
-run.d.compareFVD(R.fvDGet,R.fvD,R.stations,'predict/erroSingle.eps',t=R.config.para['T'],keys=R.fvTest,fStrike=2,title='error_distribution')
-run.d.plotFVM(R.fvMGet,R.fvAvGet,resDir=R.config.para['trainDir']+'pairsTrainTest5/',isDouble=True,fL0=1/R.config.para['T'],stations=R.stations)
+
+run.d.plotFVM(R.fvMGet,R.fvAvGet,R.fvDAvarage,resDir=R.config.para['trainDir']+'pairsTrainTest1229/',isDouble=True,fL0=1/R.config.para['T'],stations=R.stations,keyL=R.fvTest)
 
 M,V0,V1=run.d.compareInF(R.fvDAvarage,R.fvAvGet,R.stations,1/R.config.para['T'],R=R.config.para['R'])
 from SeismTool.mathTool import mathFunc
@@ -75,8 +79,11 @@ reload(run)
 #reload(run.d)
 #reload(run.seism)
 R1=run.run(run.runConfig(run.paraNorth))
-R1.model=R.model
-R1.calResOneByOne()
+#R1.model=R.model
+#R1.calResOneByOne()
+R1.loadRes(isGetQuake=False)
+reload(run)
+R1.config=run.runConfig(run.paraNorth)
 from glob import glob
 from SeismTool.io import seism
 fvFileL = glob('%s/*.dat'%('../models/ayu/Pairs_avgpvt/'))
@@ -222,3 +229,16 @@ R3.loadAndPlot()
 R3.getAreas()
 R3.config.para['areasLimit']=50
 R3.areasLimit()
+
+from netCDF4 import Dataset
+kea20 = Dataset('models/KEA20.r0.0.nc')
+run.d.analyModel(kea20.variables['depth'][:],kea20.variables['vsv'][:])
+nameL = ['max','min','mean']
+indexL= '123'
+for i in range(3):
+    name = nameL[i]
+    indexStr = indexL[i]
+    m=run.d.model('predict/KEA20/vRangeHigh', mode='PSV',getMode = 'fast',layerMode =indexStr,layerN=1000,isFlat=True,R=6371,flatM=-2,pog='p',gpdcExe='/home/jiangyr/program/geopsy/bin/gpdc',doFlat=True,QMul=1)
+    f,v=m.calByGpdc(order=0,pog='p',T= run.np.arange(1,300,1).astype(run.np.float))
+    f = run.d.fv([f,v],'num')
+    f.save('predict/KEA20/'+name)

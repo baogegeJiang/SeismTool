@@ -1,4 +1,5 @@
 #from ..io.seism import NoneType
+from re import S
 import numpy as np
 from numba import jit,float32, int64
 import scipy.signal  as signal
@@ -341,30 +342,101 @@ def QC_bak(data,threshold=2.5):
     else:
         return QC(data[d<Threshold],threshold)
 
-
-def QC(data,threshold=2.5,it=20,minThreshold=0.02,minSta=5,resultL=None):
+def wMean(data,wL):
+    return (data*wL).sum()/wL.sum()
+def wStd(data,wL):
+    m = wMean(data,wL)
+    D2 = (data-m)**2
+    std2 = wMean(D2,wL) 
+    return std2**0.5
+def iqrWeight(data,wL,mid):
+    WS = np.cumsum(wL)
+    w0 = mid[0]/100*WS[-1]
+    w1 = mid[1]/100*WS[-1]
+    #print(w0,w1)
+    i0 =np.abs(WS-w0).argmin()
+    i1 =np.abs(WS-w1).argmin()
+    return data[i1]-data[i0],wMean(data[i0:i1+1],wL[i0:i1+1])
+def QC(data,threshold=0.82285,it=3,minThreshold=0.02,minSta=5,resultL=None,mid=[25.,75.],wL=[],isSorted=False):
+    if len(wL)==0:
+        wL = data*0+1
+    if not isSorted:
+        #print(wL)
+        #print(data)
+        iL = data.argsort()
+        data = data[iL]
+        wL   = wL[iL]
+    mul = calNSigma(1,threshold)/calNSigma(1,(mid[1]-mid[0])/100)
+    #print(mul)
     if it==0:
-        print('***********************************reach depest*******************')
-    if len(data)<minSta or it==0:
-        return data.mean(),999,len(data)
+        pass#print('***********************************reach depest*******************')
+    if len(data)<=minSta and it==0:
+        return wMean(data,wL),999,len(data)
+    if len(data)<=2*minSta or it==0:
+        return wMean(data,wL),data.std(),len(data)
     #if len(data)<10:
     #    return data.mean(),data.std(),len(data)
-    mData = np.median(data)
-    d = np.abs(data - mData)
-    lqr = stats.iqr(data)
-    Threshold = max(lqr*threshold,mData*minThreshold)
-    mData = np.mean(data[d<Threshold])
+    lqr,mData = iqrWeight(data,wL,mid)
+    #print(lqr,stats.iqr(data))
+    lqrHalf = lqr/2
+    #mData  = data0/2+data1/2
+    Threshold = max(lqrHalf*mul,mData*minThreshold)
     d = np.abs(data - mData)
     if isinstance(resultL,list):
         resultL.append([mData,Threshold,data])
     if (d>Threshold).sum() ==0 and (d<=Threshold).sum()>=minSta:
-        return data[d<Threshold].mean(),data[d<Threshold].std(),len(data)
+        return wMean(data[d<Threshold],wL[d<Threshold]),wStd(data[d<Threshold],wL[d<Threshold]),len(data)
     else:
-        return QC(data[d<Threshold],threshold,it-1,minThreshold=minThreshold,resultL=resultL,minSta=minSta)
-def showQC(fileName,threshold=2.5,minThreshold=0.01):
+        return QC(data[d<Threshold],threshold,it-1,minThreshold=minThreshold,resultL=resultL,minSta=minSta,mid=mid,wL=wL[d<Threshold],isSorted=True)
+
+def ms(data):
+    m=np.mean(data)
+    d = ((data-m)**2).sum()/(len(data)-1)
+    return m,d**0.5
+def QC__(data,threshold=0.95,it=-1,minThreshold=0.02,minSta=5,resultL=None,isSort=True):
+    if it<0:
+        it = int(len(data)*1/2)
+    if it==0:
+        print('***********************************reach depest*******************')
+    if len(data)<=minSta:
+        return data.mean(),999,len(data)
+    if len(data)<=2*minSta or it==0:
+        return data.mean(),data.std(),len(data)
+    N = len(data)
+    if isSort:
+        data = np.array(data).copy()
+        data.sort()
+    m0,s0 = ms(data)
+    D20 = s0**2*(N-1)
+    if s0<=minThreshold*m0:
+        return data.mean(),data.std(),len(data)
+    m1,s1 = ms(data[1:])
+    D21 = s1**2*(N-2)
+
+    m2,s2 = ms(data[:-1])
+    D22 = s2**2*(N-2)
+    N  = calNSigma(N,threshold)
+    if D21 < D22 and D20-D21>(N*s1)**2:
+        return QC(data[1:],threshold,it-1,minThreshold=minThreshold,resultL=resultL,minSta=minSta,isSort=False)
+    elif D21 >= D22 and D20-D22>(N*s2)**2:
+        return QC(data[:-1],threshold,it-1,minThreshold=minThreshold,resultL=resultL,minSta=minSta,isSort=False)
+    else:
+        print('done',it)
+        return data.mean(),data.std(),len(data)
+
+def showQC(n1=20,n2=4,v1=3.0,v2=3.5,sigma=0.02,threshold=0.95):
+    L1 = np.random.randn(n1)*sigma*v1+v1
+    L2 = np.random.randn(n2)*sigma*v2+v2
+    L = np.array(L1.tolist()+L2.tolist())
+    print(L1.mean(),np.mean(L))
+    return QC(L,threshold=threshold), QC__(L,threshold=1.5)
+def showQC__(fileName,threshold=1.5,minThreshold=0.01):
     plt.close()
     plt.figure(figsize=[2.5,2.5])
-    data = np.array([3.1,3.11,3.105,3.09,3.05,3.0,3.12,3.13,3.2,3.15,3.08,3.07,3.5,3.095,3.112,3.05,3,3.04,3.07,3.11,3.095,3.099,2.9,2.95,3.099,3.098,3.101,3.12,3.01,3.23,3.096,3.091,3.092,3.093,3.0975])
+    #data = np.array([3.1,3.11,3.105,3.09,3.05,3.0,3.12,3.13,3.2,3.15,3.08,3.07,3.5,3.095,3.112,3.05,3,3.04,3.07,3.11,3.095,3.099,2.9,2.95,3.099,3.098,3.101,3.12,3.01,3.23,3.096,3.091,3.092,3.093,3.0975])
+    data0 = np.arange(-1,1,0.1)
+    data = 3.1+data0**3*0.1
+    #data = 3.1+np.random.randn(20)*0.1
     resultL = []
     m,s,c = QC(data,threshold=threshold,minThreshold=minThreshold,resultL=resultL)
     N = len(resultL)
@@ -375,11 +447,12 @@ def showQC(fileName,threshold=2.5,minThreshold=0.01):
         plt.errorbar(M,i+1,fmt='k',ecolor='r',xerr=Thres,elinewidth=0.3,capsize=2,capthick=0.2)
     plt.xlabel('km/s')
     plt.ylabel('loop index')
-    #plt.xlim([3,3.5])
-    plt.ylim([0,N+1.5])
-    plt.text(2.9,N+1,'mean: %.2f km/s std: %.2f km/s'%(m,s))
+    plt.yticks(np.arange(1,N+1))
+    #plt.xlim([3,3.3])
+    plt.ylim([0.5,N+1.5])
+    plt.text(3.01,N+0.5,'mean: %.2f km/s std: %.2f %%\nQC: %.1f $Thres_{min}$:%.1f%%'%(m,s/m*100,threshold,minThreshold*100))
     plt.tight_layout()
-    plt.savefig(fileName)
+    plt.savefig(fileName,dpi=300)
 
 def rotate(rad,data):
     #RTZ
@@ -474,3 +547,13 @@ def genSrc(v=80,model='380A',delta=0.01,dt=1,diffOrder=0,f=[]):
     LM = np.arange(n).reshape([1,-1,1])*L0
     dM = DM+LLM+LM
     return genSrc_(v,dM.reshape([-1]),delta,dt,diffOrder,f)
+
+def calNSigma(N,q0=0.95):
+    pi =np.pi
+    sqrt2 = 2.0**0.5
+    qN = q0**(1/N)
+    a = 8*(pi-3)/(3*pi*(4-pi))
+    L=np.log(1-qN**2)
+    b = 2/(pi*a)
+    dr = ( ((b+L/2)**2-L/a)**0.5 -(b+L/2) )**0.5
+    return dr*sqrt2

@@ -162,7 +162,9 @@ class filePath:
             return ['/net/CEA/CEA_*/']
         if nameMode=='hima' :
             if staName in self.himaDir:
-                return self.himaDir[staName]
+                return self.himaDir[staName]+['/HOME/jiangyr/hima3_sac/%s/'%sta]
+            else:
+                return ['/HOME/jiangyr/hima3_sac/%s/'%sta]
         if nameMode=='hima23' :
             if staName in self.himaDir:
                 return self.himaDir[staName]+['/HOME/jiangyr/hima3_sac/%s/'%sta]
@@ -207,59 +209,66 @@ class filePath:
         if net == 'hima':
             logFileL=[]
             for staDir in staDirL:
-                print(staDir+'*.log')
+                #print(staDir+'*.log')
                 logFileL += glob(staDir+'*.log')
-            logFile = logFileL[0]
+            
             sensorName = 'UNKNOWN'
             dasName    = 'UNKNOWN'
             sensorNum  = 'UNKNOWN'
+            if len(logFileL)==0:
+                if len(staDirL)==0:
+                    return 'noData','noData','noData'
+                print(staDirL)
+                return 'UNKNOWN','UNKNOWN','UNKNOWN'
             for logFile in logFileL:
-                with open(logFile) as f:
-                    while sensorName=='UNKNOWN'or dasName=='UNKNOWN'or sensorNum=='UNKNOWN':
-                        line = f.readline()
-                        if line=='':
-                            break
-                        if sensorName == 'UNKNOWN':
-                            if 'Sensor Model' in line:
-                                if len(line)<=21:
-                                    tmp = 'UNKNOWN'
-                                else:
-                                    tmp = line[20:].split()
-                                    if len(tmp)>0:
-                                        tmp0 =tmp
-                                        tmp = ''
-                                        for TMP in tmp0:
-                                            tmp+=TMP
-                                    else:
+                if sensorName=='UNKNOWN'or dasName=='UNKNOWN'or sensorNum=='UNKNOWN':
+                    with open(logFile) as f:
+                        while sensorName=='UNKNOWN'or dasName=='UNKNOWN'or sensorNum=='UNKNOWN':
+                            line = f.readline()
+                            if line=='':
+                                break
+                            if sensorName == 'UNKNOWN':
+                                if 'Sensor Model' in line:
+                                    if len(line)<=21:
                                         tmp = 'UNKNOWN'
-                                sensorName = tmp
-                                print(line)
-                                continue
-                        if sensorNum == 'UNKNOWN':
-                            if 'Sensor Serial Number' in line:
-                                if len(line)<=29:
-                                    tmp = 'UNKNOWN'
-                                else:
-                                    tmp = line[28:].split()
-                                    if len(tmp)>0:
-                                        tmp0 =tmp
-                                        tmp = ''
-                                        for TMP in tmp0:
-                                            tmp+=TMP
                                     else:
+                                        tmp = line[20:].split()
+                                        if len(tmp)>0:
+                                            tmp0 =tmp
+                                            tmp = ''
+                                            for TMP in tmp0:
+                                                tmp+=TMP
+                                        else:
+                                            tmp = 'UNKNOWN'
+                                    sensorName = tmp
+                                    #print(line)
+                                    continue
+                            if sensorNum == 'UNKNOWN':
+                                if 'Sensor Serial Number' in line:
+                                    if len(line)<=29:
                                         tmp = 'UNKNOWN'
-                                sensorNum = tmp
-                                print(line)
-                                continue
-                        if dasName =='UNKNOWN':
-                            if 'REF TEK' in line:
-                                dasName    = line.split()[-1]
-                                print(line)
-                                continue
-                if len(sensorName)!=0 and len(dasName)!=0:
-                    return sensorName,dasName,sensorNum
-                else:
-                    return 'UNKNOWN','UNKNOWN','UNKNOWN'
+                                    else:
+                                        tmp = line[28:].split()
+                                        if len(tmp)>0:
+                                            tmp0 =tmp
+                                            tmp = ''
+                                            for TMP in tmp0:
+                                                tmp+=TMP
+                                        else:
+                                            tmp = 'UNKNOWN'
+                                    sensorNum = tmp
+                                    #print(line)
+                                    continue
+                            if dasName =='UNKNOWN':
+                                if 'REF TEK' in line:
+                                    dasName    = line.split()[-1]
+                                    #print(line)
+                                    continue
+            if len(sensorName)!=0 and len(dasName)!=0:
+                print(net,sta,sensorName,dasName,sensorNum)
+                return sensorName,dasName,sensorNum
+            else:
+                return 'UNKNOWN','UNKNOWN','UNKNOWN'
     def getInventory(self,net,sta,sensorName='',dasName='',comp='BHZ',nameMode=''):
         if nameMode == '':
             nameMode = net
@@ -286,6 +295,38 @@ class filePath:
             read_inventory(file)
         return self.InventoryD[sensorName+comp],self.InventoryD[dasName+comp]
 
+def sensorNumCorrect(keyIn):
+    strL = 'abcdefghijklmnopqrstuvwxyz'
+    STRL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    keyOut=''
+    for k in keyIn:
+        if k in strL:
+            k = STRL[strL.index(k)]
+        keyOut = keyOut+k
+    if keyOut[0] in '1234567890':
+        keyOut = 'T'+keyOut
+    return keyOut
 
+def doc2txt(runDir):
+    for file in glob(runDir+'*doc'):
+        fileNew = file[:-3]+'txt'
+        if not os.path.exists(fileNew):
+            os.system('antiword -t %s >%s'%(file,fileNew))
+def readTXTSensorNum(runDir,resFile):
+    with open(resFile,'w+') as F:
+        for file in glob(runDir+'*txt'):
+            key = os.path.basename(file)[:-4]
+            with open(file) as f:
+                tmp=f.readline()
+                tmp=f.readline()
+                F.write('%s %s\n'%(key,tmp.split()[0]))
 
+def loadKeyD(file):
+    keyD ={}
+    with open(file) as f:
+        for line in f.readlines():
+            key,sensorName=line.split()
+            keyD[key]=sensorName
+    return keyD
+    
 #/media/jiangyr/shanxidata21/nmSacData/GS.HXP//201410//GS.HXP.20141001.BHZ.SAC

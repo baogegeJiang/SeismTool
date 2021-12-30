@@ -101,7 +101,7 @@ class lossFuncSoft_:
                          K.max(y0,axis=1, keepdims=True),\
                          axis=-1\
                                                                          )
-class lossFuncSoft:
+class lossFuncSoft__:
     # 当有标注的时候才计算权重
     # 这样可以保持结构的一致性
     def __init__(self,w=1):
@@ -109,6 +109,7 @@ class lossFuncSoft:
         w0[:20]=5/(1+4*np.arange(0,20)/19)
         w0[20:]=10/(1+9*np.arange(29,-1,-1)/29)
         w0/=w0.mean()
+        w0 = w0*0+1
         channelW = K.variable(w0.reshape([1,1,1,-1]))
         self.channelW = channelW
         self.w=w
@@ -123,6 +124,23 @@ class lossFuncSoft:
                              y0*K.log(yout0)+y1*K.log(yout1)\
                                                                      )*\
                          K.max(y0,axis=1, keepdims=True)*((self.w-1)*(K.sign(y0-1/20)+1)/2+1)*self.channelW,\
+                         axis=-1\
+                                                                         )
+class lossFuncSoft:
+    # 当有标注的时候才计算权重
+    # 这样可以保持结构的一致性
+    def __init__(self,w=1):
+        self.__name__ = 'lossFuncSoft'
+    def __call__(self,y0,yout0):
+        y1 = 1-y0
+        yout1 = 1-yout0
+        yout0 = K.clip(yout0,1e-7,1)
+        yout1 = K.clip(yout1,1e-7,1)
+        return -K.mean(\
+                         (\
+                             y0*K.log(yout0)+y1*K.log(yout1)\
+                                                                     )*\
+                         K.max(y0,axis=1, keepdims=True),\
                          axis=-1\
                                                                          )
 class lossFuncSoftSq:
@@ -322,6 +340,110 @@ def inAndOutFuncNewNet(config, onlyLevel=-10000):
     if onlyLevel>-100:
         outputs = outputsL[onlyLevel]
     return inputs,outputs
+
+def inAndOutFuncNewNetUp(config, onlyLevel=-10000):
+    BNA = -1
+    inputs  = Input(config.inputSize,name='inputs')
+    depth   =  len(config.featureL)
+    convL   = [None for i in range(depth+1)]
+    dConvL  = [None for i in range(depth+1)]
+    last    = inputs
+    upL  = [None for i in range(depth+1)]
+    for i in range(depth):
+        if i <4:
+            name = 'conv'
+        else:
+            name = 'CONV'
+        layerStr='_%d_'%i
+        
+        last = Conv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+            strides=(1,1),padding='same',name=name+layerStr+'0',\
+            kernel_initializer=config.initializerL[i],\
+            bias_initializer=config.bias_initializerL[i])(last)
+
+        last = BatchNormalization(axis=BNA,trainable=True,name='BN'+layerStr+'0')(last)
+
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+
+        convL[i] =last
+
+        last = Conv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+            strides=(1,1),padding='same',name=name+layerStr+'1',\
+            kernel_initializer=config.initializerL[i],\
+            bias_initializer=config.bias_initializerL[i])(last)
+
+        if i in config.dropOutL:
+            ii   = config.dropOutL.index(i)
+            last =  Dropout(config.dropOutRateL[ii],name='Dropout'+layerStr+'0')(last)
+        else:
+            last = BatchNormalization(axis=BNA,trainable=True,name='BN'+layerStr+'1')(last)
+
+        last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
+
+        last = config.poolL[i](pool_size=config.strideL[i],\
+            strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+
+    convL[depth] =last
+    outputsL =[]
+    for i in range(depth-1,-1,-1):
+        if i <3:
+            name = 'dconv'
+        else:
+            name = 'DCONV'
+        for j in range(i,i+1):
+
+            layerStr='_%d_%d'%(i,j)
+
+            dConvL[j]= Conv2DTranspose(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=config.strideL[j],padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j])(convL[j+1])
+
+            if j in config.dropOutL:
+                jj   = config.dropOutL.index(j)
+                dConvL[j] =  Dropout(config.dropOutRateL[jj],name='Dropout_'+layerStr+'0')(dConvL[j])
+            else:
+                dConvL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'0')(dConvL[j])
+
+            dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
+            dConvL[j]  = Conv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=(1,1),padding='same',name=name+layerStr+'1',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j])(dConvL[j])
+            dConvL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'1')(dConvL[j])
+            dConvL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1')(dConvL[j])
+            convL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'1')
+            if i <config.deepLevel and j==0:
+                #outputsL.append(Conv2D(config.outputSize[-1],kernel_size=(8,1),strides=(1,1),\
+                #padding='same',activation='sigmoid',name='dconv_out_%d'%i)(convL[0]))
+                if config.strideL[-1][0]>1:
+                    upL[j]= Conv2DTranspose(config.featureL[j]*2,kernel_size=config.kernelL[j],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],\
+                    bias_initializer=config.bias_initializerL[j])(convL[0])
+                    upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
+                    upL[j]  = Conv2D(config.featureL[j]*2,kernel_size=config.kernelL[j],\
+                        strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',\
+                        kernel_initializer=config.initializerL[j],\
+                        bias_initializer=config.bias_initializerL[j])(upL[j])
+                    upL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'1'+'_Up')(upL[j])
+                    upL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1'+'_Up')(upL[j])
+                else: 
+                    upL[j]=convL[0]
+                outputsL.append(Dense(config.outputSize[-1], activation='sigmoid'\
+                    ,name='dense_out_%d'%i)(upL[j]))
+    #outputs = Conv2D(config.outputSize[-1],kernel_size=(8,1),strides=(1,1),\
+    #    padding='same',activation='sigmoid',name='dconv_out')(convL[0])
+    if len(outputsL)>1:
+        outputs = concatenate(outputsL,axis=2,name='lastConc')
+    else:
+        outputs = outputsL[-1]
+        if config.mode == 'p' or config.mode == 's'or config.mode == 'ps':
+            if config.outputSize[-1]>1:
+                outputs = Softmax(axis=3)(outputs) 
+    if onlyLevel>-100:
+        outputs = outputsL[onlyLevel]
+    return inputs,outputs
+
 
 def inAndOutFuncNewV6(config, onlyLevel=-10000):
     BNA = -1
@@ -694,7 +816,7 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
     print(resStr)
     trainTestLossL =[]
     for sigma in sigmaL:
-        model.config.lossFunc.w = w0*(1.5/sigma)
+        model.config.lossFunc.w = w0
         corrLTrain.timeDisKwarg['sigma']=sigma
         corrLTest.timeDisKwarg['sigma']=sigma
         corrLValid.timeDisKwarg['sigma']=sigma
@@ -744,7 +866,7 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
     for i in range(len(sigmaL)):
         sigma = sigmaL[i]
         trainTestLoss = trainTestLossL[i]
-        np.savetxt('%s_sigma%.3f_loss'%(head,sigma),np.array(trainTestLoss))
+        np.savetxt('%s_sigma%.3f_loss'%(head,np.mean(sigma)),np.array(trainTestLoss))
     model.save(head+'_model.h5')
     iL=np.arange(0,showCount,showD)
     tmpOutputDir ='%s_predict/'%(head)
@@ -753,6 +875,80 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
     for level in range(-1,-model.config.deepLevel-1,-1):
         model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
         T=tTrain,outputDir=tmpOutputDir,level=level)
+def trainAndTestMul(model,corrDTrain,corrDValid,corrDTest,outputDir='predict/',tTrain=tTrain,\
+    sigmaL=[4,3,2,1.5],count0=3,perN=200,w0=4,k0=-1,mul=1):
+    '''
+    依次提高精度要求，加大到时附近权重，以在保证收敛的同时逐步提高精度
+    '''
+    #xTrain, yTrain, timeTrain =corrLTrain(np.arange(0,20000))
+    #model.show(xTrain,yTrain,time0L=timeTrain ,delta=1.0,T=tTrain,outputDir=outputDir+'_train')
+    #2#4#8#8*3#8#5#10##model.config.lossFunc.w
+    #w0=1.25#1.5
+    #perN=100
+    tmpDir =  os.path.dirname(outputDir)
+    if not os.path.exists(tmpDir):
+        os.makedirs(tmpDir)
+    #model.plot(outputDir+'model.png')
+    testCount = len(corrDTest)
+    showCount = int(len(corrDTest)*1)
+    showD     = int(showCount/40)
+    resStr = 'testCount %d showCount %d \n'%(testCount,showCount)
+    resStr +='train set setting: %s\n'%corrDTrain
+    resStr +='test  set setting: %s\n'%corrDTest
+    resStr +='perN: %d count0: %d w0: %.5f\n'%(perN, count0, w0)
+    resStr +='sigmaL: %s\n'%sigmaL
+    print(resStr)
+    trainTestLossL =[]
+    for sigma in sigmaL:
+        model.config.lossFunc.w = w0
+        corrDTrain.corrL.timeDisKwarg['sigma']=sigma
+        corrDTest.corrL.timeDisKwarg['sigma']=sigma
+        corrDValid.corrL.timeDisKwarg['sigma']=sigma
+        corrDValid.corrL.iL=np.array([])
+        corrDTrain.corrL.iL=np.array([])
+        corrDTest.corrL.iL=np.array([])
+        model.compile(loss=model.config.lossFunc, optimizer='Nadam')
+        xTest, yTest, tTest =corrDValid(mul=mul)
+        resStrTmp, trainTestLoss=model.trainByXYTNewMul(corrDTrain,xTest=xTest,yTest=yTest, count0=count0, perN=perN,N=20000,k0=k0,mul=mul,testN=len(corrDValid))
+        resStr += resStrTmp
+        trainTestLossL.append(trainTestLoss)
+   # xTest, yTest, tTest =corrLValid(np.arange(len(corrLValid)))
+    yout=model.predict(xTest)  
+    for threshold in [0.5,0.7,0.8]:
+        corrDValid.corrL.plotPickErro(yout.transpose([0,2,1,3]).reshape([-1,yout.shape[1],1,yout.shape[-1]]),tTrain.reshape([-1]),fileName=outputDir+'erro_valid.jpg',threshold=threshold)
+        #resStr+= printRes(yTest, yout[:,:,level:level+1])+'\n'
+    resStr += '\n valid part\n'
+    resStr+= printRes_old(yTest, yout)+'\n'
+    xTest=None
+    yTest=None
+    tTest=None
+    corrDValid.corrL.x=None
+    corrDValid.corrL.y=None
+    xTest, yTest, tTest =corrDTest(mul=mul)
+    yout=model.predict(xTest)
+    for threshold in [0.5,0.7,0.8]:
+        corrDTest.corrL.plotPickErro(yout.transpose([0,2,1,3]).reshape([-1,yout.shape[1],1,yout.shape[-1]]),tTrain.reshape([-1]),fileName=outputDir+'erro_test.jpg',\
+                threshold=threshold)
+    resStr+= printRes_old(yTest, yout)+'\n'
+    head = outputDir+'resStr_'+\
+        obspy.UTCDateTime(time.time()).strftime('%y%m%d-%H%M%S')
+    with open(head+'.log','w') as f:
+        ###save model
+        model.summary(print_fn=lambda x: f.write(x + '\n'))
+        f.write(resStr)
+    for i in range(len(sigmaL)):
+        sigma = sigmaL[i]
+        trainTestLoss = trainTestLossL[i]
+        np.savetxt('%s_sigma%.3f_loss'%(head,np.mean(sigma)),np.array(trainTestLoss))
+    model.save(head+'_model.h5')
+    iL=random.sample(np.arange(0,showCount,showD).tolist(),10)
+    tmpOutputDir ='%s_predict/'%(head)
+    if not os.path.exists(tmpOutputDir):
+        os.makedirs(tmpOutputDir)
+    for level in range(-1,-model.config.deepLevel-1,-1):
+        model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
+        T=tTrain,outputDir=tmpOutputDir,level=level)
+
 
 def trainAndTestSq(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTrain=tTrain,\
     sigmaL=[4,3,2,1.5],count0=3,perN=2,w0=4):
@@ -888,7 +1084,7 @@ def trainAndTestCross(model0,model1,corrLTrain0,corrLTrain1,corrLTest,outputDir=
     T=tTrain,outputDir=outputDir+'_1_')
 
 class fcnConfig:
-    def __init__(self,mode='surf',up=1):
+    def __init__(self,mode='surf',up=1,mul=1):
         self.mode=mode
         if mode=='surf':
             self.inputSize     = [512*3,1,4]
@@ -951,24 +1147,23 @@ class fcnConfig:
             self.inAndOutFunc = inAndOutFuncNewV6
             self.deepLevel = 1
         if mode=='surfUp':
-            self.inputSize     = [512*3,1,4]
-            self.outputSize    = [512*3*up,1,50]
-            self.featureL      = [8,12,24,48,96,160,320,360,720]
-            self.featureL      = [8,15,30,60,120,180,360,450,900]
-            self.featureL      = [10,15,30,60,120,160,320,640,800]
-            self.featureL      = [8,16,32,64,128,256,512,768,1024]
-            self.featureL      = [8,24,36,60,80,120,160,240,300]
-            self.featureL      = [8,16,24,32,36,64,96,128,160]
-            self.featureL      = [8,16,24,32,36,48,64,96,128]
-            self.featureL      = [8,12,16,24,28,32,36,48,64]
-            self.featureL      = [8,12,16,24,28,32,36,42,48]
+            self.inputSize     = [512*3,mul,4]
+            self.outputSize    = [512*3*up,mul,30]
+            self.featureL      = [60,80,80,100,100,120,120,150]
+            self.featureL      = [30,30,30,45,45,45,60,60]
+            self.featureL      = [60,60,60,80,80,80,100,100]
+            self.featureL      = [60,60,80,80,100,100,120,150]
+            self.featureL      = [60,60,60,60,60,60,60,60]
+            self.featureL      = [60,60,60,80,80,80,100,100]
+            self.featureL      = [30,30,30,45,45,45,60,60]
+            self.featureL      = [60,60,60,80,80,80,100,30*mul]
+            #self.featureL      = [8,12,16,32,48,64,96,128,160]
             #self.featureL      = [10,15,20,30,40,60,80,100,120]
             #self.featureL      = [10,15,20,30,50,80,100,120,160]
             #self.featureL      = [12,16,24,32,64,128,256,512,512]
-            self.strideL       = [(2,1),(3,1),(2,1),(2,1),(2,1),(2,1),(2,1),(2,1),\
-                (2,1),(2,1),(2,1),(up,1)]
-            self.kernelL       = [(6,1),(8,1),(8,1),(8,1),(8,1),(16,1),(6,1),\
-            (8,1),(4,1),(4,1),(4,1)]
+            self.strideL       = [(2,1),(2,1),(4,1),(4,1),(4,1),(3,1),(2,1),(1,mul),(up,1)]
+            self.kernelL       = [(6,1),(6,1),(12,1),(12,1),(12,1),(6,1),(2,1),(1,mul*2)]
+            #self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(4,1),(4,1)]
             self.initializerL  = ['truncated_normal' for i in range(10)]
             self.initializerL  = ['he_normal' for i in range(10)]
             self.bias_initializerL = ['random_normal' for i in range(10)]
@@ -978,14 +1173,11 @@ class fcnConfig:
             #self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
             #self.activationL  = ['relu','relu']+['swish' for i in range(5)]+['relu','relu']
             self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
-            self.poolL        = [AveragePooling2D,AveragePooling2D,MaxPooling2D,\
-            AveragePooling2D,AveragePooling2D,MaxPooling2D,MaxPooling2D,AveragePooling2D,\
-            MaxPooling2D,AveragePooling2D,MaxPooling2D]
-            self.poolL        = [MaxPooling2D,AveragePooling2D,MaxPooling2D,\
-            AveragePooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,AveragePooling2D,\
-            MaxPooling2D,AveragePooling2D,MaxPooling2D]
+            self.poolL        = [MaxPooling2D,MaxPooling2D,MaxPooling2D,\
+            MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,\
+            MaxPooling2D,MaxPooling2D,MaxPooling2D]
             self.lossFunc     = lossFuncSoft(w=10)#10
-            self.inAndOutFunc = inAndOutFuncNewUp
+            self.inAndOutFunc = inAndOutFuncNewNetUp#inAndOutFuncNewUp
             self.deepLevel = 1
         elif mode=='surfdt':
             self.inputSize     = [512*3,1,4]
@@ -1454,10 +1646,11 @@ class model(Model):
 
 class modelUp(Model):
     def __init__(self,weightsFile='',metrics=rateNp,\
-        channelList=[0],onlyLevel=-1000,up=1):
+        channelList=[0],onlyLevel=-1000,up=1,mul=1):
         #channelList=[0]
-        config=fcnConfig('surfUp',up=up)
+        config=fcnConfig('surfUp',up=up,mul=mul)
         #defProcess()
+        self.mul=mul
         config.inputSize[-1]=len(channelList)
         self.genM(config, onlyLevel)
         self.config = config
@@ -1467,16 +1660,15 @@ class modelUp(Model):
         if len(weightsFile)>0:
             model.load_weights(weightsFile)
         print(self.summary())
-
     def genM(self,config, onlyLevel=-1000):
         inputs, outputs = config.inAndOut(onlyLevel=onlyLevel)
         #outputs  = Softmax(axis=3)(last)
         super().__init__(inputs=inputs,outputs=outputs)
         self.compile(loss=config.lossFunc, optimizer='Nadam')
         return model
-    def predict(self,x,**kwargs):
+    def predict(self,x,batch_size=32,**kwargs):
         #print('inx')
-        maxN =500
+        maxN = 512
         NX = len(x)
         #print('inx done')
         if self.config.mode=='surf' or self.config.mode=='surfUp':
@@ -1484,10 +1676,10 @@ class modelUp(Model):
             for i in range(0,NX,maxN):
                 X = self.inx(x[i:min(i+maxN,NX)])
                 if len(X)>0:
-                    Y.append(super().predict(X,**kwargs))
+                    Y.append(super().predict(X,batch_size=batch_size,**kwargs))
             return np.concatenate(Y,axis=0)
         else:
-            return super().predict(x,**kwargs)
+            return super().predict(x,batch_size=batch_size,**kwargs)
     def fit(self,x,y,batchSize=None,**kwargs):
         x=self.inx(x)
         if np.isnan(x).sum()>0 or np.isinf(x).sum()>0:
@@ -1497,7 +1689,7 @@ class modelUp(Model):
     def plot(self,filename='model.png'):
         plot_model(self, to_file=filename)
     def inx(self,x):
-        if self.config.mode=='surf' or self.config.mode=='surfUp':
+        if self.config.mode=='surf' or self.config.mode=='surfUp' or self.config.mode=='surfUpMul':
             if x.shape[-1] > len(self.channelList):
                 x = x[:,:,:,self.channelList]
             timeN0 = np.float32(x.shape[1])
@@ -1587,6 +1779,7 @@ class modelUp(Model):
                 perN = min(500, perN)
         self.set_weights(w0)
         return resStr,trainTestLoss
+    
     def trainByXYTNew(self,XYT,N=2000,perN=200,batchSize=32,xTest='',\
         yTest='',k0 = 2e-3,t='',count0=20,resL=globalFL):
         resL.append(0)
@@ -1615,8 +1808,8 @@ class modelUp(Model):
             if int(sampleDone.mean())>sampleTime:
                 sampleTime = int(sampleDone.mean())
                 if len(xTest)>0:
-                    lossTrain = self.evaluate(self.inx(xTrain),yTrain)
-                    lossTest    = self.evaluate(self.inx(xTest),yTest)
+                    lossTrain = self.evaluate(self.inx(xTrain),yTrain,batch_size=batchSize)
+                    lossTest    = self.evaluate(self.inx(xTest),yTest,batch_size=batchSize)
                     print('train loss',lossTrain,'test loss: ',lossTest,\
                         'sigma: ',XYT.timeDisKwarg['sigma'],\
                         'w: ',self.config.lossFunc.w, \
@@ -1628,8 +1821,8 @@ class modelUp(Model):
                     if True:#i%90==0 and i>10:
                         youtTrain = 0
                         youtTest  = 0
-                        youtTrain = self.predict(xTrain)
-                        youtTest  = self.predict(xTest)
+                        youtTrain = self.predict(xTrain,batch_size=batchSize)
+                        youtTest  = self.predict(xTest,batch_size=batchSize)
                         for level in range(youtTrain.shape[-2]):
                             print('level',len(self.config.featureL)\
                                 -youtTrain.shape[-2]+level+1)
@@ -1656,7 +1849,76 @@ class modelUp(Model):
                         print('learning rate: ',self.optimizer.lr)
                     if True:#i>10 and i%50==0:
                         batchSize += batchSize
-                        batchSize = min(128, perN)
+                        batchSize = min(256, perN)
+                        print('batchSize ',batchSize)
+        self.set_weights(w0)
+        return resStr,trainTestLoss
+    def trainByXYTNewMul(self,XYT,N=2000,perN=200,batchSize=32,xTest='',\
+        yTest='',k0 = 2e-3,t='',count0=20,resL=globalFL,mul=1,testN=-1):
+        resL.append(0)
+        if k0>0:
+            K.set_value(self.optimizer.lr, k0)
+        indexL = range(len(XYT))
+        sampleDone = np.zeros(len(XYT))
+        #print(indexL)
+        lossMin =100
+        count   = count0
+        w0 = self.get_weights()
+        resStr=''
+        trainTestLoss = []
+        iL = random.sample(indexL,testN)
+        xTrain, yTrain , t0LTrain = XYT(iL,mul=mul)
+        print('training',xTrain.shape,len(iL))
+        sampleTime=0
+        r = len(XYT)/len(XYT.corrL)
+        for i in range(N):
+            gc.collect()
+            iL = random.sample(indexL,int(perN/mul))
+            for ii in iL:
+                sampleDone[ii]+=r*mul
+            x, y , t0L = XYT(iL,mul=mul,N=mul)
+            print('loop:',sampleDone.mean())
+            self.fit(x ,y,batchSize=batchSize)
+            if int(sampleDone.mean())>sampleTime:
+                sampleTime = int(sampleDone.mean())
+                if len(xTest)>0:
+                    lossTrain = self.evaluate(self.inx(xTrain),yTrain,batch_size=batchSize)
+                    lossTest    = self.evaluate(self.inx(xTest),yTest,batch_size=batchSize)
+                    print('train loss',lossTrain,'test loss: ',lossTest,\
+                        'sigma: ',XYT.corrL.timeDisKwarg['sigma'],\
+                        'w: ',self.config.lossFunc.w, \
+                        'no sampleRate:', 1 - np.sign(sampleDone).mean(),\
+                        'sampleTimes',sampleDone.mean(),'last F:',resL[-1],'min Loss:',lossMin,'count:',count)
+                    resStr+='\n %d train loss : %f valid loss :%f F: %f sampleTime: %d'%(i,lossTrain,lossTest,resL[-1],sampleTime)
+                    #lossTest-=resL[-1]
+                    trainTestLoss.append([i,lossTrain,lossTest])
+                    if True:#i%90==0 and i>10:
+                        youtTrain = 0
+                        youtTest  = 0
+                        youtTrain = self.predict(xTrain,batch_size=batchSize)
+                        youtTest  = self.predict(xTest,batch_size=batchSize)
+                        resStr+='\ntrain '+printRes_old(yTrain,youtTrain)
+                        resStr+='\ntest '+printRes_old(yTest, youtTest,isUpdate=True)
+                    if lossTest >= lossMin:
+                        count -= 1
+                    if lossTest > 3*lossMin and lossMin>0:
+                        self.set_weights(w0)
+                        #count = count0
+                        print('reset to smallest')
+                    if lossTest < lossMin:
+                        count = count0
+                        lossMin = lossTest
+                        w0 = self.get_weights()
+                        print('find better')
+                    if count <=0:
+                        break
+                    #print(self.metrics)
+                    if True:#i%15==0:
+                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.8)
+                        print('learning rate: ',self.optimizer.lr)
+                    if True:#i>10 and i%50==0:
+                        batchSize += batchSize
+                        batchSize = min(32, batchSize)
                         print('batchSize ',batchSize)
         self.set_weights(w0)
         return resStr,trainTestLoss
@@ -1730,6 +1992,9 @@ class modelUp(Model):
         y = self.predict(x)
         f = 1/T
         count = x.shape[1]
+        x = x.transpose([0,2,1,3]).reshape([-1,x.shape[1],1,x.shape[-1]])
+        y = y.transpose([0,2,1,3]).reshape([-1,y.shape[1],1,y.shape[-1]])
+        time0L=time0L.reshape([-1])
         for i in range(len(x)):
             up = round(y.shape[1]/x.shape[1])
             #print('show',i)
@@ -1798,6 +2063,10 @@ class modelUp(Model):
         dirName = os.path.dirname(outputDir)
         if not os.path.exists(dirName):
             os.makedirs(dirName)
+        x = x.transpose([0,2,1,3]).reshape([-1,x.shape[1],1,x.shape[-1]])
+        y = y.transpose([0,2,1,3]).reshape([-1,y.shape[1],1,y.shape[-1]])
+        y0 = y0.transpose([0,2,1,3]).reshape([-1,y0.shape[1],1,y0.shape[-1]])
+        time0L=time0L.reshape([-1])
         count = x.shape[1]
         for i in range(len(x)):
             up = round(y.shape[1]/x.shape[1])
