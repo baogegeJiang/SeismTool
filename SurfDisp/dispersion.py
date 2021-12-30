@@ -128,17 +128,16 @@ class config:
     def genFvFile(self, modelFile='', fvFile='', afStr=''):
         if len(modelFile) == 0:
             modelFile = self.originName
-        else:
-            if len(fvFile) == 0:
-                if not self.isFlat:
-                    fvFile = '%s_fv' % modelFile
-                else:
-                    fvFile = '%s_fv_flat' % modelFile
-                fvFile += '_' + self.getMode
-                fvFile += '_' + self.pog
-                fvFile = '%s_%d' % (fvFile, self.order)
-            if afStr != '':
-                fvFile = '%s%s' % (fvFile, afStr)
+        if len(fvFile) == 0:
+            if not self.isFlat:
+                fvFile = '%s_fv' % modelFile
+            else:
+                fvFile = '%s_fv_flat' % modelFile
+            fvFile += '_' + self.getMode
+            fvFile += '_' + self.pog
+            fvFile = '%s_%d' % (fvFile, self.order)
+        if afStr != '':
+            fvFile = '%s%s' % (fvFile, afStr)
         m = self.getModel(modelFile + afStr)
         print(m.modelFile)
         f, v = m.calDispersion(order=0, calMode=(self.calMode), threshold=(self.threshold), T=(self.T), pog=(self.pog))
@@ -166,10 +165,9 @@ class config:
     def getModelFileByIndex(self, i, modelMode=''):
         if modelMode == '':
             modelMode = self.modelMode
-        else:
-            if modelMode == 'norm':
-                return '%s%d' % (self.originName, i)
-            if modelMode == 'fileP':
+        if modelMode == 'norm':
+            return '%s%d' % (self.originName, i)
+        if modelMode == 'fileP':
                 return glob('%s%d_/*[0-9]' % (self.originName, i))
 
     def plotModelL(self, modelL):
@@ -210,11 +208,10 @@ class config:
     def getFV(self, index=-1, pog=''):
         if len(pog) == 0:
             pog = self.pog
+        if index == -1:
+            tmpName = self.originName + '_fv'
         else:
-            if index == -1:
-                tmpName = self.originName + '_fv'
-            else:
-                tmpName = '%s%d_fv' % (self.originName, index)
+            tmpName = '%s%d_fv' % (self.originName, index)
         if self.isFlat:
             tmpName += '_flat'
         tmpName += '_%s_%s_%d' % (self.getMode, pog, self.order)
@@ -1204,21 +1201,20 @@ class fv:
     def save(self, filename, mode='num'):
         if not os.path.exists(os.path.dirname(filename)):
             os.mkdir(os.path.dirname(filename))
-        else:
-            if mode == 'num':
-                np.savetxt(filename, np.concatenate([self.f.reshape([-1, 1]),
-                 self.v.reshape([-1, 1])],
-                  axis=1))
-                return
-            if mode == 'NEFile':
-                with open(filename, 'w+') as (f):
-                    for i in range(len(self.f)):
-                        T = 1 / self.f[i]
-                        v = self.v[i]
-                        std = -1
-                        if len(self.std) > 0:
-                            std = self.std[i]
-                        f.write('%f %f %f\n' % (T, v, std))
+        if mode == 'num':
+            np.savetxt(filename, np.concatenate([self.f.reshape([-1, 1]),
+                self.v.reshape([-1, 1])],
+                axis=1))
+            return
+        if mode == 'NEFile':
+            with open(filename, 'w+') as (f):
+                for i in range(len(self.f)):
+                    T = 1 / self.f[i]
+                    v = self.v[i]
+                    std = -1
+                    if len(self.std) > 0:
+                        std = self.std[i]
+                    f.write('%f %f %f\n' % (T, v, std))
 
     def update(self, self1, isReplace=True, threshold=0.1):
         v = self1(self.f).reshape([-1])
@@ -2979,78 +2975,77 @@ class corrL(list):
                 randN = np.random.rand(1)
                 Rand0 = np.random.rand(1)
                 Rand1 = np.random.rand(1)
+            i = iL[ii]
+            maxCount = min(maxCount0, self[i].xx.shape[0], self[i].x0.shape[0], self[i].x1.shape[0])
+            if modelNameO == '':
+                modelName = self[i].modelFile
+                if byAverage:
+                    if len(modelName.split('_')) >= 2:
+                        name0 = modelName.split('_')[(-2)]
+                        name1 = modelName.split('_')[(-1)]
+                        modelName0 = '%s_%s' % (name0, name1)
+                        modelName1 = '%s_%s' % (name1, name0)
+                        if modelName0 in fvD:
+                            modelName = modelName0
+                        if modelName1 in fvD:
+                            modelName = modelName1
             else:
-                i = iL[ii]
-                maxCount = min(maxCount0, self[i].xx.shape[0], self[i].x0.shape[0], self[i].x1.shape[0])
-                if modelNameO == '':
-                    modelName = self[i].modelFile
-                    if byAverage:
-                        if len(modelName.split('_')) >= 2:
-                            name0 = modelName.split('_')[(-2)]
-                            name1 = modelName.split('_')[(-1)]
-                            modelName0 = '%s_%s' % (name0, name1)
-                            modelName1 = '%s_%s' % (name1, name0)
-                            if modelName0 in fvD:
-                                modelName = modelName0
-                            if modelName1 in fvD:
-                                modelName = modelName1
-                else:
-                    modelName = modelNameO
-                tmpy, t0 = self[i].outputTimeDis((fvD[modelName]), T=T,
-                    sigma=sigma,
-                    byT=byT,
-                    byA=byA,
-                    rThreshold=rThreshold,
-                    set2One=set2One,
-                    move2Int=move2Int,
-                    noY=noY,
-                    randMove=randMove)
-                iP, iN = self.ipin(t0, self[i].fs)
-                y[ii, iP * up:maxCount * up + iN * up, 0, :] = tmpy[-iN * up:maxCount * up - iP * up]
-                x[ii, iP:maxCount + iN, 0, 0] = np.real(self[i].xx.reshape([
-                    -1]))[-iN:maxCount - iP]
-                dDis = self[i].dDis
-                if randMove:
-                    if randN <= randR:
-                        rand1 = 1 + randA * (2 * Rand0 - 1) * Rand1
-                        if np.random.rand(1) < 0.001:
-                            print('mul', mul)
-                            print('******* rand1:', rand1)
-                        dDis = dDis * rand1
-                delta0 = self[i].timeL[1] - self[i].timeL[0]
-                timeMin = dDis / 5.5
-                timeMax = dDis / 2.5
-                I0 = int(np.round(timeMin / delta0).astype(np.int))
-                I1 = int(np.round(timeMax / delta0).astype(np.int))
-                x[ii, I0:I1, 0, 1] = 1
-                t0L[ii] = t0 - iN / self[i].fs - iP / self[i].fs
-                dt = np.random.rand() * 5 - 2.5
-                iP, iN = self.ipin(t0 + dt, self[i].fs)
-                x[ii, iP:maxCount + iN, 0, 2] = self[i].x0.reshape([
-                    -1])[-iN:maxCount - iP]
-                iP, iN = self.ipin(dt, self[i].fs)
-                x[ii, iP:maxCount + iN, 0, 3] = self[i].x1.reshape([
-                    -1])[-iN:maxCount - iP]
-                if randMove:
-                    if randN > randR:
-                        dT = (Rand0 - 0.5) * 2 * (self[i].dDis / midV) * randA * Rand1
-                        dN = int(np.round(dT * self[i].fs).astype(np.int))
-                        if np.random.rand() < 0.001:
-                            print('##random ', dT, dN, self[i].dDis)
-                        if dN > 0:
-                            for channel in (0, ):
-                                x[ii, dN:, 0, channel] = x[ii, :-dN, 0, channel]
-                                x[ii, :dN, 0, channel] = 0
+                modelName = modelNameO
+            tmpy, t0 = self[i].outputTimeDis((fvD[modelName]), T=T,
+                sigma=sigma,
+                byT=byT,
+                byA=byA,
+                rThreshold=rThreshold,
+                set2One=set2One,
+                move2Int=move2Int,
+                noY=noY,
+                randMove=randMove)
+            iP, iN = self.ipin(t0, self[i].fs)
+            y[ii, iP * up:maxCount * up + iN * up, 0, :] = tmpy[-iN * up:maxCount * up - iP * up]
+            x[ii, iP:maxCount + iN, 0, 0] = np.real(self[i].xx.reshape([
+                -1]))[-iN:maxCount - iP]
+            dDis = self[i].dDis
+            if randMove:
+                if randN <= randR:
+                    rand1 = 1 + randA * (2 * Rand0 - 1) * Rand1
+                    if np.random.rand(1) < 0.001:
+                        print('mul', mul)
+                        print('******* rand1:', rand1)
+                    dDis = dDis * rand1
+            delta0 = self[i].timeL[1] - self[i].timeL[0]
+            timeMin = dDis / 5.5
+            timeMax = dDis / 2.5
+            I0 = int(np.round(timeMin / delta0).astype(np.int))
+            I1 = int(np.round(timeMax / delta0).astype(np.int))
+            x[ii, I0:I1, 0, 1] = 1
+            t0L[ii] = t0 - iN / self[i].fs - iP / self[i].fs
+            dt = np.random.rand() * 5 - 2.5
+            iP, iN = self.ipin(t0 + dt, self[i].fs)
+            x[ii, iP:maxCount + iN, 0, 2] = self[i].x0.reshape([
+                -1])[-iN:maxCount - iP]
+            iP, iN = self.ipin(dt, self[i].fs)
+            x[ii, iP:maxCount + iN, 0, 3] = self[i].x1.reshape([
+                -1])[-iN:maxCount - iP]
+            if randMove:
+                if randN > randR:
+                    dT = (Rand0 - 0.5) * 2 * (self[i].dDis / midV) * randA * Rand1
+                    dN = int(np.round(dT * self[i].fs).astype(np.int))
+                    if np.random.rand() < 0.001:
+                        print('##random ', dT, dN, self[i].dDis)
+                    if dN > 0:
+                        for channel in (0, ):
+                            x[ii, dN:, 0, channel] = x[ii, :-dN, 0, channel]
+                            x[ii, :dN, 0, channel] = 0
 
-                            y[ii, dN * up:, 0, :] = y[ii, :-dN * up, 0, :]
-                            y[ii, :dN * up, 0, :] = 0
-                        if dN < 0:
-                            for channel in (0, ):
-                                x[ii, :dN, 0, channel] = x[ii, -dN:, 0, channel]
-                                x[ii, dN:, 0, channel] = 0
+                        y[ii, dN * up:, 0, :] = y[ii, :-dN * up, 0, :]
+                        y[ii, :dN * up, 0, :] = 0
+                    if dN < 0:
+                        for channel in (0, ):
+                            x[ii, :dN, 0, channel] = x[ii, -dN:, 0, channel]
+                            x[ii, dN:, 0, channel] = 0
 
-                            y[ii, :dN * up, 0, :] = y[ii, -dN * up:, 0, :]
-                            y[ii, dN * up:, 0, :] = 0
+                        y[ii, :dN * up, 0, :] = y[ii, -dN * up:, 0, :]
+                        y[ii, dN * up:, 0, :] = 0
             dDisL[ii] = self[i].dDis
             deltaL[ii] = self[i].timeLOut[1] - self[i].timeLOut[0]
         xStd = x.std(axis=1, keepdims=True)
@@ -3895,11 +3890,8 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
                                                     modelFile1 = quakeName + '_' + modelFile1
                                                 if modelFile0 in fvD:
                                                     modelFile = modelFile0
-                                                else:
-                                                    if modelFile1 in fvD:
-                                                        modelFile = modelFile1
-                                                    else:
-                                                        modelFile = modelFile0
+                                                if modelFile1 in fvD:
+                                                    modelFile = modelFile1
                                                 if isLoadFv:
                                                     if modelFile0 not in fvD:
                                                         if modelFile1 not in fvD:
