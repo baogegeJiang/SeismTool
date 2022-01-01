@@ -21,6 +21,7 @@ from ..mathTool.mathFunc import getDetec,xcorrSimple,xcorrComplex,flat,validL,ra
 from ..mathTool.distaz import DistAz
 import gc
 from matplotlib import colors
+import h5py
 gpdcExe = '/home/jiangyr/program/geopsy/bin/gpdc'
 Vav = -1
 
@@ -1166,8 +1167,8 @@ class fv:
                 pass
             else:
                 if len(self.std) > 0:
-                    self.STD = interpolate.interp1d((self.f), (self.std), kind='linear', bounds_error=False,
-                      fill_value=1e-08)
+                    self.STD = interpolate.interp1d((self.f), (self.std), kind='linear', fill_value='extrapolate',
+                      bounds_error=False)
             return interpolate.interp1d((self.f), (self.v), kind='linear', bounds_error=False,
               fill_value='extrapolate')
 
@@ -1391,10 +1392,10 @@ def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minD
     plt.figure(figsize=[2.5, 2])
     plt.hist2d(DISTL, FL, bins=(binD, binF), rasterized=True, cmap='Greys', norm=(colors.LogNorm()))
     if isCover:
-        plt.plot(fLDis, minDis, 'r')
-        plt.plot(fLDis, maxDis, 'r')
-        plt.plot(fLDis, minDis * (1 - R), '--r')
-        plt.plot(fLDis, maxDis * (1 + R), '--r')
+        plt.plot( minDis,fLDis, 'r',linewidth=1)
+        plt.plot( maxDis, fLDis,'r',linewidth=1)
+        plt.plot( minDis * (1 - R), fLDis,'--r',linewidth=1)
+        plt.plot( maxDis * (1 + R), fLDis,'--r',linewidth=1)
     plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('distance(km)')
@@ -2097,9 +2098,10 @@ def plotFVM(fvM, fvD={}, fvDRef={}, resDir='test/', isDouble=False, stations=[],
             keyNew = sta1 + '_' + sta0
             if keyNew in fvM:
                 fvL += fvM[keyNew]
-        fvMean = fvD[key]
-        fvRef = fvDRef[key0]
-        plotFVL(fvL, fvMean, fvRef, filename=filename, title=key, dist=dist, **kwags)
+        if key in fvD:
+            fvMean = fvD[key]
+            fvRef = fvDRef[key0]
+            plotFVL(fvL, fvMean, fvRef, filename=filename, title=key, dist=dist, **kwags)
 
 
 def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1], title='fvL', fL0=[], dist=-1):
@@ -2165,8 +2167,8 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1], t
             vRef[vRef < 1] = np.nan
             hRef, = plt.plot(vRef, f, 'b', linewidth=0.3, label='manual')
             hGet, = plt.plot(v, f, 'r', linewidth=0.3, label='predict')
-            hD, = plt.plot((vRef * 0.99), f, '-.b', linewidth=0.3, label='$\\pm$ 1%')
-            plt.plot((vRef * 1.01), f, '-.b', linewidth=0.3)
+            hD, = plt.plot((vRef * 0.985), f, '-.b', linewidth=0.3, label='$\\pm$ 1.5%')
+            plt.plot((vRef * 1.015), f, '-.b', linewidth=0.3)
             plt.legend()
             plt.gca().set_yscale('log')
             plt.ylim([f.min(), f.max()])
@@ -2395,6 +2397,8 @@ def saveFvD(fvD, fileDir='./'):
         fvD[key].save((fileDir + '/' + key + '-pvt.dat'), mode='NEFile')
 
 
+h5Str = h5py.special_dtype(vlen=str)
+
 class corr:
     sigCount = 1
 
@@ -2466,6 +2470,40 @@ class corr:
           'x1', np.float32, maxCount),
          (
           'quakeName', np.str, 200)])
+        return corrType
+    def getDtypeH5(self, maxCount):
+        self.maxCount = maxCount
+        corrType = np.dtype([('xx', np.complex64, maxCount),
+         (
+          'timeL', np.float32, maxCount),
+         (
+          'dDis', np.float64, 1),
+         (
+          'fs', np.float64, 1),
+         (
+          'az', np.float64, 2),
+         (
+          'dura', np.float64, 1),
+         (
+          'M', np.float64, 7),
+         (
+          'dis', np.float64, 2),
+         (
+          'dep', np.float64, 1),
+         (
+          'modelFile', h5Str, 1),
+         (
+          'name0', h5Str,1),
+         (
+          'name1', h5Str, 1),
+         (
+          'srcSac', h5Str, 1),
+         (
+          'x0', np.float32, maxCount),
+         (
+          'x1', np.float32, maxCount),
+         (
+          'quakeName', h5Str, 1)])
         return corrType
     def outputTimeDis(self, FV, T=np.array([5, 10, 20, 30, 50, 80, 100, 150, 200, 250, 300]), sigma=2, byT=False, byA=False, rThreshold=0.1, set2One=False, move2Int=False, noY=False, randMove=False):
         self.T = T
@@ -2662,6 +2700,11 @@ class corr:
 
     def toMat(self):
         self.dtype = self.getDtype(self.xx.shape[0])
+        return np.array((self.xx, self.timeL, self.dDis, self.fs, self.az, self.dura,
+         self.M, self.dis, self.dep, self.modelFile, self.name0, self.name1,
+         self.srcSac, self.x0, self.x1, self.quakeName), self.dtype)
+    def toMatH5(self):
+        self.dtype = self.getDtypeH5(self.xx.shape[0])
         return np.array((self.xx, self.timeL, self.dDis, self.fs, self.az, self.dura,
          self.M, self.dis, self.dep, self.modelFile, self.name0, self.name1,
          self.srcSac, self.x0, self.x1, self.quakeName), self.dtype)
@@ -2883,20 +2926,54 @@ class corrL(list):
         plt.savefig((fileName[:-4] + '_%.2f_Rela.jpg' % threshold), dpi=300)
         plt.close()
 
-    def load(self, head):
-        for matFile in glob(head + '*/*/*.mat'):
-            print(matFile)
-            tmp = corr()
-            tmp.setFromFile(matFile)
-            self.append(tmp)
-
     def loadByDirL(self, heads):
         for head in heads:
             for matFile in glob(head + '*.mat'):
                 tmp = corr()
                 tmp.setFromFile(matFile)
                 self.append(tmp)
-
+    def loadByGroupsH5(self, groupNames,h5):
+        if isinstance(h5,h5py.File):
+            for groupName in groupNames:
+                if groupName in h5:
+                    group = h5[groupName]
+                    for matFile in group:
+                        tmp = corr()
+                        tmp.setFromDict(np.array(group[matFile]))
+                        self.append(tmp)
+        else:
+            with h5py.File(h5,'r') as h5:
+                self.loadByDirLH5(groupNames,h5)
+    def loadByNamesH5(self, names,h5):
+        if isinstance(h5,h5py.File):
+            for name in names:
+                if '_' not in name:
+                    pass
+                else:
+                    sta0, sta1 = name.split('_')[-2:]
+                    if sta0 > sta1:
+                        sta1, sta0 = sta0, sta1
+                    groupName = sta1+'_'+sta1
+                    if groupName in h5:
+                        group = h5[groupName]
+                        if name in group:
+                            tmp = corr()
+                            tmp.setFromDict(np.array(group[name]))
+                            self.append(tmp)
+        else:
+            with h5py.File(h5,'r') as h5:
+                self.loadByNamesH5(names,h5)
+    def loadByH5(self, h5):
+        if isinstance(h5,h5py.File):
+            for groupName in h5:
+                group = h5[groupName]
+                for name in group:
+                    tmp = corr()
+                    tmp.setFromDict(np.array(group[name]))
+                    self.append(tmp)
+        else:
+            with h5py.File(h5,'r') as h5:
+                self.loadByH5(h5)
     def loadByNames(self, matDir, names):
         for name in names:
             if '_' not in name:
@@ -2914,6 +2991,8 @@ class corrL(list):
                     self.append(tmp)
 
     def save(self, head):
+        if 'h5'==head[-2:]:
+            return self.saveH5(head)
         fileDir = os.path.dirname(head)
         if not os.path.exists(fileDir):
             os.makedirs(fileDir)
@@ -2933,7 +3012,29 @@ class corrL(list):
                 fileName = tmpDir + modelName + '.mat'
                 mat = tmp.toMat()
                 sio.savemat(fileName, {'corr': mat})
-
+    def saveH5(self, f):
+        if isinstance(f,h5py.File):
+            for i in range(len(self)):
+                tmp = self[i]
+                print(i)
+                modelName = tmp.modelFile
+                if '_' not in modelName:
+                    pass
+                else:
+                    sta0, sta1 = modelName.split('_')[-2:]
+                    if sta0 > sta1:
+                        sta1, sta0 = sta0, sta1
+                    tmpGroup =  sta0 + '_' + sta1
+                    if tmpGroup not in f:
+                        f.create_group(tmpGroup)
+                    fileName = modelName
+                    mat = tmp.toMatH5()
+                    if fileName in f[tmpGroup]:
+                        f[tmpGroup].pop(fileName)
+                    f[tmpGroup][fileName]=mat
+        else:
+            with h5py.File(f,'a') as f:
+                self.saveH5(f)
     def setTimeDis(self, *argv, **kwargs):
         self.timeDisArgv = argv
         self.timeDisKwarg = kwargs
@@ -3645,7 +3746,7 @@ class corrD(dict):
             iLNew = iL.reshape([-1,mul])
             np.random.shuffle(iLNew)
             iL = iLNew.reshape([-1])
-        print(len(iL))
+        #print(len(iL))
         x, y, t = self.corrL(np.array(iL))
         return (x.reshape([-1, mul, x.shape[1], x.shape[(-1)]]).transpose([0, 2, 1, 3]), y.reshape([-1, mul, y.shape[1], y.shape[(-1)]]).transpose([0, 2, 1, 3]), t.reshape([-1, mul]))
     def getAndSaveOld(self, model, fileName, stations, isPlot=False, isSimple=True, D=0.2, isLimit=False, isFit=False, minProb=0.7, mul=1):

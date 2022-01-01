@@ -221,13 +221,15 @@ def printRes_old(yin, yout,resL=globalFL,isUpdate=False):
     youtPos = yout.argmax(axis=1)
     yinMax = yin.max(axis=1)
     youtMax = yout.max(axis=1)
-    for maxD in [0.03,0.02,0.015,0.01]:
-        for minP in [0.5,0.6,0.7,0.8]:
+    for maxD in [0.03,0.015,0.01]:
+        for minP in [0.5,0.6,0.8]:
             hitRate,rightRate,F,mean,std = rateNp(\
                 yinPos,youtPos,yinMax,youtMax,maxD=maxD,minP=minP)
-            strL += strfmt%(maxD, minP, hitRate, rightRate,F,mean,std)
+            tmpStr=strfmt%(maxD, minP, hitRate, rightRate,F,mean,std)
+            strL += tmpStr
             if maxD == 0.015 and minP==0.5 and (not np.isnan(F)) and isUpdate:
                 resL.append(F)
+        strL+='\n'+('-'*len(tmpStr))
     print(strL)
     return strL
 
@@ -377,16 +379,18 @@ def inAndOutFuncNewNetUp(config, onlyLevel=-10000):
             kernel_initializer=config.initializerL[i],\
             bias_initializer=config.bias_initializerL[i])(last)
         if config.isBNL[i]:
-            last = BatchNormalization(axis=BNA,trainable=True,name='BN'+layerStr+'0')(last)
+            last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
 
         last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
         convL[i] =last
-
-        last = Conv2D(config.featureL[i],kernel_size=config.kernelL[i],\
-            strides=(1,1),padding='same',name=name+layerStr+'1',\
-            kernel_initializer=config.initializerL[i],\
-            bias_initializer=config.bias_initializerL[i])(last)
-        last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
+        if config.doubleConv[i]:
+            last = Conv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'1',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i])(last)
+            if config.isBNL[i]:
+                last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
+            last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
         last = config.poolL[i](pool_size=config.strideL[i],\
             strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
     convL[depth] =last
@@ -404,26 +408,27 @@ def inAndOutFuncNewNetUp(config, onlyLevel=-10000):
                 kernel_initializer=config.initializerL[j],\
                 bias_initializer=config.bias_initializerL[j])(dConvL[j+1])
             
-            if j in config.dropOutL:
-                jj   = config.dropOutL.index(j)
-                dConvL[j] =  Dropout(config.dropOutRateL[jj],name='Dropout_'+layerStr+'0')(dConvL[j])
-            else:
-                if config.isBNL[j]:
-                    dConvL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'0')(dConvL[j])
+            if config.isBNL[j]:
+                dConvL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'0')(dConvL[j])
             dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
             dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
-            dConvL[j]  = Conv2D(config.featureL[j],kernel_size=config.kernelL[j],\
-                    strides=(1,1),padding='same',name=name+layerStr+'1',\
-                    kernel_initializer=config.initializerL[j],\
-                    bias_initializer=config.bias_initializerL[j])(dConvL[j])
-            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'1')
+            if config.doubleConv[i]:
+                dConvL[j]  = Conv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                        strides=(1,1),padding='same',name=name+layerStr+'1',\
+                        kernel_initializer=config.initializerL[j],\
+                        bias_initializer=config.bias_initializerL[j])(dConvL[j])
+                if config.isBNL[j]:
+                    dConvL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'1')(dConvL[j])
+                dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'1')(dConvL[j])
+                dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'1')
             if i <config.deepLevel and j==0:
                 if config.strideL[-1][0]>1:
                     upL[j]= Conv2DTranspose(config.featureL[j],kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],\
                     bias_initializer=config.bias_initializerL[j])(dConvL[0])
                     upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
+                    upL[j]  = Conv2D(config.featureL[j]*(len(config.featureL)-i+1),kernel_size=config.kernelL[j],strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(upL[j])
                     if config.isBNL[-1]:
-                        upL[j] = BatchNormalization(axis=BNA,trainable=True,name='BN_'+layerStr+'1'+'_Up')(upL[j])
+                        upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'1'+'_Up')(upL[j])
                     upL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1'+'_Up')(upL[j])
                 else: 
                     upL[j]=dConvL[0]
@@ -1153,7 +1158,8 @@ class fcnConfig:
             self.featureL      = [60,60,60,80,80,80,100,100]
             self.featureL      = [30,30,30,45,45,45,60,60]
             self.featureL      = [60,60,60,60,80,80,80,80,100,100,30*mul]
-            self.featureL      = [60,60,60,80,80,80,100,30*mul]
+            self.featureL      = [60,60,60,80,80,80,80,120]
+            self.featureL      = [60,60,60,60,80,80,80,80]
             #self.featureL      = [8,12,16,32,48,64,96,128,160]
             #self.featureL      = [10,15,20,30,40,60,80,100,120]
             #self.featureL      = [10,15,20,30,50,80,100,120,160]
@@ -1163,6 +1169,7 @@ class fcnConfig:
             self.strideL       = [(4,1),(4,1),(4,1),(2,1),(2,1),(3,1),(2,1),(1,mul)  ,(up,1)]
             self.kernelL       = [(12,1),(12,1),(12,1),(6,1),(6,1),(6,1),(2,1),(1,mul*2),(up*3,1)]
             self.isBNL       = [True]*20
+            self.doubleConv    = [True]*20
             #self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(4,1),(4,1)]
             self.initializerL  = ['truncated_normal' for i in range(20)]
             self.initializerL  = ['he_normal' for i in range(20)]
@@ -1172,10 +1179,11 @@ class fcnConfig:
             self.dropOutRateL = []#[0.2,0.2,0.2]#[0.2,0.2,0.2]
             #self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
             #self.activationL  = ['relu','relu']+['swish' for i in range(5)]+['relu','relu']
-            self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
+            self.activationL  = ['relu']*10
             self.poolL        = [MaxPooling2D,MaxPooling2D,MaxPooling2D,\
             MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,\
             MaxPooling2D,MaxPooling2D,MaxPooling2D]
+            self.poolL        = [MaxPooling2D,AveragePooling2D]*10
             self.lossFunc     = lossFuncSoft(w=10)#10
             self.inAndOutFunc = inAndOutFuncNewNetUp#inAndOutFuncNewUp
             self.lossFuncNP     = lossFuncSoftNP()

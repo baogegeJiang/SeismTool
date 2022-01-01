@@ -407,7 +407,7 @@ class run:
 		sigma[N_5:2*N_5]= 1.5
 		sigma[2*N_5:3*N_5]=1.75
 		sigma[3*N_5:4*N_5]=2
-		sigma[4*N_5:5*N_5]=3
+		sigma[4*N_5:5*N_5]=2.25
 		self.config.sigma=sigma
 		fcn.trainAndTestMul(self.model,self.corrDTrain,self.corrDValid,self.corrDTest,\
                         outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=3e-3,mul=para['mul'])#w0=3#4
@@ -598,7 +598,7 @@ class run:
 				self.corrL.save(para['matDir'])
 				self.corrL = 0
 				gc.collect()
-	def calFromCorr(self,isLoadModel=False,N=3000):
+	def calFromCorr(self,isLoadModel=False,M=3000):
 		config     = self.config
 		para       = config.para
 		N          = len(para['stationFileL'])
@@ -620,6 +620,8 @@ class run:
 			q.sort()
 			perN= self.config.para['perN']
 			corrL = d.corrL()
+			fvDAvarage={}
+			fvDAvarage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
 			for j in range(len(sta)):
 				print(j,'of',len(sta))
 				for k in range(j,len(sta)):
@@ -629,14 +631,16 @@ class run:
 					if sta0>sta1:
 						sta1,sta0=[sta0,sta1]
 					corrL.loadByDirL([matDir+'/'+sta0+'/'+sta1+'/'])
-					if len(corrL)>N or (j==len(sta)-2 and k==j+1 and len(corrL)>0 ):
+					if len(corrL)>M or (j==len(sta)-2 and k==j+1 and len(corrL)>0 ):
 						corrL.reSetUp(up=para['up'])
-						corrL.setTimeDis(self.fvDAvarage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
+						corrL.setTimeDis(fvDAvarage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
 						byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
 						set2One=True,move2Int=False,modelNameO=para['refModel'],noY=True)
 						corrD = d.corrD(corrL)
+						print('predicting')
 						corrD.getAndSaveOld(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
 						,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'],mul=para['mul'])
+						print('predicted')
 						corrD.corrL=0
 						corrD=0
 						corrL = d.corrL()
@@ -1423,7 +1427,7 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'lalo'        :[37.5,55,110,136.5],#[-90,90,0,180],#[38,54,110,134],#[20,34,96,108][]*******,\
 	'minThreshold':0.015,\
 	'thresholdTrain'   :0.015,\
-	'threshold'   :0.02,\
+	'threshold'   :0.015,\
 	'qcThreshold': 0.82285,\
 	'minProb'     :0.5,\
 	'minP'        :0.5,\
@@ -1500,7 +1504,7 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'randA'       : 0.00,\
 	'midV'        : 4,\
 	'mul'		  : 6,\
-	'resDir'      : '/media/jiangyr/MSSD/20211207NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220101NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 2,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           : [0,5,10,15,20,25,30,40,50,60,70,80,100,120,160,200,350,500],#[0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,175,200,250,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
@@ -1517,11 +1521,11 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'lalo'        :[32,180,103,135],#,#[-90,90,0,180],#[38,54,110,134],#[20,34,96,108][]*******,\
 	'minThreshold':0.015,\
 	'thresholdTrain'   :0.015,\
-	'threshold'   :0.02,\
+	'threshold'   :0.015,\
 	'qcThreshold': 0.82285,\
 	'minProb'     :0.5,\
 	'minP'        :0.5,\
-	'minSta'      : 3,\
+	'minSta'      : 4,\
 	'laL'         : [],\
 	'loL'         : [],\
 	'areasLimit'  :  3,\

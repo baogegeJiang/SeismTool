@@ -14,7 +14,7 @@ isCoverQC = True
 #R.plotGetDis()
 R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=False,isDisQC=isDisQC)#True
 R.getDisCover()
-#R.plotTrainDis()
+R.plotTrainDis()
 R.model=None
 R.loadModelUp()
 run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
@@ -70,7 +70,7 @@ run.fcn.modelUp.show(R.model,R.corrLTest.x[::100],R.corrLTest.y[::100],outputDir
 reload(run.d)
 run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compareV10/')
 
-run.d.plotFVM(R.fvMGet,R.fvAvGet,R.fvDAvarage,resDir=R.config.para['trainDir']+'pairsTrainTest1229/',isDouble=True,fL0=1/R.config.para['T'],stations=R.stations,keyL=R.fvTest)
+run.d.plotFVM(R.fvMGet,R.fvAvGet,R.fvDAvarage,resDir='predict/'+'pairsTrainTest220101V2/',isDouble=True,fL0=1/R.config.para['T'],stations=R.stations,keyL=R.fvTest)
 
 M,V0,V1=run.d.compareInF(R.fvDAvarage,R.fvAvGet,R.stations,1/R.config.para['T'],R=R.config.para['R'])
 from SeismTool.mathTool import mathFunc
