@@ -18,6 +18,7 @@ R.plotTrainDis()
 R.model=None
 R.loadModelUp()
 run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+run.d.corrL.saveH5(cL,'/media/jiangyr/1TSSD/trainSet2.h5')
 #run.run.train(R,isAverage=False,isRand=True,isShuffle=True)
 #R.train(up=5,isRand=True,isShuffle=True)
 #run.run.loadCorr(R,isLoad=False)

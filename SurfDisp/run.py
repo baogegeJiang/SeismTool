@@ -11,6 +11,7 @@ from . import DSur
 from . import dispersion as d
 import gc
 from scipy import fftpack,interpolate
+import h5py
 #主要还是需要看如何分批次更新
 #提前分配矩阵可能不影响
 #插值之后绘图，避免不对应
@@ -195,7 +196,7 @@ class run:
 					corrL   += corrL0
 				else:
 					corrL = d.corrL()
-					corrL.loadByNames(trainSetDir,fvD0)
+					corrL.loadByH5(para['trainH5'])
 					self.loadFvL(trainSetDir)
 		if isLoad:
 			self.corrL  = d.corrL(corrL,maxCount=para['maxCount'])
@@ -560,44 +561,47 @@ class run:
 				self.corrL.save(para['matSaveDir'])
 				gc.collect()
 				
-	def calCorrOneByOne(self,isLoadModel=False):
+	def calCorrOneByOne(self):
 		config     = self.config
 		para       = config.para
 		N          = len(para['stationFileL'])
-		for i in range(N):
-			sta     = seism.StationList(para['stationFileL'][i])
-			sta.inR(para['lalo'])
-			print('sta num:',len(sta))
-			sta.set('oRemove', para['oRemoveL'][i])
-			sta.getInventory()
-			q       = seism.QuakeL(para['quakeFileL'][i])
-			print(para['quakeFileL'][i],len(q))
-			self.stations = sta
-			self.q=q
-			q.set('sort','sta')
-			q.sort()
-			perN= self.config.para['perN']
-			for j in range(self.config.para['gpuIndex'],int(len(q)/perN),self.config.para['gpuN']):#self.config.para['gpuIndex']
-				print('doing for %d %d in %d'%(j*perN,min(len(q)-1,j*perN+perN),len(q)))
-				'''
-				corrL0  = para['dConfig'].quakeCorr(q,sta,\
+		with h5py.File(para['matH5'],'a') as h5:
+			for i in range(N):
+				sta     = seism.StationList(para['stationFileL'][i])
+				sta.inR(para['lalo'])
+				print('sta num:',len(sta))
+				sta.set('oRemove', para['oRemoveL'][i])
+				sta.getInventory()
+				q       = seism.QuakeL(para['quakeFileL'][i])
+				print(para['quakeFileL'][i],len(q))
+				self.stations = sta
+				self.q=q
+				q.set('sort','sta')
+				q.sort()
+				perN= self.config.para['perN']
+				fvDAvarage={}
+				fvDAvarage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
+				for j in range(self.config.para['gpuIndex'],int(len(q)/perN),self.config.para['gpuN']):#self.config.para['gpuIndex']
+					print('doing for %d %d in %d'%(j*perN,min(len(q)-1,j*perN+perN),len(q)))
+					'''
+					corrL0  = para['dConfig'].quakeCorr(q,sta,\
+								byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
+								minSNR=para['minSNRL'][i],isLoadFv=para['isLoadFvL'][i],\
+								fvD=fvD,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],resDir=para['eventDir'],maxCount=para['maxCount'],up=para['up'])
+					'''
+					corrL0  = para['dConfig'].quakeCorr(q[j*perN:min(len(q)-1,j*perN+perN)],sta,\
 							byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
-							minSNR=para['minSNRL'][i],isLoadFv=para['isLoadFvL'][i],\
-							fvD=fvD,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],resDir=para['eventDir'],maxCount=para['maxCount'],up=para['up'])
-				'''
-				corrL0  = para['dConfig'].quakeCorr(q[j*perN:min(len(q)-1,j*perN+perN)],sta,\
-						byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
-						minSNR=para['minSNRL'][i],isLoadFv=False,\
-						fvD={},isByQuake=para['isByQuakeL'][i],para=para['sacPara'],\
-						resDir=para['eventDir'],maxCount=para['maxCount'])
-				self.corrL  = d.corrL(corrL0,maxCount=para['maxCount'])
-				if len(self.corrL)==0:
-					continue
-				self.corrL.reSetUp(up=para['up'])
-				#self.calRes()
-				self.corrL.save(para['matDir'])
-				self.corrL = 0
-				gc.collect()
+							minSNR=para['minSNRL'][i],isLoadFv=False,\
+							fvD=fvDAvarage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],\
+							resDir=para['eventDir'],maxCount=para['maxCount'])
+					self.corrL  = d.corrL(corrL0,maxCount=para['maxCount'])
+					if len(self.corrL)==0:
+						continue
+					self.corrL.reSetUp(up=para['up'])
+					#self.calRes()
+					self.corrL.saveH5(h5)
+					self.corrL = 0
+					gc.collect()
 	def calFromCorr(self,isLoadModel=False,M=3000):
 		config     = self.config
 		para       = config.para
@@ -607,44 +611,45 @@ class run:
 			print('loadFile')
 			self.loadModelUp(para['modelFile'])
 		for i in range(N):
-			sta     = seism.StationList(para['stationFileL'][i])
-			sta.inR(para['lalo'])
-			print('sta num:',len(sta))
-			sta.set('oRemove', para['oRemoveL'][i])
-			sta.getInventory()
-			q       = seism.QuakeL(para['quakeFileL'][i])
-			print(para['quakeFileL'][i],len(q))
-			self.stations = sta
-			self.q=q
-			q.set('sort','sta')
-			q.sort()
-			perN= self.config.para['perN']
-			corrL = d.corrL()
-			fvDAvarage={}
-			fvDAvarage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
-			for j in range(len(sta)):
-				print(j,'of',len(sta))
-				for k in range(j,len(sta)):
-					print(j,'of',len(sta),k)
-					sta0=sta[j]['net']+'.'+sta[j]['sta']
-					sta1=sta[k]['net']+'.'+sta[k]['sta']
-					if sta0>sta1:
-						sta1,sta0=[sta0,sta1]
-					corrL.loadByDirL([matDir+'/'+sta0+'/'+sta1+'/'])
-					if len(corrL)>M or (j==len(sta)-2 and k==j+1 and len(corrL)>0 ):
-						corrL.reSetUp(up=para['up'])
-						corrL.setTimeDis(fvDAvarage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
-						byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
-						set2One=True,move2Int=False,modelNameO=para['refModel'],noY=True)
-						corrD = d.corrD(corrL)
-						print('predicting')
-						corrD.getAndSaveOld(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
-						,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'],mul=para['mul'])
-						print('predicted')
-						corrD.corrL=0
-						corrD=0
-						corrL = d.corrL()
-					gc.collect()
+			with h5py.File(para['matH5']) as h5:
+				sta     = seism.StationList(para['stationFileL'][i])
+				sta.inR(para['lalo'])
+				print('sta num:',len(sta))
+				sta.set('oRemove', para['oRemoveL'][i])
+				sta.getInventory()
+				q       = seism.QuakeL(para['quakeFileL'][i])
+				print(para['quakeFileL'][i],len(q))
+				self.stations = sta
+				self.q=q
+				q.set('sort','sta')
+				q.sort()
+				perN= self.config.para['perN']
+				corrL = d.corrL()
+				fvDAvarage={}
+				fvDAvarage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
+				for j in range(len(sta)):
+					print(j,'of',len(sta))
+					for k in range(j,len(sta)):
+						print(j,'of',len(sta),k)
+						sta0=sta[j]['net']+'.'+sta[j]['sta']
+						sta1=sta[k]['net']+'.'+sta[k]['sta']
+						if sta0>sta1:
+							sta1,sta0=[sta0,sta1]
+						corrL.loadByPairsH5([sta0+'_'+sta1],h5)
+						if len(corrL)>M or (j==len(sta)-2 and k==j+1 and len(corrL)>0 ):
+							corrL.reSetUp(up=para['up'])
+							corrL.setTimeDis(fvDAvarage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
+							byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
+							set2One=True,move2Int=False,modelNameO=para['refModel'],noY=True)
+							corrD = d.corrD(corrL)
+							print('predicting')
+							corrD.getAndSaveOld(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
+							,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'],mul=para['mul'])
+							print('predicted')
+							corrD.corrL=0
+							corrD=0
+							corrL = d.corrL()
+						gc.collect()
 	
 	def calRes(self):
 		para = self.config.para
@@ -1406,6 +1411,8 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'maxCount'    : 512*3,\
 	'trainMatDir'	  :'/media/jiangyr/1TSSD/matDir/',\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
+	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
+	'matH5'	  :'/media/jiangyr/1TSSD/all.h5',\
 	'randA'       : 0.03,\
 	'midV'        : 4,\
 	'mul'		  : 6,\
@@ -1501,6 +1508,8 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'maxCount'    : 512*3,\
 	'trainMatDir' :'/media/jiangyr/1TSSD/matDir/',\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
+	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
+	'matH5'	  :'/media/jiangyr/1TSSD/all.h5',\
 	'randA'       : 0.00,\
 	'midV'        : 4,\
 	'mul'		  : 6,\

@@ -236,35 +236,35 @@ class config:
                     quake = quakesRef[index]
                 else:
                     continue
-                sacsL = quake.getSacFiles(stations, isRead=True, strL='Z', byRecord=byRecord,
-                  minDist=(self.minDist),
-                  maxDist=(self.maxDist),
-                  remove_resp=remove_resp,
-                  para=(self.para0),
-                  isSave=False,
-                  isSkip=False,
-                  resDir=resDir)
-                sacNamesL = quake.getSacFiles(stations, isRead=False, strL='Z', byRecord=byRecord,
-                  minDist=(self.minDist),
-                  maxDist=(self.maxDist),
-                  remove_resp=remove_resp,
-                  para=(self.para0),
-                  isSave=False,
-                  isSkip=False,
-                  resDir=resDir)
-                if self.isFromO:
-                    for sacs in sacsL:
-                        sacs[0] = seism.sacFromO(sacs[0])
-                        sacs[0].data -= sacs[0].data.mean()
-                        sacs[0].detrend()
+            sacsL = quake.getSacFiles(stations, isRead=True, strL='Z', byRecord=byRecord,
+                minDist=(self.minDist),
+                maxDist=(self.maxDist),
+                remove_resp=remove_resp,
+                para=(self.para0),
+                isSave=False,
+                isSkip=False,
+                resDir=resDir)
+            sacNamesL = quake.getSacFiles(stations, isRead=False, strL='Z', byRecord=byRecord,
+                minDist=(self.minDist),
+                maxDist=(self.maxDist),
+                remove_resp=remove_resp,
+                para=(self.para0),
+                isSave=False,
+                isSkip=False,
+                resDir=resDir)
+            if self.isFromO:
+                for sacs in sacsL:
+                    sacs[0] = seism.sacFromO(sacs[0])
+                    sacs[0].data -= sacs[0].data.mean()
+                    sacs[0].detrend()
 
-                corrL += corrSacsL(disp, sacsL, sacNamesL, modelFile=self.originName, minSNR=minSNR, 
-                 minDist=self.minDist, maxDist=self.maxDist, minDDist=self.minDDist, 
-                 maxDDist=self.maxDDist, srcSac=quake.name(s='_'), 
-                 isCut=self.isCut, isFromO=self.isFromO, removeP=self.removeP, 
-                 fvD=fvD, isLoadFv=isLoadFv, quakeName=quakeName, isByQuake=isByQuake, 
-                 maxCount=maxCount, **kwags)
-                print('###########', len(corrL))
+            corrL += corrSacsL(disp, sacsL, sacNamesL, modelFile=self.originName, minSNR=minSNR, 
+                minDist=self.minDist, maxDist=self.maxDist, minDDist=self.minDDist, 
+                maxDDist=self.maxDDist, srcSac=quake.name(s='_'), 
+                isCut=self.isCut, isFromO=self.isFromO, removeP=self.removeP, 
+                fvD=fvD, isLoadFv=isLoadFv, quakeName=quakeName, isByQuake=isByQuake, 
+                maxCount=maxCount, **kwags)
+            print('###########', len(corrL))
 
         return corrL
 
@@ -2758,7 +2758,6 @@ def compareList(i0, i1):
     di = np.array(i0) - np.array(i1)
     return np.sum(np.abs(di)) < 0.1
 
-
 class corrL(list):
 
     def __init__(self, *argv, **kwargs):
@@ -2932,18 +2931,18 @@ class corrL(list):
                 tmp = corr()
                 tmp.setFromFile(matFile)
                 self.append(tmp)
-    def loadByGroupsH5(self, groupNames,h5):
+    def loadByPairsH5(self,pairNames,h5):
         if isinstance(h5,h5py.File):
-            for groupName in groupNames:
-                if groupName in h5:
-                    group = h5[groupName]
-                    for matFile in group:
+            for pairName in pairNames:
+                if pairName in h5['data']:
+                    pair = h5['data'][pairName][: h5['count'][pairName][0]]
+                    for Corr in pair:
                         tmp = corr()
-                        tmp.setFromDict(np.array(group[matFile]))
+                        tmp.setFromDict(np.array(Corr))
                         self.append(tmp)
         else:
             with h5py.File(h5,'r') as h5:
-                self.loadByDirLH5(groupNames,h5)
+                self.loadByDirLH5(pairNames,h5)
     def loadByNamesH5(self, names,h5):
         if isinstance(h5,h5py.File):
             for name in names:
@@ -2953,23 +2952,25 @@ class corrL(list):
                     sta0, sta1 = name.split('_')[-2:]
                     if sta0 > sta1:
                         sta1, sta0 = sta0, sta1
-                    groupName = sta1+'_'+sta1
-                    if groupName in h5:
-                        group = h5[groupName]
-                        if name in group:
+                    pairName = sta1+'_'+sta1
+                    if pairName in h5['data']:
+                        pair = h5['data'][pairName]
+                        modelNames= h5['modelName'][pairName][:]
+                        if name in modelNames:
+                            i = modelNames.index(name)
                             tmp = corr()
-                            tmp.setFromDict(np.array(group[name]))
+                            tmp.setFromDict(np.array(pair[i]))
                             self.append(tmp)
         else:
             with h5py.File(h5,'r') as h5:
                 self.loadByNamesH5(names,h5)
     def loadByH5(self, h5):
         if isinstance(h5,h5py.File):
-            for groupName in h5:
-                group = h5[groupName]
-                for name in group:
+            for pairName in h5['data']:
+                pair = h5['data'][pairName][:h5['count'][pairName][0]]
+                for corrNp in pair:
                     tmp = corr()
-                    tmp.setFromDict(np.array(group[name]))
+                    tmp.setFromDict(corrNp)
                     self.append(tmp)
         else:
             with h5py.File(h5,'r') as h5:
@@ -3012,9 +3013,15 @@ class corrL(list):
                 fileName = tmpDir + modelName + '.mat'
                 mat = tmp.toMat()
                 sio.savemat(fileName, {'corr': mat})
-    def saveH5(self, f):
+    def saveH5(self, f,maxEvents=500):
         if isinstance(f,h5py.File):
             for i in range(len(self)):
+                if 'data' not in f:
+                    f.create_group('data')
+                if 'count' not in f:
+                    f.create_group('count')
+                if 'modelName' not in f:
+                    f.create_group('modelName')
                 tmp = self[i]
                 print(i)
                 modelName = tmp.modelFile
@@ -3024,14 +3031,30 @@ class corrL(list):
                     sta0, sta1 = modelName.split('_')[-2:]
                     if sta0 > sta1:
                         sta1, sta0 = sta0, sta1
-                    tmpGroup =  sta0 + '_' + sta1
-                    if tmpGroup not in f:
-                        f.create_group(tmpGroup)
-                    fileName = modelName
+                    pairName =  sta0 + '_' + sta1
                     mat = tmp.toMatH5()
-                    if fileName in f[tmpGroup]:
-                        f[tmpGroup].pop(fileName)
-                    f[tmpGroup][fileName]=mat
+                    if pairName not in f['data']:
+                        f['data'].create_dataset(pairName,dtype=mat.dtype, shape=(maxEvents,),maxshape=(None,))
+                    if pairName not in f['count']:
+                        f['count'].create_dataset(pairName,dtype=np.int,data=0,shape=(1,))
+                    if pairName not in f['modelName']:
+                        f['modelName'].create_dataset(pairName,dtype=h5Str,shape=(maxEvents,),maxshape=(None,))
+                    count=int(f['count'][pairName][0])
+                    if count==len(f['data'][pairName]):
+                        f['data'][pairName].reshape([count+20])
+                        f['modelName'][pairName].reshape([count+20])
+                    f['data'][pairName][count]=mat
+                    f['modelName'][pairName][count]=mat['modelFile']
+                    f['count'][pairName][0]=count+1
+                    if False:
+                        tmpGroup =  sta0 + '_' + sta1
+                        if tmpGroup not in f:
+                            f.create_group(tmpGroup)
+                        fileName = modelName
+                        mat = tmp.toMatH5()
+                        if fileName in f[tmpGroup]:
+                            f[tmpGroup].pop(fileName)
+                        f[tmpGroup][fileName]=mat
         else:
             with h5py.File(f,'a') as f:
                 self.saveH5(f)
@@ -3921,6 +3944,7 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
                                                 if isByQuake:
                                                     modelFile0 = quakeName + '_' + modelFile0
                                                     modelFile1 = quakeName + '_' + modelFile1
+                                                modelFile = modelFile0
                                                 if modelFile0 in fvD:
                                                     modelFile = modelFile0
                                                 if modelFile1 in fvD:
