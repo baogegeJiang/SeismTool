@@ -2730,7 +2730,7 @@ class corr:
             self.srcSac = str(mat['srcSac'])
             self.x0 = mat['x0']
             self.x1 = mat['x1']
-            self.quakeName = mat['quakeName']
+            self.quakeName = str(mat['quakeName'])
         else:
             self.xx = mat['xx'][0][0][0]
             self.timeL = mat['timeL'][0][0][0]

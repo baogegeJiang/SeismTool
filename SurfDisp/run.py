@@ -602,7 +602,7 @@ class run:
 					self.corrL.saveH5(h5)
 					self.corrL = 0
 					gc.collect()
-	def calFromCorr(self,isLoadModel=False,M=3000):
+	def calFromCorr(self,isLoadModel=False,M=6000):
 		config     = self.config
 		para       = config.para
 		N          = len(para['stationFileL'])
@@ -1405,7 +1405,7 @@ paraAllONew={ 'quakeFileL'  : ['../phaseLPickCEA'],\
 
 paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'stationFileL': ['../stations/CEA.sta_labeled_sort'],#**********'stations/CEA.sta_know_few'\
-	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211127-133742_model.h5',
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211231-171846_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'maxCount'    : 512*3,\
@@ -1417,7 +1417,7 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'midV'        : 4,\
 	'mul'		  : 6,\
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20211230V1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220102V1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 50,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           : [0,5,10,15,20,25,30,40,50,60,70,80,100,120,160,200,350,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
@@ -1502,7 +1502,7 @@ paraSC={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'R':[38,55,110,135]}
 paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'stationFileL': ['../stations/CEA.sta_know_few'],\
-	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211130-185235_model.h5',
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211231-171846_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'maxCount'    : 512*3,\
@@ -1513,7 +1513,7 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'randA'       : 0.00,\
 	'midV'        : 4,\
 	'mul'		  : 6,\
-	'resDir'      : '/media/jiangyr/MSSD/20220101NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220102NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 2,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           : [0,5,10,15,20,25,30,40,50,60,70,80,100,120,160,200,350,500],#[0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,175,200,250,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
