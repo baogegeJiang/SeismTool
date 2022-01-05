@@ -597,7 +597,7 @@ class Model(Model0):
             headNew = head
             if isDiff:
                 headNew=head+'Diff'
-            plt.savefig('%s/%s_%f.eps'%(resDir,headNew,self.z[i]),dpi=500)
+            plt.savefig('%s/%s_%f.svg'%(resDir,headNew,self.z[i]),dpi=500)
             plt.close()
     def plotByP2(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,P2=[],N=300):
         resDir = runPath+'/'+'plot/'

@@ -1456,7 +1456,7 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
     binV = np.arange(2.8, 5.2, 0.02)
     plt.close()
     plt.figure(figsize=[2.5, 2])
-    plt.hist2d(VL, FL, bins=(binV, binF), rasterized=True, cmap=disMap)
+    plt.hist2d(VL, FL, bins=(binV, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
     plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('v(km/s)')
@@ -2106,9 +2106,11 @@ def plotFVM(fvM, fvD={}, fvDRef={}, resDir='test/', isDouble=False, stations=[],
                 fvL += fvM[keyNew]
         if key in fvD:
             fvMean = fvD[key]
-            fvRef = fvDRef[key0]
-            plotFVL(fvL, fvMean, fvRef, filename=filename, title=key, dist=dist, **kwags)
-
+            if key in fvDRef:
+                fvRef = fvDRef[key0]
+                plotFVL(fvL, fvMean, fvRef, filename=filename, title=key, dist=dist, **kwags)
+            else:
+                plotFVL(fvL, fvMean, None, filename=filename, title=key, dist=dist, **kwags)
 
 def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1], title='fvL', fL0=[], dist=-1):
     if not os.path.exists(os.path.dirname(filename)):
@@ -3912,7 +3914,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
         pc =cm.ScalarMappable(norm=norm, cmap=cmap)
         axL[number-1].axis('off')
         #cax=figureSet.getCAX(pos='right')
-        figureSet.setColorbar(pc,label='Probability',pos='Surf')
+        figureSet.setColorbar(pc,label='Probability',pos='left')
         #plt.colorbar(label='Probility')
         #plt.gca().semilogx()
         for nn in range(number):
@@ -4050,13 +4052,13 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
                         if dis.min() < minDist:
                             pass
                         else:
-                            if np.abs(dis[0] - dis[1]) < minDDist:
+                            if dis01 < minDDist:
                                 pass
                             else:
                                 if dis.max() > maxDist:
                                     pass
                                 else:
-                                    if np.abs(dis[0] - dis[1]) > maxDDist:
+                                    if dis01 > maxDDist:
                                         pass
                                     else:
                                         minDis = dis.min()

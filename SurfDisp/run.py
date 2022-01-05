@@ -41,8 +41,8 @@ dConfig=d.config(originName='models/prem',srcSacDir=srcSacDir,\
 		isFlat=True,R=6371,flatM=-2,pog='p',calMode='gpdc',\
 		T=T,threshold=0.02,expnt=12,dk=0.05,\
 		fok='/k',order=0,minSNR=10,isCut=False,\
-		minDist=110*10,maxDist=110*170,minDDist=50,\
-		maxDDist=1860,para=para,isFromO=True,removeP=True)
+		minDist=110*10,maxDist=110*170,minDDist=200,\
+		maxDDist=1880,para=para,isFromO=True,removeP=True)
 def saveListStr(file,strL):
 	with open(file,'w+') as f:
 		for STR in strL:
@@ -174,8 +174,16 @@ class run:
 				d.disQC(fvDA,stations,fvDAverage['models/prem'],randA=disRandA,maxR=disMaxR)
 			
 			d.qcFvD(fvDA,threshold=para['thresholdTrain'],delta=delta,stations= sta)
+			notL=[]
+			for key in fvDA:
+				if '_' not in key:
+					continue
+				dis = d.keyDis(key, sta)
+				if dis<para['dConfig'].minDDist or dis>para['dConfig'].maxDDist:
+					notL.append(key)
+			for key in notL:
+				fvDA.pop(key)
 			fvDAverage.update(fvDA)
-
 			d.replaceByAv(fvd,fvDA,delta=1,stations= sta,threshold=para['thresholdTrain'])
 			d.qcFvD(fvd)
 			fvD.update(fvd)
@@ -185,7 +193,6 @@ class run:
 			d.replaceByAv(fvd,fvDA,isReplace=False,threshold=para['thresholdTrain'],delta=delta,stations= sta)
 			d.qcFvD(fvd)
 			fvD0.update(fvd)
-
 			
 			if isLoad:
 				if not isLoadFromMat:
@@ -239,7 +246,7 @@ class run:
 		self.coverFL= fL
 		self.minI   = minI
 		self.maxI   = maxI
-		self.coverR = 0.1
+		self.coverR = 0.01
 		data = np.array([fL,minDis,maxDis])
 		np.savetxt(filename,data)
 	def loadDisCover(self,filename='disCover'):
@@ -251,7 +258,7 @@ class run:
 		self.maxDis = maxDis
 		self.minI   = minI
 		self.maxI   = maxI
-		self.coverR = 0.1
+		self.coverR = 0.01
 		self.coverFL= fL
 	def train(self,isRand=True,isShuffle=False,isAverage=False):
 		para    = self.config.para
@@ -416,8 +423,9 @@ class run:
 	   	#	outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=50,count0=200,w0=1.5)#w0=3
 	def saveTrainSet(self,isMat=False):
 		saveDir = self.config.para['trainMatDir']
+		saveFile = self.config.para['trainH5']
 		if isMat:
-			self.corrL.save(saveDir)
+			self.corrL.saveH5(saveFile)
 		saveListStr(saveDir+'fvL',self.fvL)
 		saveListStr(saveDir+'fvTrain',self.fvTrain)
 		saveListStr(saveDir+'fvTest',self.fvTest)
@@ -761,7 +769,6 @@ class run:
 		plt.ylabel('$\sigma$(s)')
 		plt.tight_layout()
 		plt.xlim([1/self.config.para['T'].min()*1.1,1/self.config.para['T'].max()*0.9])
-		
 		plt.semilogx()
 		#
 		plt.savefig(resDir+'sigmaDis.%s'%(format),dpi=300)
@@ -1441,11 +1448,11 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
 	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
 	'matH5'	  :'/media/jiangyr/1TSSD/all.h5',\
-	'randA'       : 0.03,\
+	'randA'       : 0.05,\
 	'midV'        : 4,\
 	'mul'		  : 6,\
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220104V5/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220106V1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 50,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           :[0,5,10,15,20,30,40,50,60,80,100,120,150,250,350,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
@@ -1541,7 +1548,7 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'randA'       : 0.03,\
 	'midV'        : 4,\
 	'mul'		  : 6,\
-	'resDir'      : '/media/jiangyr/MSSD/20220104NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220106NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 2,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           : [0,5,10,15,20,30,40,50,60,80,100,120,150,250,350,500],#[0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,175,200,250,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
