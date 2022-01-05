@@ -20,8 +20,10 @@ from .fk import FK,getSourceSacName,FKL
 from ..mathTool.mathFunc import getDetec,xcorrSimple,xcorrComplex,flat,validL,randomSource,disDegree,QC,fitexp
 from ..mathTool.distaz import DistAz
 import gc
-from matplotlib import colors
+from matplotlib import colors,cm
 import h5py
+from ..plotTool import figureSet
+figureSet.init()
 gpdcExe = '/home/jiangyr/program/geopsy/bin/gpdc'
 Vav = -1
 
@@ -1262,7 +1264,7 @@ class fv:
         self.std = std[(v > 1)]
         if len(self.f) > 2:
             self.interp = self.genInterp()
-    def coverQC(self, dis, minI, maxI, R=0.1):
+    def coverQC(self, dis, minI, maxI, R=0.001):
         if len(self.f) <= 2:
             return
         minDis = minI(self.f) * (1 - R)
@@ -1318,10 +1320,8 @@ def coverQC(fvD, stations, minI, maxI, R=0.1):
         dis = keyDis(key, stations)
         fv.coverQC(dis, minI, maxI, R)
 
-
 def keyValue(time, la, lo):
     return float(time) + complex(0.0, 1.0) * (float(la) + float(lo))
-
 
 def outputFvDist(fvD, stations, t=16 ** np.arange(0, 1.000001, 0.02040816326530612) * 10, keys=[], keysL=[]):
     fL = 1 / t
@@ -1377,8 +1377,8 @@ def outputFvDist(fvD, stations, t=16 ** np.arange(0, 1.000001, 0.020408163265306
     print(len(nameL))
     return (np.array(distL).reshape([-1, 1]), np.array(vL), fL, averageFVL(fvL, fL=fL), KEYL)
 
-
-def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minDis=[], maxDis=[], fLDis=[], R=0.1):
+disMap ='hot_r'
+def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minDis=[], maxDis=[], fLDis=[], R=0.001):
     VL = vL.reshape([-1])
     DISTL = (distL + vL * 0).reshape([-1])
     FL = (fL.reshape([1, -1]) + vL * 0).reshape([-1])
@@ -1390,17 +1390,19 @@ def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minD
     print(DISTL.max())
     plt.close()
     plt.figure(figsize=[2.5, 2])
-    plt.hist2d(DISTL, FL, bins=(binD, binF), rasterized=True, cmap='Greys', norm=(colors.LogNorm()))
+    plt.hist2d(DISTL, FL, bins=(binD, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
     if isCover:
-        plt.plot( minDis,fLDis, 'r',linewidth=1)
-        plt.plot( maxDis, fLDis,'r',linewidth=1)
-        plt.plot( minDis * (1 - R), fLDis,'--r',linewidth=1)
-        plt.plot( maxDis * (1 + R), fLDis,'--r',linewidth=1)
+        plt.plot( minDis,fLDis, 'k',linewidth=0.5,label='cover')
+        plt.plot( maxDis, fLDis,'k',linewidth=0.5)
+        #plt.plot( minDis * (1 - R), fLDis,'-.k',linewidth=0.5,label='control')
+        #plt.plot( maxDis * (1 + R), fLDis,'-.k',linewidth=0.5)
+        plt.legend()
     plt.colorbar(label='count')
     plt.gca().set_yscale('log')
-    plt.xlabel('distance(km)')
-    plt.ylabel('frequency(Hz)')
+    plt.xlabel('DDis(km)')
+    plt.ylabel('f(Hz)')
     plt.title(title)
+    plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close()
 
@@ -1422,7 +1424,6 @@ def plotPair(fvD, stations, filename='predict/pairDis.eps'):
                 staL.append(netSta1)
                 plt.text(sta1['lo'], sta1['la'], str([sta1['la'], sta1['lo']]))
             plt.plot([sta0['lo'], sta1['lo']], [sta0['la'], sta1['la']], '--k', linewidth=0.01)
-
     plt.savefig(filename)
 
 
@@ -1455,18 +1456,21 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
     binV = np.arange(2.8, 5.2, 0.02)
     plt.close()
     plt.figure(figsize=[2.5, 2])
-    plt.hist2d(VL, FL, bins=(binV, binF), rasterized=True, cmap='Greys', norm=(colors.LogNorm()))
+    plt.hist2d(VL, FL, bins=(binV, binF), rasterized=True, cmap=disMap)
     plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('v(km/s)')
-    plt.ylabel('frequency(Hz)')
+    plt.xlim([3, 5])
+    plt.ylabel('f(Hz)')
     plt.title(title)
     if isAverage:
-        linewidth = 0.5
-        plt.plot((fvAverage.v[(fvAverage.v > 1)]), (fvAverage.f[(fvAverage.v > 1)]), '-r', linewidth=linewidth)
+        linewidth = 0.25
+        h0,=plt.plot((fvAverage.v[(fvAverage.v > 1)]), (fvAverage.f[(fvAverage.v > 1)]), '-k', linewidth=linewidth,label='mean')
         for thres in thresL:
-            plt.plot((fvAverage.v[(fvAverage.v > 1)] * (1 + thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.r', linewidth=linewidth)
-            plt.plot((fvAverage.v[(fvAverage.v > 1)] * (1 - thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.r', linewidth=linewidth)
+            h1,=plt.plot((fvAverage.v[(fvAverage.v > 1)] * (1 + thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.k', linewidth=linewidth,label='$\pm$1.5%')
+            plt.plot((fvAverage.v[(fvAverage.v > 1)] * (1 - thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.k', linewidth=linewidth)
+        plt.legend()
+    plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close()
     plt.figure(figsize=[2.5, 2])
@@ -1533,7 +1537,7 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     ax2.set_ylabel('Rate(%)')
     ax1.set_ylim([0, 1.25 * countR.max()])
     ax2.set_ylim([min(np.min(countP / countAll * 100) - 5, 50), 106])
-    plt.xlim([0.1, 0.00625])
+    plt.xlim([fL.max(), fL.min()])
     ax2.text((binF[2]), 105, thresholdText, va='top', ha='right')
     plt.title(title)
     plt.tight_layout()
@@ -1941,7 +1945,6 @@ def qcFvD(fvD, threshold=-2, minCount=3, delta=-1, stations=''):
     for key in keyL:
         fvD.pop(key)
 
-
 def qcFvL(fvL, minCount=3):
     FVL = []
     count = 0
@@ -1962,7 +1965,7 @@ def wFunc(w, weightType):
     return w
 
 
-def averageFVL(fvL, minSta=5, threshold=2.5, minThreshold=0.02, fL=[], isWeight=False, weightType='std'):
+def averageFVL(fvL, minSta=5, threshold=0.82285, minThreshold=0.02, fL=[], isWeight=False, weightType='std'):
     qcFvL(fvL)
     if len(fvL) < minSta:
         return fv([np.array([-1]), np.array([-1]), np.array([10])])
@@ -1984,6 +1987,7 @@ def averageFVL(fvL, minSta=5, threshold=2.5, minThreshold=0.02, fL=[], isWeight=
             if isWeight:
                 wM[:, i] = wFunc(fvL[i].STD(fL), weightType)
         vCount = (vM > 1).sum(axis=1)
+        #print(vCount)
         f = fL[(vCount >= minSta)]
         vMNew = vM[(vCount >= minSta)]
         if isWeight:
@@ -1992,11 +1996,13 @@ def averageFVL(fvL, minSta=5, threshold=2.5, minThreshold=0.02, fL=[], isWeight=
         v = f * 0
         for i in range(len(f)):
             if isWeight:
+                #print('w')
                 MEAN, STD, vN = QC((vMNew[i][(vMNew[i] > 1)]), threshold=threshold, minThreshold=minThreshold, minSta=minSta, wL=(wMNew[i][(vMNew[i] > 1)]), it=1)
             else:
                 MEAN, STD, vN = QC((vMNew[i][(vMNew[i] > 1)]), threshold=threshold, minThreshold=minThreshold, minSta=minSta, it=1)
             v[i] = MEAN
             std[i] = STD
+            #print(MEAN,STD,vMNew[i][(vMNew[i] > 1)])
         return fv([f, v, std])
 
 def averageFVDis(fvL, minSta=5, threshold=2.5):
@@ -2073,14 +2079,14 @@ def fvM2Av(fvM, **kwags):
     return fvD
 
 
-def plotFVM(fvM, fvD={}, fvDRef={}, resDir='test/', isDouble=False, stations=[], keyL=[], **kwags):
+def plotFVM(fvM, fvD={}, fvDRef={}, resDir='test/', isDouble=False, stations=[], keyL=[],format='jpg', **kwags):
     if not os.path.exists(resDir):
         os.makedirs(resDir)
     if len(keyL) == 0:
         keyL = fvM
     for key in keyL:
         key0 = key
-        filename = resDir + key + '.jpg'
+        filename = resDir + key + '.'+format
         dist = -1
         fvRef = None
         if key in fvM:
@@ -2225,6 +2231,10 @@ def getDisCover(fvD, stations, fL):
             v = fvD[key](fL)
             minDis[(v > 1) * (dis < minDis)] = dis
             maxDis[(v > 1) * (dis > maxDis)] = dis
+    maxDis[0]=maxDis[1]
+    maxDis[-1]=maxDis[-2]
+    minDis[0]=minDis[1]
+    minDis[-1]=minDis[-2]
     minI = interpolate.interp1d(fL, minDis)
     maxI = interpolate.interp1d(fL, maxDis)
     return (minDis, maxDis, minI, maxI)
@@ -3745,7 +3755,7 @@ class corrD(dict):
 
         self.keyL = list(self.keys())
 
-    def __call__(self, keyL=[], mul=1, N=-1):
+    def __call__(self, keyL=[], mul=1, N=-1,isRand=True):
         N0 = N
         iL = []
         if len(keyL) == 0:
@@ -3758,13 +3768,12 @@ class corrD(dict):
             else:
                 if N0 < 0:
                     N = int(len(self[key]) / mul + 0.99999999999) * mul
-                if N > len(self[key]):
+                if (N > len(self[key])) or (isRand==False):
                     for i in range(N):
                         iL.append(self[key][(i % len(self[key]))])
-
                 else:
                     iL += random.sample(self[key], N)
-        if len(iL)>0:
+        if len(iL)>0 and isRand:
             iL = np.array(iL)
             iLNew = iL.reshape([-1,mul])
             np.random.shuffle(iLNew)
@@ -3784,6 +3793,137 @@ class corrD(dict):
         Y = model.predict(x)
         v, prob, vM, probM = self.corrL.getV((Y.transpose([0, 2, 1, 3]).reshape([-1, Y.shape[1], 1, Y.shape[(-1)]])), isSimple=isSimple, D=D, isLimit=isLimit, isFit=isFit)
         self.corrL.saveV(v, prob, T, (self.corrL.iL), stations, resDir=resDir, minProb=minProb)
+
+def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
+    f = 1/T
+    dirName = os.path.dirname(outputDir)
+    if not os.path.exists(dirName):
+        os.makedirs(dirName)
+    count = x.shape[1]
+    cmap = plt.cm.bwr
+    norm = colors.Normalize(vmin=0, vmax=1)
+    for i in range(10):
+        plt.close()
+        '''
+        if number == 4:
+            plt.figure(figsize=[12,8])
+        else:
+            plt.figure(figsize=[12,6])
+        axL=[]
+        
+        for nn in range(number-1):
+            axL.append(plt.subplot(number,1,nn+1,projection='3d'))
+        axL.append(plt.subplot(number,1,number))
+        '''
+        axL=[]
+        figL=[]
+        for nn in range(number):
+            if nn <number-1:
+                fig=plt.figure(figsize=[5,5])
+                axL.append(fig.add_subplot(projection='3d'))
+            else:
+                fig=plt.figure(figsize=[6,2])
+                axL.append(fig.add_subplot())
+            figL.append(fig)
+        for j in range(mul):
+            print(j)
+            index= iL[i,j]
+            if j==0:
+                sta0,sta1 = corrL[index].modelFile.split('_')[-2:]
+                head = sta0+'_'+sta1
+            timeL    = corrL[index].timeL-corrL[index].timeL[0]+t[i,j]
+            timeLOut = corrL[index].timeLOut-corrL[index].timeLOut[0]+t[i,j]
+            xlim=[0,500]
+            ylim=[-0.5,mul-0.5]
+            zlim=[0,8]
+            box = [3,8,1]
+            elev = 40
+            azim = -60
+            tmpy0=y0[i,:,j,:]
+            tmpy=y[i,:,j,:]
+            tmpx = x[i,:,j,:]
+            pos0  =tmpy0.argmax(axis=0)
+            timeLOutL0=timeLOut[pos0.astype(np.int)]
+            timeLOutL0[tmpy0.max(axis=0)<0.5]=np.nan
+            pos  =tmpy.argmax(axis=0).astype(np.float)
+            timeLOutL=timeLOut[pos.astype(np.int)]
+            timeLOutL[tmpy.max(axis=0)<0.5]=np.nan
+            #plt.subplot(number,1,1)
+            #axL[0].title('%s%d'%(outputDir,i))
+            legend = ['r s','i s',\
+            'r h','i h']
+            for k in range(2):
+                if k==1:
+                    c= 'k'
+                else:
+                    c= 'rgbrym'[j]
+                axL[0].plot(timeL[timeL<xlim[1]],tmpx[timeL<xlim[1],k],c,\
+                    label=legend[k],linewidth=0.5,zs=j,zdir='y')
+            #plt.legend()
+            axL[0].set_xlim(xlim)
+            axL[0].set_ylim(ylim)
+            axL[0].set_zlim(zlim)
+            axL[0].set_ylabel('index')
+            axL[0].set_xlabel('t/s')
+            axL[0].set_zlabel('A')
+            axL[0].set_yticks(np.arange(mul))
+            axL[0].set_zticks([0,4])
+            axL[0].set_box_aspect(box)
+            axL[0].view_init(elev,azim)
+            #plt.clim(0,1)
+            #pc=plt.pcolormesh(timeLOut,f,tmpy0.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
+            X,Z=np.meshgrid(timeLOut[timeLOut<xlim[1]],f)
+            Y = X*0+j
+            surf=axL[1].plot_surface(X,Y,Z,cmap='bwr',vmin=0,vmax=1,facecolors=cmap(norm(tmpy0[timeLOut<xlim[1]].transpose())),rasterized=True,rstride=1, cstride=1)
+            surf._facecolors2d=surf._facecolors3d
+            surf._edgecolors2d=surf._edgecolors3d
+            axL[1].set_box_aspect(box)
+            axL[1].view_init(elev,azim)
+            #figureSet.setColorbar(pc,label='Probility',pos='right')
+            if number==4:
+                axL[1].plot(timeLOutL,f,'--k',linewidth=0.5,zs=j,zdir='y')
+            axL[1].set_ylabel('index')
+            axL[1].set_zlabel('f/Hz')
+            axL[1].set_xlabel('t/s')
+            axL[1].set_zscale('log')
+            axL[1].set_xlim(xlim)
+            axL[1].set_ylim(ylim)
+            axL[1].set_zticks([f.max(),f.min()])
+            #axL[1].set(clip_on=False)
+            axL[1].set_yticks(np.arange(mul))
+            #plt.colorbar(label='Probility')
+            if number==4:
+                #pc=plt.pcolormesh(timeLOut,f,tmpy.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
+                surf=axL[2].plot_surface(X,Y,Z,cmap='bwr',vmin=0,vmax=1,facecolors=cmap(norm(tmpy[timeLOut<xlim[1]].transpose())),rasterized=True,rstride=1, cstride=1)
+                surf._facecolors2d=surf._facecolors3d
+                surf._edgecolors2d=surf._edgecolors3d
+                #plt.clim(0,1)
+                axL[2].plot(timeLOutL0,f,'--k',linewidth=0.5,zs=j,zdir='y')
+                axL[2].set_ylabel('index')
+                axL[2].set_zlabel('f/Hz')
+                axL[2].set_xlabel('t/s')
+                axL[2].set_zscale('log')
+                axL[2].set_box_aspect(box)
+                axL[2].view_init(elev,azim)
+                axL[2].set_yticks(np.arange(mul))
+                axL[2].set_zticks([f.max(),f.min()])
+                axL[2].set_xlim(xlim)
+                axL[2].set_ylim(ylim)
+        pc =cm.ScalarMappable(norm=norm, cmap=cmap)
+        axL[number-1].axis('off')
+        #cax=figureSet.getCAX(pos='right')
+        figureSet.setColorbar(pc,label='Probability',pos='Surf')
+        #plt.colorbar(label='Probility')
+        #plt.gca().semilogx()
+        for nn in range(number):
+            if number==4:
+                tail = 'with'
+                kind = ['wave','label','predict','colorbar'][nn]
+            if number==3:
+                tail = 'without'
+                kind = ['wave','label','colorbar'][nn]
+            figL[nn].savefig('%s/%s_%s_%s.svg'%(outputDir,head,kind,tail),dpi=500)
+
 def analyModel(depth, v, resDir='predict/KEA20/'):
     if not os.path.exists(resDir):
         os.makedirs(resDir)

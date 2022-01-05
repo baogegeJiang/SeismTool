@@ -125,7 +125,7 @@ class run:
 			self.corrL  =  self1.corrL
 			self.corrL1 =  self1.corrL1
 			self.fvD    =  self1.fvD
-			self.fvDAvarage = self1.fvDAvarage
+			self.fvDAverage = self1.fvDAverage
 			self.quakes = self1.quakes
 			self.stations = self1.stations
 	def checkDis(self):
@@ -142,12 +142,12 @@ class run:
 		corrL      = []
 		stations   = seism.StationList([])
 		quakes     = seism.QuakeL()
-		fvDAvarage = {}
+		fvDAverage = {}
 		fvD        = {}
 		fvD0       = {}
 		para       = config.para
 		N          = len(para['stationFileL'])
-		fvDAvarage['models/prem']=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
+		fvDAverage['models/prem']=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
 		f = 1/config.para['T']
 		for i in range(N):
 			sta     = seism.StationList(para['stationFileL'][i])
@@ -171,10 +171,10 @@ class run:
 				fvDA    = para['dConfig'].loadNEFV(sta,fvDir=para['avgPairDirL'][i])
 				d.replaceF(fvDA,f)
 			if isDisQC:
-				d.disQC(fvDA,stations,fvDAvarage['models/prem'],randA=disRandA,maxR=disMaxR)
+				d.disQC(fvDA,stations,fvDAverage['models/prem'],randA=disRandA,maxR=disMaxR)
 			
 			d.qcFvD(fvDA,threshold=para['thresholdTrain'],delta=delta,stations= sta)
-			fvDAvarage.update(fvDA)
+			fvDAverage.update(fvDA)
 
 			d.replaceByAv(fvd,fvDA,delta=1,stations= sta,threshold=para['thresholdTrain'])
 			d.qcFvD(fvd)
@@ -202,14 +202,14 @@ class run:
 			self.corrL  = d.corrL(corrL,maxCount=para['maxCount'])
 			self.corrL1 = d.corrL(self.corrL,maxCount=para['maxCount'],fvD=fvD)
 		
-		self.fvDAvarage = fvDAvarage
+		self.fvDAverage = fvDAverage
 		fvDNew =fvD
 		fvD0New = fvD0
 		if isLoad:
 			fvDNew ={}
 			fvD0New = {}
-			fvDAvarageNew ={'models/prem':fvDAvarage['models/prem']}
-			self.fvDAvarage = fvDAvarageNew
+			fvDAverageNew ={'models/prem':fvDAverage['models/prem']}
+			self.fvDAverage = fvDAverageNew
 			for corr in self.corrL1:
 				key = corr.modelFile
 				fvDNew[key]=fvD[key]
@@ -219,9 +219,9 @@ class run:
 					name1 = key.split('_')[-1]
 					modelName ='%s_%s'%(name0,name1)
 					#print(modelName0)
-					if modelName in fvDAvarage:
-						if modelName not in fvDAvarageNew:
-							fvDAvarageNew[modelName] = fvDAvarage[modelName]
+					if modelName in fvDAverage:
+						if modelName not in fvDAverageNew:
+							fvDAverageNew[modelName] = fvDAverage[modelName]
 		self.fvD    = fvDNew
 		self.fvD0   = fvD0New
 		self.quakes = quakes
@@ -233,7 +233,7 @@ class run:
 		self.fvValid = loadListStr(trainSetDir+'fvValid')
 	def getDisCover(self,filename='disCover'):
 		fL = 1/np.array([np.float(self.config.para['T'][0]*0.9)]+(self.config.para['T'].tolist())+[np.float(self.config.para['T'][-1]*1.1)])
-		minDis,maxDis,minI,maxI=d.getDisCover(self.fvDAvarage,self.stations,fL)
+		minDis,maxDis,minI,maxI=d.getDisCover(self.fvDAverage,self.stations,fL)
 		self.minDis = minDis
 		self.maxDis = maxDis
 		self.coverFL= fL
@@ -260,7 +260,7 @@ class run:
 			if isShuffle:
 				fvL = []
 				disL = []
-				for key in self.fvDAvarage:
+				for key in self.fvDAverage:
 					if '_' not in key:
 						continue
 					sta0,sta1 = key.split('_')
@@ -339,7 +339,7 @@ class run:
 			if isShuffle:
 				fvL = []
 				disL = []
-				for key in self.fvDAvarage:
+				for key in self.fvDAverage:
 					if '_' not in key:
 						continue
 					sta0,sta1 = key.split('_')
@@ -423,7 +423,7 @@ class run:
 		saveListStr(saveDir+'fvTest',self.fvTest)
 		saveListStr(saveDir+'fvValid',self.fvValid)
 	def trainSq(self):
-		fvL = [key for key in self.fvDAvarage]
+		fvL = [key for key in self.fvDAverage]
 		random.shuffle(fvL)
 		fvN = len(fvL)
 		fvn = int(fvN/30)
@@ -456,7 +456,7 @@ class run:
 		fcn.trainAndTestSq(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
 	   		outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=20,count0=20,w0=10)
 	def trainDt(self):
-		fvL = [key for key in self.fvDAvarage]
+		fvL = [key for key in self.fvDAverage]
 		random.shuffle(fvL)
 		fvN = len(fvL)
 		fvn = int(fvN/100)
@@ -514,8 +514,8 @@ class run:
 		config     = self.config
 		para       = config.para
 		N          = len(para['stationFileL'])
-		fvDAvarage = {}
-		fvDAvarage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
+		fvDAverage = {}
+		fvDAverage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
 		if 'modelFile' in para and isLoadModel:
 			print('loadFile')
 			self.loadModelUp(para['modelFile'])
@@ -543,7 +543,7 @@ class run:
 				corrL0  = para['dConfig'].quakeCorr(q[j*perN:min(len(q)-1,j*perN+perN)],sta,\
 						byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
 						minSNR=para['minSNRL'][i],isLoadFv=False,\
-						fvD=fvDAvarage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],\
+						fvD=fvDAverage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],\
 						resDir=para['eventDir'],maxCount=para['maxCount'])
 				self.corrL  = d.corrL(corrL0,maxCount=para['maxCount'])
 				if len(self.corrL)==0:
@@ -551,7 +551,7 @@ class run:
 				self.corrL.reSetUp(up=para['up'])
 				#self.calRes()
 				para = self.config.para
-				self.corrL.setTimeDis(fvDAvarage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
+				self.corrL.setTimeDis(fvDAverage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
 				byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
 				set2One=True,move2Int=False,modelNameO=para['refModel'],noY=True)
 				self.corrL.getAndSaveOld(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
@@ -579,8 +579,8 @@ class run:
 				q.set('sort','sta')
 				q.sort()
 				perN= self.config.para['perN']
-				fvDAvarage={}
-				fvDAvarage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
+				fvDAverage={}
+				fvDAverage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
 				for j in range(self.config.para['gpuIndex'],int(len(q)/perN),self.config.para['gpuN']):#self.config.para['gpuIndex']
 					print('doing for %d %d in %d'%(j*perN,min(len(q)-1,j*perN+perN),len(q)))
 					'''
@@ -592,7 +592,7 @@ class run:
 					corrL0  = para['dConfig'].quakeCorr(q[j*perN:min(len(q)-1,j*perN+perN)],sta,\
 							byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
 							minSNR=para['minSNRL'][i],isLoadFv=False,\
-							fvD=fvDAvarage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],\
+							fvD=fvDAverage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],\
 							resDir=para['eventDir'],maxCount=para['maxCount'])
 					self.corrL  = d.corrL(corrL0,maxCount=para['maxCount'])
 					if len(self.corrL)==0:
@@ -625,8 +625,8 @@ class run:
 				q.sort()
 				perN= self.config.para['perN']
 				corrL = d.corrL()
-				fvDAvarage={}
-				fvDAvarage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
+				fvDAverage={}
+				fvDAverage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
 				for j in range(len(sta)):
 					print(j,'of',len(sta))
 					for k in range(j,len(sta)):
@@ -638,7 +638,7 @@ class run:
 						corrL.loadByPairsH5([sta0+'_'+sta1],h5)
 						if len(corrL)>M or (j==len(sta)-2 and k==j+1 and len(corrL)>0 ):
 							corrL.reSetUp(up=para['up'])
-							corrL.setTimeDis(fvDAvarage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
+							corrL.setTimeDis(fvDAverage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
 							byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
 							set2One=True,move2Int=False,modelNameO=para['refModel'],noY=True)
 							corrD = d.corrD(corrL)
@@ -653,7 +653,7 @@ class run:
 	
 	def calRes(self):
 		para = self.config.para
-		self.corrL1.setTimeDis(self.fvDAvarage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
+		self.corrL1.setTimeDis(self.fvDAverage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
 		set2One=True,move2Int=False,modelNameO=para['refModel'],noY=True)
 		self.corrL1.getAndSaveOld(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
@@ -715,12 +715,23 @@ class run:
 		self.fvAvGet = d.fvM2Av(self.fvMGet,threshold=para['qcThreshold'],minThreshold=para['minThreshold'],minSta=para['minSta'],isWeight=isWeight,weightType=weightType)
 		#print(self.fvAvGet)
 		fvRef=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
-		#d.disQC(fvDA,stations,fvDAvarage['models/prem'],randA=0.1)
+		#d.disQC(fvDA,stations,fvDAverage['models/prem'],randA=0.1)
 		if isDisQC:
 			d.disQC(self.fvAvGet,self.stations,fvRef,randA=disRandA,maxR=disMaxR)
 		if isCoverQC:
 			self.coverQC(self.fvAvGet)
 		d.qcFvD(self.fvAvGet,threshold=self.config.para['threshold'],delta=1,stations=self.stations)
+	def showTest(self,threshold=0.015,isAverage=False):
+		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/waveform/'
+		corrD = d.corrD(self.corrDTest.corrL)
+		mul   = self.config.para['mul']
+		T     = self.config.para['T']
+		x,y0,t= corrD(mul=mul,N=mul,isRand=False)
+		y =  self.model.predict(x)
+		x   =  self.model.inx(x)
+		iL  = np.array(corrD.corrL.iL).reshape([-1,mul])
+		d.showCorrD(x,y0,y,t,iL,corrD.corrL,resDir,T,mul=mul,number=4)
+		#d.showCorrD(x,y0,y,t,iL,corrD.corrL,resDir,T,mul=mul,number=3)
 	def analyRes(self,threshold=0.015,format='eps',isAverage=False):
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
 		if not os.path.exists(resDir):
@@ -742,11 +753,25 @@ class run:
 		plt.plot([0,2000],[4,4],'b')
 		plt.savefig(resDir+'count_distance_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),dpi=300)
 		plt.close()
-		d.compareFVD(self.fvDAvarage,self.fvAvGet,self.stations,resDir+'erroTest_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=self.fvTest,fStrike=1,title='E. D. on test',threshold=threshold,thresholdForGet=self.config.para['threshold'])
+		plt.figure(figsize=[2,2])
+		f = 1/self.config.para['T']
+		plt.plot(f,self.config.sigma,'-ok',markersize=0.5,linewidth=0.5)
+		#plt.title('$\sigma$(f))')
+		plt.xlabel('f(Hz)')
+		plt.ylabel('$\sigma$(s)')
+		plt.tight_layout()
+		plt.xlim([1/self.config.para['T'].min()*1.1,1/self.config.para['T'].max()*0.9])
+		
+		plt.semilogx()
+		#
+		plt.savefig(resDir+'sigmaDis.%s'%(format),dpi=300)
+		plt.close()
+		d.plotFVM(self.fvMGet,self.fvAvGet,self.fvDAverage,resDir=resDir+'/compare/',isDouble=True,fL0=1/self.config.para['T'],format=format,stations=self.stations,keyL=self.fvTest)
+		d.compareFVD(self.fvDAverage,self.fvAvGet,self.stations,resDir+'erroTest_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=self.fvTest,fStrike=1,title='E. D. on test',threshold=threshold,thresholdForGet=self.config.para['threshold'])
 		d.compareFVD(fvD,self.fvDGet,self.stations,resDir+'erroTestSingle_%.3f_%.3f.%s'%(threshold,self.config.para['minP'],format),t=self.config.para['T'],keys=self.fvTest,fStrike=1,title='E. D. S. on test',thresholdForGet=-self.config.para['minP'])
-		d.compareFVD(self.fvDAvarage,self.fvAvGet,self.stations,resDir+'erroAll_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=[],fStrike=1,title='E. D. on All',thresholdForGet=self.config.para['threshold'])
-		d.compareFVD(fvD,self.fvDGet,self.stations,resDir+'erroAllSingle_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=[],fStrike=1,title='E. D. S. on All',thresholdForGet=-self.config.para['minP'],isCount=True,plotRate=0.6,fvRef=self.fvDAvarage['models/prem'])
-		M,V0,V1=d.compareInF(self.fvDAvarage,self.fvAvGet,self.stations,1/self.config.para['T'],R=self.config.para['R'],saveDir=resDir+'compareInF/')
+		d.compareFVD(self.fvDAverage,self.fvAvGet,self.stations,resDir+'erroAll_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=[],fStrike=1,title='E. D. on All',thresholdForGet=self.config.para['threshold'])
+		d.compareFVD(fvD,self.fvDGet,self.stations,resDir+'erroAllSingle_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=[],fStrike=1,title='E. D. S. on All',thresholdForGet=-self.config.para['minP'],isCount=True,plotRate=0.6,fvRef=self.fvDAverage['models/prem'])
+		M,V0,V1=d.compareInF(self.fvDAverage,self.fvAvGet,self.stations,1/self.config.para['T'],R=self.config.para['R'],saveDir=resDir+'compareInF/')
 	def getAV(self):
 		self.fvAvGetL = [self.fvAvGet[key] for key in self.fvAvGet]
 		self.FVAV     = d.averageFVL(self.fvAvGetL)
@@ -772,7 +797,7 @@ class run:
 		if not isByTrain:
 			fvAvGet=self.fvAvGet
 		else:
-			keyL = self.fvDAvarage.keys()
+			keyL = self.fvDAverage.keys()
 			print('by keyL')
 			fvAvGet={}
 			for key in keyL:
@@ -808,7 +833,7 @@ class run:
 		DS = DSur.DS(config=DSConfig,runPath=para['runDir']+'train/')
 		self.DSTrain = DS
 		if do:
-			indexL,vL = d.fvD2fvL(self.fvDAvarage,self.stations,1/tSur)
+			indexL,vL = d.fvD2fvL(self.fvDAverage,self.stations,1/tSur)
 			self.indexL = indexL
 			self.vL   = vL
 			DS.test(vL,indexL,self.stations)
@@ -831,7 +856,7 @@ class run:
 		if not isByTrain:
 			fvAvGet=self.fvAvGet
 		else:
-			keyL = self.fvDAvarage.keys()
+			keyL = self.fvDAverage.keys()
 			print('by keyL')
 			fvAvGet={}
 			for key in keyL:
@@ -858,8 +883,11 @@ class run:
 			fvD = self.fvD
 		else:
 			fvD = self.fvD0
-		#fvAverage = d.averageFVL([fvD[key] for key in fvD])
-		fvAverage = self.fvDAvarage['models/prem']
+		fvAverage = d.averageFVL([self.fvDAverage[key] for key in self.fvDAverage],fL=1/self.config.para['T'])
+		thresL=[0.015]
+		#return fvAverage
+		print(fvAverage.f,fvAverage.f)
+		#fvAverage = self.fvDAverage['models/prem']
 		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvD0,self.stations,t=self.config.para['T'],keys=self.fvTrain)
 		d.plotFvDist(disL,vL,fL,resDir+'fvDistTrain.eps',isCover=True,minDis=self.minDis,maxDis=self.maxDis,fLDis=self.coverFL,R=self.coverR)
 
@@ -869,32 +897,32 @@ class run:
 		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvD0,self.stations,t=self.config.para['T'],keys=self.fvTest)
 		d.plotFvDist(disL,vL,fL,resDir+'fvDistTest.eps',isCover=True,minDis=self.minDis,maxDis=self.maxDis,fLDis=self.coverFL,R=self.coverR)
 
-		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvDAvarage,self.stations,t=self.config.para['T'],keys=self.fvTrain)
-		d.plotFV(vL,fL,resDir+'FVTrain.eps',isAverage=True,fvAverage=fvAverage,thresL=[0.05,0.1])
-		d.plotFV(vL,fL,resDir+'FVTrainRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=[0.05,0.1])
+		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvDAverage,self.stations,t=self.config.para['T'],keys=self.fvTrain)
+		d.plotFV(vL,fL,resDir+'FVTrain.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
+		d.plotFV(vL,fL,resDir+'FVTrainRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
-		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvDAvarage,self.stations,t=self.config.para['T'],keys=self.fvValid)
-		d.plotFV(vL,fL,resDir+'FVValid.eps',isAverage=True,fvAverage=fvAverage,thresL=[0.05,0.1])
-		d.plotFV(vL,fL,resDir+'FVValidRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=[0.05,0.1])
+		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvDAverage,self.stations,t=self.config.para['T'],keys=self.fvValid)
+		d.plotFV(vL,fL,resDir+'FVValid.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
+		d.plotFV(vL,fL,resDir+'FVValidRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
-		disL,vL,fL,fvAverage_ ,keyL= d.outputFvDist(self.fvDAvarage,self.stations,t=self.config.para['T'],keys=self.fvTest)
-		d.plotFV(vL,fL,resDir+'FVTest.eps',isAverage=True,fvAverage=fvAverage,thresL=[0.05,0.1])
-		d.plotFV(vL,fL,resDir+'FVTestRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=[0.05,0.1])
+		disL,vL,fL,fvAverage_ ,keyL= d.outputFvDist(self.fvDAverage,self.stations,t=self.config.para['T'],keys=self.fvTest)
+		d.plotFV(vL,fL,resDir+'FVTest.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
+		d.plotFV(vL,fL,resDir+'FVTestRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
 		disL,vL,fL,fvAverage_ ,keyL= d.outputFvDist(fvD,self.stations,t=self.config.para['T'],keys=self.fvTrain)
-		d.plotFV(vL,fL,resDir+'FVTrainSingle.eps',isAverage=True,fvAverage=fvAverage,thresL=[0.05,0.1])
-		d.plotFV(vL,fL,resDir+'FVTrainSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=[0.05,0.1])
+		d.plotFV(vL,fL,resDir+'FVTrainSingle.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
+		d.plotFV(vL,fL,resDir+'FVTrainSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
 		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(fvD,self.stations,t=self.config.para['T'],keys=self.fvTest)
-		d.plotFV(vL,fL,resDir+'FVTestSingle.eps',isAverage=True,fvAverage=fvAverage,thresL=[0.05,0.1])
-		d.plotFV(vL,fL,resDir+'FVTestSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=[0.05,0.1])
+		d.plotFV(vL,fL,resDir+'FVTestSingle.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
+		d.plotFV(vL,fL,resDir+'FVTestSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
 		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(fvD,self.stations,t=self.config.para['T'],keys=self.fvValid)
-		d.plotFV(vL,fL,resDir+'FVValidSingle.eps',isAverage=True,fvAverage=fvAverage,thresL=[0.05,0.1])
-		d.plotFV(vL,fL,resDir+'FVValidSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=[0.05,0.1])
+		d.plotFV(vL,fL,resDir+'FVValidSingle.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
+		d.plotFV(vL,fL,resDir+'FVValidSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 	def plotGetDis(self):
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
-		fvAverage = self.fvDAvarage['models/prem']
+		fvAverage = self.fvDAverage['models/prem']
 		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvAvGet,self.stations,t=self.config.para['T'],keys=self.fvTrain)
 		d.plotFV(vL,fL,resDir+'FVTrainGet.eps',isAverage=True,fvAverage=fvAverage,thresL=[0.05,0.1])
 
@@ -1405,7 +1433,7 @@ paraAllONew={ 'quakeFileL'  : ['../phaseLPickCEA'],\
 
 paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'stationFileL': ['../stations/CEA.sta_labeled_sort'],#**********'stations/CEA.sta_know_few'\
-	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211231-171846_model.h5',
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220104-161924_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'maxCount'    : 512*3,\
@@ -1417,13 +1445,13 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'midV'        : 4,\
 	'mul'		  : 6,\
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220102V1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220104V5/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 50,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
-	'z'           : [0,5,10,15,20,25,30,40,50,60,70,80,100,120,160,200,350,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
-	'T'           : (16**np.arange(0,1.000001,1/29))*10,\
-	'Tav'         : (16**np.arange(0-1/29,1.000001+1/29,1/29))*10,\
-	'tSur'        : (16**np.arange(0,1.000001,1/29))*10,\
+	'z'           :[0,5,10,15,20,30,40,50,60,80,100,120,150,250,350,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+	'T'           : (12**np.arange(0,1.000001,1/29))*10,\
+	'Tav'         : (12**np.arange(0-1/29,1.000001+1/29,1/29))*10,\
+	'tSur'        : (12**np.arange(0,1.000001,1/29))*10,\
 	'surPara'     : { 'nxyz':[19,28,15], 'lalo':[55,110],#[40,60,0][55,108]\
 					'dlalo':[1,1], 'maxN':60,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.3,\
@@ -1502,7 +1530,7 @@ paraSC={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'R':[38,55,110,135]}
 paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'stationFileL': ['../stations/CEA.sta_know_few'],\
-	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_211231-171846_model.h5',
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220104-161924_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'maxCount'    : 512*3,\
@@ -1510,17 +1538,17 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
 	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
 	'matH5'	  :'/media/jiangyr/1TSSD/all.h5',\
-	'randA'       : 0.00,\
+	'randA'       : 0.03,\
 	'midV'        : 4,\
 	'mul'		  : 6,\
-	'resDir'      : '/media/jiangyr/MSSD/20220102NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220104NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 2,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
-	'z'           : [0,5,10,15,20,25,30,40,50,60,70,80,100,120,160,200,350,500],#[0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,175,200,250,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
-	'T'           : (16**np.arange(0,1.000001,1/29))*10,\
-	'Tav'         : (16**np.arange(0-1/29,1.000001+1/29,1/29))*10,\
-	'tSur'        : (16**np.arange(0,1.000001,1/29))*10,\
-	'surPara'     : { 'nxyz':[27,38,15], 'lalo':[55,103],#[40,60,0][55,108]\
+	'z'           : [0,5,10,15,20,30,40,50,60,80,100,120,150,250,350,500],#[0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,175,200,250,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+	'T'           : (12**np.arange(0,1.000001,1/29))*10,\
+	'Tav'         : (12**np.arange(0-1/29,1.000001+1/29,1/29))*10,\
+	'tSur'        : (12**np.arange(0,1.000001,1/29))*10,\
+	'surPara'     : { 'nxyz':[27,38,16], 'lalo':[55,103],#[40,60,0][55,108]\
 					'dlalo':[1,1], 'maxN':350,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 2,\
 					'maxIT':60,'nBatch':60,'smoothDV':80,'smoothG':200,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[32,122.5],[32,103],[40,103],[43.9,110.9]]),'perAGs':0.01,'perAGc':0.01,'perN':[3,3,5],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.05},\

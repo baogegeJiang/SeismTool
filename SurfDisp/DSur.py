@@ -1,3 +1,4 @@
+from SeismTool.plotTool import figureSet
 import numpy as np
 import os 
 from scipy import interpolate,stats
@@ -321,6 +322,10 @@ class DS:
         self.GcRes = Model(self.config,mode='GC',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
         self.fast = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
         self.fastP = Model(self.config,mode='fastP',runPath=self.runPath,file='period_Azm_tomo.inv',vR =vR)
+    def plotHJ(self,p2L=[],R=[],self1='',isCompare=False):
+        vR = ''
+        self.HJ = Model(self.config,mode='HJ',runPath=self.runPath,vR =vR)
+        self.HJ.plotByZ(self.runPath,vR=self.config.para['vR'],R=R,head='depth(USTC)')
     def outputRef(self):
         self.modelRes.outputRef(self.config.para['modelPara']['file'])
 
@@ -366,6 +371,11 @@ class Model(Model0):
             #shape = self.vsv
             #self.vsv=self.vsv.reshape([-1])
             v=v.transpose([1,2,0])
+        if mode =='HJ':
+            z,la,lo,v=loadModelHJ()
+            #.reshape([-1])
+            #shape = self.vsv
+            #self.vsv=self.vsv.reshape([-1])
         if mode=='byModel':
             v = self1.output(la,lo,z)
         if mode=='prem':
@@ -469,7 +479,7 @@ class Model(Model0):
         v = self.v[i0,i1,i2]
         return v 
     
-    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False,selfRef='',isVol=True,maxDep=20):
+    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False,selfRef='',isVol=False,maxDep=20):
         R0=R
         resDir = runPath+'/'+'plot/'
         if not os.path.exists(resDir):
@@ -477,6 +487,8 @@ class Model(Model0):
         nxyz,la,lo,z = self.config.output()
         if self.mode=='DSP':
             nxyz,la,lo,z = self.config.outputP()
+        if self.mode=='HJ':
+            nxyz,la,lo,z = self.nxyz,self.la,self.lo,self.z
         Lo,La,Z    =  np.meshgrid(lo,la,z)
         laO,loO = [la,lo]
         #V            =  self.output(la,lo,z)
@@ -585,7 +597,7 @@ class Model(Model0):
             headNew = head
             if isDiff:
                 headNew=head+'Diff'
-            plt.savefig('%s/%s_%f.jpg'%(resDir,headNew,self.z[i]),dpi=500)
+            plt.savefig('%s/%s_%f.eps'%(resDir,headNew,self.z[i]),dpi=500)
             plt.close()
     def plotByP2(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,P2=[],N=300):
         resDir = runPath+'/'+'plot/'
@@ -765,16 +777,18 @@ def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
     if isVol:
         vX,vY=m(mt.volcano[:,0],mt.volcano[:,1])
         m.plot(vX, vY,'^r')
-    m.pcolormesh(x,y,per,cmap=cmap,shading='auto',rasterized=True)
+    pc=m.pcolormesh(x,y,per,cmap=cmap,shading='auto',rasterized=True)
     m.drawcoastlines(linewidth=0.8, linestyle='dashdot', color='k')
     plt.clim(vmin=vmin,vmax=vmax)
-    cbar=plt.colorbar()
-    cbar.set_label(cLabel)
     plt.title('%s %.2f km %s: %.3f %s'%(head,z,midName,mean,meanLabel))
     if 'period' in head:
         plt.title('%s %.2f s %s: %.3f %s'%(head,z,midName,mean,meanLabel))
     dLa,dLo=getDlaDlo(R)
     plotLaLoLine(m,dLa,dLo)
+    figureSet.setColorbar(pc,cLabel,pos='right')
+    #cbar=plt.colorbar(fraction=0.035)
+    #cbar.set_label(cLabel)
+    
 
 def plotLaLoLine(m,dLa=10,dLo=10):
     parallels = np.arange(0.,90,dLa)
@@ -819,7 +833,7 @@ def loadModelTK(file = 'models/tk.nc'):
     vsv =  nc.variables['vsv'][:]
     return z,la,lo,vsv
 
-def loadModelHJ(phase='p',fileDir='../models/SRL_2018209_esupp_Velocity/'):
+def loadModelHJ_(phase='p',fileDir='../models/SRL_2018209_esupp_Velocity/'):
     ref = np.loadtxt('%s/Z_v%s0.txt'%(fileDir,phase))
     lo  = np.unique(ref[:,0])
     la  = np.unique(ref[:,1])
@@ -830,6 +844,13 @@ def loadModelHJ(phase='p',fileDir='../models/SRL_2018209_esupp_Velocity/'):
     for i in range(len(z)):
         Z = z[i]
         v[i,:,:]=np.loadtxt('%s/Z_v%s%d.txt'%(fileDir,phase,Z))[:,2].reshape([len(lo),len(la)]).transpose()
+    return z,la,lo,v
+def loadModelHJ(phase='p',file='models/USTClith2.0/USTClitho2.0.wrst.sea_level.txt'):
+    data = np.loadtxt(file)
+    lo  = np.unique(data[:,0])
+    la  = np.unique(data[:,1])
+    z  = np.unique(data[:,2])
+    v = data[:,4].reshape([len(z),len(la),len(lo)]).transpose([1,2,0])
     return z,la,lo,v
 
 def denseLaLo(La,Lo,Per,N=500):

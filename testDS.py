@@ -18,7 +18,7 @@ R.plotTrainDis()
 R.model=None
 R.loadModelUp()
 run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
-run.d.corrL.saveH5(cL,'/media/jiangyr/1TSSD/trainSet2.h5')
+#run.d.corrL.saveH5(cL,'/media/jiangyr/1TSSD/trainSet2.h5')
 #run.run.train(R,isAverage=False,isRand=True,isShuffle=True)
 #R.train(up=5,isRand=True,isShuffle=True)
 #run.run.loadCorr(R,isLoad=False)
@@ -40,7 +40,7 @@ R.config=run.runConfig(run.paraTrainTest)
 run.run.preDS(R,isByTrain=True)
 run.run.preDSTrain(R)
 run.run.preDSSyn(R,isByTrain=False)
-
+R.DS.plotHJ(p2L=R.config.para['p2L'],R=R.config.para['R'])
 R.corrL1.reSetUp(5)
 run.run.calRes(R)
 run.run.loadRes(R)
@@ -59,7 +59,7 @@ R.compare(R.DS,R.DSTrain,isCompare=True)
 
 run.d.qcFvD(R.fvAvGet)
 run.d.qcFvD(R.fvDGet)
-run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compare300/',keyL=R.fvTest,stations=R.stations)
+run.d.compareFvD(R.fvAvGet,R.fvDAverage,1/R.config.para['T'],resDir='predict/compare300/',keyL=R.fvTest,stations=R.stations)
 reload(run.d)
 run.d.plotPair(R.fvAvGet,R.stations)
 
@@ -69,18 +69,18 @@ disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvD0,R.stations,t=R.config.para['T']
 reload(run.fcn)
 run.fcn.modelUp.show(R.model,R.corrLTest.x[::100],R.corrLTest.y[::100],outputDir='predict/raw/',delta=1,T=R.config.para['T'])
 reload(run.d)
-run.d.compareFvD(R.fvAvGet,R.fvDAvarage,1/R.config.para['T'],resDir='predict/compareV10/')
+run.d.compareFvD(R.fvAvGet,R.fvDAverage,1/R.config.para['T'],resDir='predict/compareV10/')
 
-run.d.plotFVM(R.fvMGet,R.fvAvGet,R.fvDAvarage,resDir='predict/'+'pairsTrainTest220101V2/',isDouble=True,fL0=1/R.config.para['T'],stations=R.stations,keyL=R.fvTest)
+run.d.plotFVM(R.fvMGet,R.fvAvGet,R.fvDAverage,resDir='predict/'+'pairsTrainTest220101V2/',isDouble=True,fL0=1/R.config.para['T'],stations=R.stations,keyL=R.fvTest)
 
-M,V0,V1=run.d.compareInF(R.fvDAvarage,R.fvAvGet,R.stations,1/R.config.para['T'],R=R.config.para['R'])
+M,V0,V1=run.d.compareInF(R.fvDAverage,R.fvAvGet,R.stations,1/R.config.para['T'],R=R.config.para['R'])
 from SeismTool.mathTool import mathFunc
 mathFunc.showQC('predict/QC.eps')
 reload(run)
 #reload(run.d)
 #reload(run.seism)
 R1=run.run(run.runConfig(run.paraNorth))
-#R1.model=R.model
+R1.model=R.model
 #R1.calResOneByOne()
 R1.loadRes(isGetQuake=False)
 reload(run)
@@ -136,7 +136,7 @@ for key in R.fvD:
     KEY = tmp1+'_'+tmp0
     if KEY in R.fvL:
         print(KEY)
-fvDAvarageNew ={'models/prem':fvDAvarage['models/prem']}
+fvDAvarageNew ={'models/prem':fvDAverage['models/prem']}
 for corr in R.corrL1:
     key = corr.modelFile
     if len(key.split('_'))>=2:
@@ -144,9 +144,9 @@ for corr in R.corrL1:
         name1 = key.split('_')[-1]
         modelName ='%s_%s'%(name0,name1)
         #print(modelName0)
-        if modelName in R.fvDAvarage:
+        if modelName in R.fvDAverage:
             if modelName not in fvDAvarageNew:
-                fvDAvarageNew[modelName] = fvDAvarage[modelName]
+                fvDAvarageNew[modelName] = fvDAverage[modelName]
 '''
 trainSetDir='/HOME/jiangyr/trainSet/'
 R.fvL = run.loadListStr(trainSetDir+'fvL')

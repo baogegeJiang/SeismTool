@@ -153,7 +153,8 @@ class lossFuncSoftNP:
         yout1 = 1-yout0
         yout0 = K.clip(yout0,1e-7,1)
         yout1 = K.clip(yout1,1e-7,1)
-        return -K.mean(\
+        mean = (y0.max(axis=1)>0.5).mean()
+        return -1/mean*K.mean(\
                          (\
                              y0*K.log(yout0)+y1*K.log(yout1)\
                                                                      )*\
@@ -423,17 +424,19 @@ def inAndOutFuncNewNetUp(config, onlyLevel=-10000):
                 dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'1')
             if i <config.deepLevel and j==0:
                 if config.strideL[-1][0]>1:
-                    upL[j]= Conv2DTranspose(config.featureL[j],kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],\
+                    upL[j]= Conv2DTranspose(config.outputSize[-1]*3,kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],\
                     bias_initializer=config.bias_initializerL[j])(dConvL[0])
+                    if config.isBNL[-1]:
+                        upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'0'+'_Up')(upL[j])
                     upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
-                    upL[j]  = Conv2D(config.featureL[j]*(len(config.featureL)-i+1),kernel_size=config.kernelL[j],strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(upL[j])
+                    upL[j]  = Conv2D(config.outputSize[-1]*6,kernel_size=config.kernelL[j],strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(upL[j])
                     if config.isBNL[-1]:
                         upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'1'+'_Up')(upL[j])
                     upL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1'+'_Up')(upL[j])
                 else: 
                     upL[j]=dConvL[0]
                 outputsL.append(Dense(config.outputSize[-1], activation='sigmoid'\
-                    ,name='dense_out_%d'%i)(upL[j]))
+                    ,name='dense_out_1_%d'%i)(upL[j]))
     if len(outputsL)>1:
         outputs = concatenate(outputsL,axis=2,name='lastConc')
     else:
@@ -915,9 +918,6 @@ def trainAndTestMul(model,corrDTrain,corrDValid,corrDTest,outputDir='predict/',t
         trainTestLossL.append(trainTestLoss)
    # xTest, yTest, tTest =corrLValid(np.arange(len(corrLValid)))
     yout=model.predict(xTest)  
-    for threshold in [0.5,0.7,0.8]:
-        corrDValid.corrL.plotPickErro(yout.transpose([0,2,1,3]).reshape([-1,yout.shape[1],1,yout.shape[-1]]),tTrain.reshape([-1]),fileName=outputDir+'erro_valid.jpg',threshold=threshold)
-        #resStr+= printRes(yTest, yout[:,:,level:level+1])+'\n'
     resStr += '\n valid part\n'
     resStr+= printRes_old(yTest, yout)+'\n'
     xTest=None
@@ -927,9 +927,6 @@ def trainAndTestMul(model,corrDTrain,corrDValid,corrDTest,outputDir='predict/',t
     corrDValid.corrL.y=None
     xTest, yTest, tTest =corrDTest(mul=mul)
     yout=model.predict(xTest)
-    for threshold in [0.5,0.7,0.8]:
-        corrDTest.corrL.plotPickErro(yout.transpose([0,2,1,3]).reshape([-1,yout.shape[1],1,yout.shape[-1]]),tTrain.reshape([-1]),fileName=outputDir+'erro_test.jpg',\
-                threshold=threshold)
     resStr+= printRes_old(yTest, yout)+'\n'
     head = outputDir+'resStr_'+\
         obspy.UTCDateTime(time.time()).strftime('%y%m%d-%H%M%S')
@@ -1159,7 +1156,11 @@ class fcnConfig:
             self.featureL      = [30,30,30,45,45,45,60,60]
             self.featureL      = [60,60,60,60,80,80,80,80,100,100,30*mul]
             self.featureL      = [60,60,60,80,80,80,80,120]
-            self.featureL      = [60,60,60,60,80,80,80,80]
+            self.featureL      = [60,60,60,60,80,80,80]
+            self.featureL      = [60,60,60,60,60,60,60]
+            self.featureL      = [30,30,30,30,30,30,30]
+            self.featureL      = [45,45,45,45,45,45,45]
+            self.featureL      = [30,30,30,30,30,30,30]
             #self.featureL      = [8,12,16,32,48,64,96,128,160]
             #self.featureL      = [10,15,20,30,40,60,80,100,120]
             #self.featureL      = [10,15,20,30,50,80,100,120,160]
@@ -1168,6 +1169,8 @@ class fcnConfig:
             self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(2,1),(1,mul*2),(up*3,1)]
             self.strideL       = [(4,1),(4,1),(4,1),(2,1),(2,1),(3,1),(2,1),(1,mul)  ,(up,1)]
             self.kernelL       = [(12,1),(12,1),(12,1),(6,1),(6,1),(6,1),(2,1),(1,mul*2),(up*3,1)]
+            self.strideL       = [(2,1),(3,1),( 4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(16,1),(8,1),(1,mul*2),(up*3,1)]
             self.isBNL       = [True]*20
             self.doubleConv    = [True]*20
             #self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(4,1),(4,1)]
@@ -1925,7 +1928,7 @@ class modelUp(Model):
                         break
                     #print(self.metrics)
                     if True:#i%15==0:
-                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.9)
+                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.85)
                         print('learning rate: ',self.optimizer.lr)
                     if True:#i>10 and i%50==0:
                         batchSize += batchSize
