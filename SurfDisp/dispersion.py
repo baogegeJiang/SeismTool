@@ -1060,6 +1060,7 @@ class disp:
          xx, zxx, F, t)
 
 
+
 class fv:
     __doc__ = '\n    class for dispersion result\n    it have two attributes f and v, each element in v accosiate with an \n     element in v \n     用于插值的本身就必须是好的数\n    '
 
@@ -1295,6 +1296,7 @@ class fv:
         dv[np.isnan(v1)] = -100
         return dv
 
+fvNone=fv(np.array([[0],[0]]))
 
 def keyDis(key, stations):
     if '_' not in key:
@@ -1386,14 +1388,14 @@ def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minD
     FL = FL[(VL > 1)]
     binF = fL[::fStrike]
     binF.sort()
-    binD = np.arange(20) / 18 * 2000
+    binD = np.arange(18) / 18 * 1800
     print(DISTL.max())
     plt.close()
     plt.figure(figsize=[2.5, 2])
     plt.hist2d(DISTL, FL, bins=(binD, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
     if isCover:
-        plt.plot( minDis,fLDis, 'k',linewidth=0.5,label='cover')
-        plt.plot( maxDis, fLDis,'k',linewidth=0.5)
+        plt.plot( minDis,fLDis, 'g',linewidth=0.5,label='cover')
+        plt.plot( maxDis, fLDis,'g',linewidth=0.5)
         #plt.plot( minDis * (1 - R), fLDis,'-.k',linewidth=0.5,label='control')
         #plt.plot( maxDis * (1 + R), fLDis,'-.k',linewidth=0.5)
         plt.legend()
@@ -1401,6 +1403,7 @@ def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minD
     plt.gca().set_yscale('log')
     plt.xlabel('DDis(km)')
     plt.ylabel('f(Hz)')
+    plt.xlim([0,1800])
     plt.title(title)
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
@@ -1465,10 +1468,10 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
     plt.title(title)
     if isAverage:
         linewidth = 0.25
-        h0,=plt.plot((fvAverage.v[(fvAverage.v > 1)]), (fvAverage.f[(fvAverage.v > 1)]), '-k', linewidth=linewidth,label='mean')
+        h0,=plt.plot((fvAverage.v[(fvAverage.v > 1)]), (fvAverage.f[(fvAverage.v > 1)]), '-g', linewidth=linewidth,label='mean')
         for thres in thresL:
-            h1,=plt.plot((fvAverage.v[(fvAverage.v > 1)] * (1 + thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.k', linewidth=linewidth,label='$\pm$1.5%')
-            plt.plot((fvAverage.v[(fvAverage.v > 1)] * (1 - thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.k', linewidth=linewidth)
+            h1,=plt.plot((fvAverage.v[(fvAverage.v > 1)] * (1 + thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.g', linewidth=linewidth,label='$\pm$1.5%')
+            plt.plot((fvAverage.v[(fvAverage.v > 1)] * (1 - thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.g', linewidth=linewidth)
         plt.legend()
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
@@ -3127,7 +3130,11 @@ class corrL(list):
                             modelName = modelName1
             else:
                 modelName = modelNameO
-            tmpy, t0 = self[i].outputTimeDis((fvD[modelName]), T=T,
+            if modelName in fvD:
+                fv=fvD[modelName]
+            else:
+                fv = fvNone
+            tmpy, t0 = self[i].outputTimeDis((fv), T=T,
                 sigma=sigma,
                 byT=byT,
                 byA=byA,
@@ -3827,7 +3834,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
                 fig=plt.figure(figsize=[6,2])
                 axL.append(fig.add_subplot())
             figL.append(fig)
-        for j in range(mul):
+        for j in range(0,mul,3):
             print(j)
             index= iL[i,j]
             if j==0:
@@ -3838,7 +3845,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
             xlim=[0,500]
             ylim=[-0.5,mul-0.5]
             zlim=[0,8]
-            box = [3,8,1]
+            box = [3,6,1]
             elev = 40
             azim = -60
             tmpy0=y0[i,:,j,:]

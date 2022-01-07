@@ -447,7 +447,117 @@ def inAndOutFuncNewNetUp(config, onlyLevel=-10000):
     if onlyLevel>-100:
         outputs = outputsL[onlyLevel]
     return inputs,outputs
+def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
+    BNA = -1
+    inputs  = Input(config.inputSize,name='inputs')
+    depth   =  len(config.featureL)
+    convL   = [None for i in range(depth+1)]
+    dConvL  = [None for i in range(depth+1)]
+    last    = inputs
+    upL  = [None for i in range(depth+1)]
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        
+        last = Conv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+            strides=(1,1),padding='same',name=name+layerStr+'0',\
+            kernel_initializer=config.initializerL[i],\
+            bias_initializer=config.bias_initializerL[i])(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
 
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        convL[i] =last
+        if config.doubleConv[i]:
+            last = Conv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'1',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i])(last)
+            if config.isBNL[i]:
+                last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
+            last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
+        last = config.poolL[i](pool_size=config.strideL[i],\
+            strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+    name = 'Dense'
+    i=depth-1
+    layerStr='_%d_'%i
+    last = Reshape([1,1,config.featureL[i]*config.mul],name='Reshape'+layerStr+'0')(last)
+    last = Dense(config.featureL[i],name='Dense'+layerStr+'0')(last)
+    if config.isBNL[i]:
+        last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
+    last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+    if config.doubleConv[i]:
+        last = Dense(config.featureL[i],name='Dense'+layerStr+'1')(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
+    
+    name = 'DDense'
+    i=depth-1
+    layerStr='_%d_%d'%(i,i)
+    if config.doubleConv[i]:
+        last = Dense(config.featureL[i],name='Dense'+layerStr+'0')(last)
+    else:
+        last = Dense(config.featureL[i]*config.mul,name='Dense'+layerStr+'0')(last)
+    if config.isBNL[i]:
+        last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
+    last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+    if config.doubleConv[i]:
+        last = Dense(config.featureL[i]*config.mul,name='Dense'+layerStr+'1')(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
+    last = Reshape([1,config.mul,config.featureL[i]],name='Reshape'+layerStr+'0')(last)
+    convL[depth-1] =last
+    dConvL[depth-1] = convL[depth-1]
+    outputsL =[]
+    for i in range(depth-2,-1,-1):
+        name = 'DCONV'
+        for j in range(i,i+1):
+            layerStr='_%d_%d'%(i,j)
+            dConvL[j]= Conv2DTranspose(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=config.strideL[j],padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j])(dConvL[j+1])
+            
+            if config.isBNL[j]:
+                dConvL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
+            if config.doubleConv[i]:
+                dConvL[j]  = Conv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                        strides=(1,1),padding='same',name=name+layerStr+'1',\
+                        kernel_initializer=config.initializerL[j],\
+                        bias_initializer=config.bias_initializerL[j])(dConvL[j])
+                if config.isBNL[j]:
+                    dConvL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'1')(dConvL[j])
+                dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'1')(dConvL[j])
+                dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'1')
+            if i <config.deepLevel and j==0:
+                if config.strideL[-1][0]>1:
+                    upL[j]= Conv2DTranspose(config.outputSize[-1]*2,kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],\
+                    bias_initializer=config.bias_initializerL[j])(dConvL[0])
+                    if config.isBNL[-1]:
+                        upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'0'+'_Up')(upL[j])
+                    upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
+                    upL[j]  = Conv2D(config.outputSize[-1]*4,kernel_size=config.kernelL[j],strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(upL[j])
+                    if config.isBNL[-1]:
+                        upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'1'+'_Up')(upL[j])
+                    upL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1'+'_Up')(upL[j])
+                else: 
+                    upL[j]=dConvL[0]
+                outputsL.append(Dense(config.outputSize[-1], activation='sigmoid'\
+                    ,name='dense_out_1_%d'%i)(upL[j]))
+    if len(outputsL)>1:
+        outputs = concatenate(outputsL,axis=2,name='lastConc')
+    else:
+        outputs = outputsL[-1]
+        if config.mode == 'p' or config.mode == 's'or config.mode == 'ps':
+            if config.outputSize[-1]>1:
+                outputs = Softmax(axis=3)(outputs) 
+    if onlyLevel>-100:
+        outputs = outputsL[onlyLevel]
+    return inputs,outputs
 
 def inAndOutFuncNewV6(config, onlyLevel=-10000):
     BNA = -1
@@ -1145,6 +1255,7 @@ class fcnConfig:
             self.inAndOutFunc = inAndOutFuncNewV6
             self.deepLevel = 1
         if mode=='surfUp':
+            self.mul           = mul
             self.inputSize     = [512*3,mul,4]
             self.outputSize    = [512*3*up,mul,30]
             self.featureL      = [60,80,80,100,100,120,120,150]
@@ -1188,7 +1299,7 @@ class fcnConfig:
             MaxPooling2D,MaxPooling2D,MaxPooling2D]
             self.poolL        = [MaxPooling2D,AveragePooling2D]*10
             self.lossFunc     = lossFuncSoft(w=10)#10
-            self.inAndOutFunc = inAndOutFuncNewNetUp#inAndOutFuncNewUp
+            self.inAndOutFunc = inAndOutFuncNewNetDenseUp#inAndOutFuncNewUp
             self.lossFuncNP     = lossFuncSoftNP()
             self.deepLevel = 1
         elif mode=='surfdt':

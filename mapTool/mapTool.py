@@ -16,10 +16,10 @@ from ..plotTool import figureSet as fs
 cmap = cpt2cm(os.path.dirname(__file__)+'/../data/temperatureInv')
 cmapNoGreen = cpt2cm(os.path.dirname(__file__)+'/../data/no_green.cpt').reversed()
 cmapTemp = cpt2cm(os.path.dirname(__file__)+'/../data/temperature')
-
+cmapETopo=cpt2cm(os.path.dirname(__file__)+'/ETOPO1.cpt')
 volcano=np.loadtxt(os.path.dirname(__file__)+'/../data/volcano')
 pi=3.1415927
-def genBaseMap(R=[0,90,0,180], topo=None):
+def genBaseMap(R=[0,90,0,180], topo=None,**kwags):
     m=basemap.Basemap(llcrnrlat=R[0],urcrnrlat=R[1],llcrnrlon=R[2],\
     urcrnrlon=R[3])
     #m=basemap.Basemap(width=111700*(R[1]*-R[0]), height=111700*(R[3]*-R[2]),lat_0=R[0]*0.5+R[1]*0.5,lat_1=R[0],lon_0=R[2]*0.5+R[3]*0.5,\
@@ -28,14 +28,14 @@ def genBaseMap(R=[0,90,0,180], topo=None):
         #m.etopo()
         pass
     else:
-        plotTopo(m,R,topo=topo)
+        plotTopo(m,R,topo=topo,**kwags)
     return m
-def plotOnMap(m, lat,lon,cmd='.b',markersize=0.5,alpha=1,linewidth=0.5,mfc=[]):
+def plotOnMap(m, lat,lon,cmd='.b',markersize=0.5,alpha=1,linewidth=0.5,mfc=[],**kwags):
     x,y=m(lon,lat)
     if len(mfc)>0:
-        return plt.plot(x,y,cmd,markersize=markersize,alpha=alpha,linewidth=linewidth,mfc=mfc)
+        return plt.plot(x,y,cmd,markersize=markersize,alpha=alpha,linewidth=linewidth,mfc=mfc,**kwags)
     else:
-        return plt.plot(x,y,cmd,markersize=markersize,alpha=alpha,linewidth=linewidth)
+        return plt.plot(x,y,cmd,markersize=markersize,alpha=alpha,linewidth=linewidth,**kwags)
 
 def scatterOnMap(m, lat,lon,s,alpha=1,c=None):
     x,y=m(lon,lat)
@@ -56,7 +56,34 @@ def readnetcdf(R,file='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd'):
     loI1 = np.abs(lo-R1[1]).argmin()+2
     z=nc.variables['z'][:]
     return np.array(la[laI0:laI1]),np.array(lo[loI0:loI1]),np.array(z[laI0:laI1,loI0:loI1])
+def plotLaLoLine(m,dLa=10,dLo=10):
+    parallels = np.arange(0.,90,dLa)
+    m.drawparallels(parallels,labels=[False,True,True,False])
+    meridians = np.arange(10.,360.,dLo)
+    plt.gca().yaxis.set_ticks_position('right')
+    m.drawmeridians(meridians,labels=[True,False,False,True])
 
+def getDlaDlo(R):
+    DLA = R[1] -R[0]
+    DLO = R[3] -R[2]
+    if DLA<10:
+        dLa = 2
+    elif DLA<20:
+        dLa = 4
+    elif DLA<40:
+        dLa = 5
+    else:
+        dLa = 10
+
+    if DLO<10:
+        dLo = 2
+    elif DLO<20:
+        dLo = 4
+    elif DLO<40:
+        dLo = 5
+    else:
+        dLo = 10
+    return dLa,dLo
 def getZInR(la0,lo0,z0,R,laN=500,loN=500):
     la=np.arange(R[0],R[1],(R[1]-R[0])/laN)
     lo=np.arange(R[2],R[3],(R[3]-R[2])/loN)
@@ -69,17 +96,21 @@ def getZInLine(la0,lo0,z0,line,laN=500,loN=500):
     lo=np.arange(loN)/(loN-1)*(line.xyL[1][1]-line.xyL[0][1])+line.xyL[0][1]#np.arange(line.xyL[0][1],line.xyL[1][1],(line.xyL[1][1]-line.xyL[0][1])/loN)
     z=interp.interpn((la0,lo0),z0,np.concatenate([la.reshape([-1,1]),lo.reshape([-1,1])],axis=-1),method='linear')
     return la,lo,z
-def plotTopo(m,R,topo='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd',laN=800,loN=800,cptfile='wiki-2.0.cpt',vmax=5000,vmin=0,isColorbar=True):#'cpt17.txt'):
+def plotTopo(m,R,topo='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd',laN=800,loN=800,cpt='wiki-2.0.cpt',vmax=5000,vmin=0,isColorbar=True):#'cpt17.txt'):
     la0,lo0,z0=readnetcdf(R,topo)
     la,lo,z=getZInR(la0,lo0,z0,R,laN=laN,loN=loN)
     #loM,laM=np.meshgrid(lo,la)
     x,y=m(lo,la)
+    a=plt.gca()
     #print(la[0,0],lo[0,0])
-    pc=m.pcolormesh(x,y,z,cmap=cpt2cm(cptfile),vmin=vmin, vmax=vmax,rasterized=True)
+    if isinstance(cpt,str):
+        cpt = cpt2cm(cpt)
+    pc=m.pcolormesh(x,y,z,cmap=cpt,vmin=vmin, vmax=vmax,rasterized=True)
     if isColorbar:
         bar=plt.colorbar()
-        bar.set_label('Topography')
+        bar.set_label('elevation(m)')
     #z.set_clim(-9000,9000)
+    a.set_xlim(a.get_xlim())
     return pc
 
 def quakeLs2kml(quakeLs,filename):
@@ -114,7 +145,7 @@ class Fault:
             return False
         else:
             return True
-    def plot(self,m=None,cmd='-k',markersize=0.5,alpha=1,isDip=False,l=0.3,linewidth=0.5):
+    def plot(self,m=None,cmd='-k',markersize=0.5,alpha=1,isDip=False,l=0.3,linewidth=0.5,**kwags):
         laL=np.array(self.laL)
         loL=np.array(self.loL)
         dipLaL=[]
@@ -128,13 +159,13 @@ class Fault:
             dipLaL=np.array([0,l*np.cos(self.strike+pi/2)])+la0
             dipLoL=np.array([0,l*np.sin(self.strike+pi/2)])+lo0
         if m!=None:
-            return plotOnMap(m,laL,loL,cmd,markersize,alpha,linewidth=linewidth)
+            return plotOnMap(m,laL,loL,cmd,markersize,alpha,linewidth=linewidth,**kwags)
             if isDip and len(dipLaL)>0:
                 plotOnMap(m,dipLaL,dipLoL,cmd0,markersize,alpha,linewidth=linewidth)
         else:
-            return plt.plot(loL,laL,cmd,markersize=markersize,alpha=alpha)
+            return plt.plot(loL,laL,cmd,markersize=markersize,alpha=alpha,**kwags)
             if isDip and len(dipLaL)>0:
-                plt.plot(dipLoL,dipLaL,cmd0,markersize=markersize,alpha=alpha)
+                plt.plot(dipLoL,dipLaL,cmd0,markersize=markersize,alpha=alpha,**kwags)
 
 def readFault(filename,maxD=10000):
     faultL=[]

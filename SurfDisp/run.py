@@ -5,6 +5,7 @@ import random
 import matplotlib.pyplot as plt
 import numpy as np
 from ..mathTool import mathFunc
+from ..mapTool import mapTool as mt
 from ..deepLearning import fcn
 from ..io import seism
 from . import DSur
@@ -41,8 +42,8 @@ dConfig=d.config(originName='models/prem',srcSacDir=srcSacDir,\
 		isFlat=True,R=6371,flatM=-2,pog='p',calMode='gpdc',\
 		T=T,threshold=0.02,expnt=12,dk=0.05,\
 		fok='/k',order=0,minSNR=10,isCut=False,\
-		minDist=110*10,maxDist=110*170,minDDist=200,\
-		maxDDist=1880,para=para,isFromO=True,removeP=True)
+		minDist=110*10,maxDist=110*170,minDDist=150,\
+		maxDDist=1600,para=para,isFromO=True,removeP=True)
 def saveListStr(file,strL):
 	with open(file,'w+') as f:
 		for STR in strL:
@@ -136,7 +137,34 @@ class run:
 			if np.abs(dDis0-corr.dDis).sum()>1:
 				count+=1
 		print('erro Count',count)
-	def loadCorr(self,isLoad=True,isLoadFromMat=False,isGetAverage=True,isDisQC=False):
+	def plotStaDis(self):
+		para = self.config.para
+		stations = self.stations
+		R        = self.config.para['R']
+		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
+		plt.close()
+		plt.figure()
+		m        = mt.genBaseMap(R=R)
+		pc=mt.plotTopo(m,R,topo='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4NE.grd',isColorbar=False,cpt=mt.cmapETopo,vmin=-11000,vmax=8500)
+		haveOne=False
+		for fault in mt.faultL:
+			if fault.inR(R):
+				if haveOne:
+					fault.plot(m,markersize=0.3,)
+				else:
+					fault.plot(m,markersize=0.3,label='fault')
+					haveOne=True
+		stx,sty=m(*stations.loc()[-1::-1])
+		vX,vY=m(mt.volcano[:,0],mt.volcano[:,1])
+		m.plot(stx,sty,'sk',label='station')
+		m.plot(vX, vY,'^r',label='volcano')
+		#m.drawcoastlines(linewidth=0.8, linestyle='dashdot', color='k')
+		plt.legend()
+		dLa,dLo=mt.getDlaDlo(R)
+		mt.plotLaLoLine(m,dLa,dLo)
+		mt.fs.setColorbar(pc,'elevation(m)')
+		plt.savefig(resDir+'staDisWithTopo.pdf')
+	def loadCorr(self,isLoad=True,isLoadFromMat=False,isGetAverage=True,isDisQC=False,isAll=True):
 		trainSetDir = self.config.para['trainMatDir']
 		config     = self.config
 		corrL      = []
@@ -203,11 +231,20 @@ class run:
 					corrL   += corrL0
 				else:
 					corrL = d.corrL()
-					corrL.loadByH5(para['trainH5'])
+					if isAll:
+						with h5py.File(para['matH5']) as h5:
+							for j in range(len(sta)):
+								print(j,'of',len(sta))
+								for k in range(j,len(sta)):
+									print(j,'of',len(sta),k)
+									sta0=sta[j]['net']+'.'+sta[j]['sta']
+									sta1=sta[k]['net']+'.'+sta[k]['sta']
+									if sta0>sta1:
+										sta1,sta0=[sta0,sta1]
+									corrL.loadByPairsH5([sta0+'_'+sta1],h5)
+					else:
+						corrL.loadByH5(para['trainH5'])
 					self.loadFvL(trainSetDir)
-		if isLoad:
-			self.corrL  = d.corrL(corrL,maxCount=para['maxCount'])
-			self.corrL1 = d.corrL(self.corrL,maxCount=para['maxCount'],fvD=fvD)
 		
 		self.fvDAverage = fvDAverage
 		fvDNew =fvD
@@ -217,18 +254,45 @@ class run:
 			fvD0New = {}
 			fvDAverageNew ={'models/prem':fvDAverage['models/prem']}
 			self.fvDAverage = fvDAverageNew
-			for corr in self.corrL1:
+			fvDAverageNewCount={}
+			corrL1=[]
+			for corr in corrL:
 				key = corr.modelFile
-				fvDNew[key]=fvD[key]
-				fvD0New[key]=fvD0[key]
+				if key in fvD0:
+					if len(key.split('_'))>=2:
+						name0 = key.split('_')[-2]
+						name1 = key.split('_')[-1]
+						modelName0 ='%s_%s'%(name0,name1)
+						modelName1 ='%s_%s'%(name1,name0)
+						#print(modelName0)
+						if modelName0 in fvDAverage or modelName1 in fvDAverage:
+							if modelName0 in fvDAverage:
+								modelName =modelName0
+							else:
+								modelName =modelName1
+							if modelName in fvDAverage:
+								if modelName not in fvDAverageNewCount:
+									fvDAverageNewCount[modelName] = 0
+								fvDAverageNewCount[modelName]+=1
+								if modelName not in fvDAverageNew and fvDAverageNewCount[modelName]>=para['minSta']:
+									fvDAverageNew[modelName] = fvDAverage[modelName]
+			for corr in corrL:
+				key = corr.modelFile
+				key = corr.modelFile
 				if len(key.split('_'))>=2:
 					name0 = key.split('_')[-2]
 					name1 = key.split('_')[-1]
-					modelName ='%s_%s'%(name0,name1)
+					modelName0 ='%s_%s'%(name0,name1)
+					modelName1 ='%s_%s'%(name1,name0)
 					#print(modelName0)
-					if modelName in fvDAverage:
-						if modelName not in fvDAverageNew:
-							fvDAverageNew[modelName] = fvDAverage[modelName]
+					if modelName0 in fvDAverageNew or modelName1 in fvDAverageNew:
+						if key in fvD0 or isAll:
+							corrL1.append(corr)
+						if key in fvD0:
+							fvDNew[key]=fvD[key]
+							fvD0New[key]=fvD0[key]								
+			self.corrL  = d.corrL(corrL,maxCount=para['maxCount'])
+			self.corrL1 = d.corrL(corrL1,maxCount=para['maxCount'])
 		self.fvD    = fvDNew
 		self.fvD0   = fvD0New
 		self.quakes = quakes
@@ -411,11 +475,11 @@ class run:
 		sigma = np.ones(len(self.config.para['T']))
 		N =len(self.config.para['T'])
 		N_5=int(N/5)
-		sigma[:N_5]=1.5
-		sigma[N_5:2*N_5]= 1.5
-		sigma[2*N_5:3*N_5]=1.75
-		sigma[3*N_5:4*N_5]=2
-		sigma[4*N_5:5*N_5]=2.25
+		sigma[:N_5]=1.25
+		sigma[N_5:2*N_5]= 1.25
+		sigma[2*N_5:3*N_5]=1.5
+		sigma[3*N_5:4*N_5]=1.75
+		sigma[4*N_5:5*N_5]=2
 		self.config.sigma=sigma
 		fcn.trainAndTestMul(self.model,self.corrDTrain,self.corrDValid,self.corrDTest,\
                         outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=3e-3,mul=para['mul'])#w0=3#4
@@ -1448,11 +1512,11 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
 	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
 	'matH5'	  :'/media/jiangyr/1TSSD/all.h5',\
-	'randA'       : 0.05,\
+	'randA'       : 0.03,\
 	'midV'        : 4,\
-	'mul'		  : 6,\
+	'mul'		  : 12,\
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220106V1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220106V6/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 50,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           :[0,5,10,15,20,30,40,50,60,80,100,120,150,250,350,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
@@ -1473,7 +1537,7 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'qcThreshold': 0.82285,\
 	'minProb'     :0.5,\
 	'minP'        :0.5,\
-	'minSta'      : 3,\
+	'minSta'      : 6,\
 	'laL'         : [],\
 	'loL'         : [],\
 	'areasLimit'  :  3,\
@@ -1547,8 +1611,8 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'matH5'	  :'/media/jiangyr/1TSSD/all.h5',\
 	'randA'       : 0.03,\
 	'midV'        : 4,\
-	'mul'		  : 6,\
-	'resDir'      : '/media/jiangyr/MSSD/20220106NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'mul'		  : 12,\
+	'resDir'      : '/media/jiangyr/MSSD/20220106NorthV6/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 2,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           : [0,5,10,15,20,30,40,50,60,80,100,120,150,250,350,500],#[0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,175,200,250,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
@@ -1569,7 +1633,7 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'qcThreshold': 0.82285,\
 	'minProb'     :0.5,\
 	'minP'        :0.5,\
-	'minSta'      : 4,\
+	'minSta'      : 6,\
 	'laL'         : [],\
 	'loL'         : [],\
 	'areasLimit'  :  3,\

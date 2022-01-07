@@ -783,41 +783,14 @@ def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
     plt.title('%s %.2f km %s: %.3f %s'%(head,z,midName,mean,meanLabel))
     if 'period' in head:
         plt.title('%s %.2f s %s: %.3f %s'%(head,z,midName,mean,meanLabel))
-    dLa,dLo=getDlaDlo(R)
-    plotLaLoLine(m,dLa,dLo)
+    dLa,dLo=mt.getDlaDlo(R)
+    mt.plotLaLoLine(m,dLa,dLo)
     figureSet.setColorbar(pc,cLabel,pos='right')
     #cbar=plt.colorbar(fraction=0.035)
     #cbar.set_label(cLabel)
     
 
-def plotLaLoLine(m,dLa=10,dLo=10):
-    parallels = np.arange(0.,90,dLa)
-    m.drawparallels(parallels,labels=[False,True,True,False])
-    meridians = np.arange(10.,360.,dLo)
-    plt.gca().yaxis.set_ticks_position('right')
-    m.drawmeridians(meridians,labels=[True,False,False,True])
 
-def getDlaDlo(R):
-    DLA = R[1] -R[0]
-    DLO = R[3] -R[2]
-    if DLA<10:
-        dLa = 2
-    elif DLA<20:
-        dLa = 4
-    elif DLA<40:
-        dLa = 5
-    else:
-        dLa = 10
-
-    if DLO<10:
-        dLo = 2
-    elif DLO<20:
-        dLo = 4
-    elif DLO<40:
-        dLo = 5
-    else:
-        dLo = 10
-    return dLa,dLo
 
 def loadModel(file='models/prem'):
     data = np.loadtxt(file)

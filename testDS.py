@@ -12,7 +12,7 @@ run.d.Vav=-1
 isDisQC =True
 isCoverQC = True
 #R.plotGetDis()
-R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=False,isDisQC=isDisQC)#True
+R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=False,isDisQC=isDisQC,isAll=True)#True
 R.getDisCover()
 R.plotTrainDis()
 R.model=None
@@ -27,7 +27,7 @@ R.calFromCorr()
 R.loadRes()
 #R.getAv(isCoverQC=True,isDisQC=False)
 R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
-run.run.analyRes(R,format='jpg')
+run.run.analyRes(R,format='pdf')
 #R.loadModelUp(R.config.para['modelFile'])
 reload(run)
 reload(run.fcn)
