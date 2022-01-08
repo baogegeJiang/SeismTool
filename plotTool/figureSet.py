@@ -23,37 +23,49 @@ def setABC(ABC,pos=[0.05,0.95],c='k',m=None,key='ZGKX'):
         xpos,ypos=m(xpos,ypos)
         print(xpos,ypos)
     plt.text(xpos,ypos,ABC,verticalalignment='top',horizontalalignment='left',c=c)
-def setColorbar(pc,label='',key='ZGKX',pos='bottom',isAppend=True):
-    ax=plt.gca()
+def setColorbar(pc,label='',key='ZGKX',pos='bottom',isAppend=True,is3D=False,isShow=True,ax=None):
+    if ax==None:
+        ax=plt.gca()
     ax_divider = make_axes_locatable(ax)
     cax = ax
     if pos in ['bottom','top']:
         if isAppend:
-            cax = ax_divider.append_axes(pos, size="7%", pad="10%")
-        cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
+            cax = ax_divider.append_axes(pos, size="7%", pad="10%",)
+        if pc!=None:
+            cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
     elif pos in ['right','left']:
         if isAppend:
             cax = ax_divider.append_axes(pos, size="7%", pad="10%")
-        cbar=plt.colorbar(pc, cax=cax, orientation="vertical")
+        if pc!=None:
+            cbar=plt.colorbar(pc, cax=cax, orientation="vertical")
     elif pos in ['HBDZKX']:
         if isAppend:
             cax = ax_divider.append_axes('bottom', size="3%", pad="2%")
-        cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
+        if pc!=None:
+            cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
     elif pos in ['HBDZKXPer']:
         if isAppend:
             cax = ax_divider.append_axes('bottom', size="3%", pad="2%")
-        cbar=plt.colorbar(pc, cax=cax, orientation="horizontal",ticks=[-0.03,0,0.03])
+        if pc!=None:
+            cbar=plt.colorbar(pc, cax=cax, orientation="horizontal",ticks=[-0.03,0,0.03])
     if pos in ['ZGKX']:
         if isAppend:
             cax = ax_divider.append_axes('bottom', size="7%", pad="3%")
-        cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
+        if pc!=None:
+            cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
     if pos in ['Surf']:
         if isAppend:
             cax = ax_divider.append_axes('bottom', size="20%", pad="-60%")
-        cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
+        if pc!=None:
+            cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
         #plt.xticks([])
     if len(label)>0:
-        cbar.set_label(label)
+        if pc!=None :
+            cbar.set_label(label)
+            if is3D:
+                surf=cax.collections[0]
+                surf._facecolors2d=surf._facecolors3d
+                surf._edgecolors2d=surf._edgecolors3d
 
 def getCAX(pos='bottom',size="7%", pad="10%"):
     ax=plt.gca()

@@ -1,3 +1,4 @@
+from math import degrees
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
@@ -1788,9 +1789,14 @@ def getFVFromPairFile(file, fvD={}, quakeD=seism.QuakeL(), isPrint=False, isAll=
             if i == fNum:
                 stat = 'next'
                 az0 = DistAz(la, lo, sta0La, sta0Lo).getAz()
+                dis0 = DistAz(la, lo, sta0La, sta0Lo).getDelta()
+                #v0 = dis0*111.19/(IASP91(dep,dis0))
                 az1 = DistAz(la, lo, sta1La, sta1Lo).getAz()
+                dis1 = DistAz(la, lo, sta1La, sta1Lo).getDelta()
+                #v1 = dis1*111.19/(IASP91(dep,dis1))
                 baz0 = DistAz(la, lo, sta0La, sta0Lo).getBaz()
                 az01 = DistAz(sta0La, sta0Lo, sta1La, sta1Lo).getAz()
+                #vMin = min(v0,v1)
                 if (az0 - az1 + 10) % 360 > 20:
                     continue
                 if (baz0 - az01 + 10) % 180 > 20:
@@ -1802,10 +1808,17 @@ def getFVFromPairFile(file, fvD={}, quakeD=seism.QuakeL(), isPrint=False, isAll=
                         quakeD.append(quake)
                     else:
                         quake = quakeD[index]
+
                 name = quake.name('_', fmt='%.5f')
                 key = '%s_%s' % (name, pairKey)
                 if len(f) < 2:
                     continue
+                f = np.array(f)
+                v= np.array(v)
+                std= np.array(std)
+                #f=f[v<vMin]
+                #std=std[v<vMin]
+                #v=v[v<vMin]
                 if isAll:
                     fvD[key] = fv([f, v, std], mode='dis')
                 else:
@@ -3156,8 +3169,8 @@ class corrL(list):
                         print('******* rand1:', rand1)
                     dDis = dDis * rand1
             delta0 = self[i].timeL[1] - self[i].timeL[0]
-            timeMin = dDis / 5.5
-            timeMax = dDis / 2.5
+            timeMin = dDis / 5.0
+            timeMax = dDis / 2.0
             I0 = int(np.round(timeMin / delta0).astype(np.int))
             I1 = int(np.round(timeMax / delta0).astype(np.int))
             x[ii, I0:I1, 0, 1] = 1
@@ -3390,12 +3403,12 @@ class corrL(list):
                     f.write('%s %.5f\n' % (obspy.UTCDateTime(time).strftime('%Y %m %d %H %M'), time % 60))
                     f.write('%f %f\n' % (station1['la'], station1['lo']))
                     f.write('%.5f %.5f -1 -1 0\n' % (la, lo))
-                    f.write('%f %f 0 0 \n' % (corr.dis[1] / 110.7, corr.az[1]))
+                    f.write('%f %f 0 0 \n' % (corr.dis[1] / 111.19, corr.az[1]))
                     f.write('%s 5\n' % station0['comp'][(-1)])
                     f.write('%s %.5f\n' % (obspy.UTCDateTime(time).strftime('%Y %m %d %H %M'), time % 60))
                     f.write('%f %f\n' % (station0['la'], station0['lo']))
                     f.write('%.5f %.5f -1 -1 0\n' % (la, lo))
-                    f.write('%f %f 0 0 \n' % (corr.dis[0] / 110.7, corr.az[0]))
+                    f.write('%f %f 0 0 \n' % (corr.dis[0] / 111.19, corr.az[0]))
                     f.write('2 %d\n' % len(vIndex))
                     for ii in vIndex:
                         f.write('%f\n' % (1 / T[ii]))
@@ -3434,12 +3447,12 @@ class corrL(list):
                     f.write(obspy.UTCDateTime(time).strftime('%Y %m %d %H %M %S\n'))
                     f.write('%f %f\n' % (station1['la'], station1['lo']))
                     f.write('%f %f -1 -1 0\n' % (la, lo))
-                    f.write('%f %f 0 0 \n' % (corr.dis[1] / 110.7, corr.az[1]))
+                    f.write('%f %f 0 0 \n' % (corr.dis[1] /111.19, corr.az[1]))
                     f.write('%s 5\n' % station0['comp'][(-1)])
                     f.write(obspy.UTCDateTime(time).strftime('%Y %m %d %H %M %S\n'))
                     f.write('%f %f\n' % (station0['la'], station0['lo']))
                     f.write('%f %f -1 -1 0\n' % (la, lo))
-                    f.write('%f %f 0 0 \n' % (corr.dis[0] / 110.7, corr.az[0]))
+                    f.write('%f %f 0 0 \n' % (corr.dis[0] / 111.19, corr.az[0]))
                     f.write('2 %d\n' % len(vIndex))
                     for ii in vIndex:
                         f.write('%f\n' % (1 / T[ii]))
@@ -3802,8 +3815,23 @@ class corrD(dict):
         Y = model.predict(x)
         v, prob, vM, probM = self.corrL.getV((Y.transpose([0, 2, 1, 3]).reshape([-1, Y.shape[1], 1, Y.shape[(-1)]])), isSimple=isSimple, D=D, isLimit=isLimit, isFit=isFit)
         self.corrL.saveV(v, prob, T, (self.corrL.iL), stations, resDir=resDir, minProb=minProb)
+    def getAndSaveOldPer(self, model, fileName, stations, isPlot=False, isSimple=True, D=0.2, isLimit=False, isFit=False, minProb=0.7, mul=1,per=100):
+        if 'T' in self.corrL.timeDisKwarg:
+            T = self.corrL.timeDisKwarg['T']
+        else:
+            T = self.corrL.timeDisArgv[1]
+        resDir = os.path.dirname(fileName)
+        if not os.path.exists(resDir):
+            os.makedirs(resDir)
+        keyL = self.keyL
+        for i in range(0,len(keyL),per):
+            print(i,'in',len(keyL) )
+            x, y, t = self(keyL=keyL[i:min(i+per,len(keyL))],mul=mul)
+            Y = model.predict(x)
+            v, prob, vM, probM = self.corrL.getV((Y.transpose([0, 2, 1, 3]).reshape([-1, Y.shape[1], 1, Y.shape[(-1)]])), isSimple=isSimple, D=D, isLimit=isLimit, isFit=isFit)
+            self.corrL.saveV(v, prob, T, (self.corrL.iL), stations, resDir=resDir, minProb=minProb)
 
-def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
+def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
     f = 1/T
     dirName = os.path.dirname(outputDir)
     if not os.path.exists(dirName):
@@ -3813,26 +3841,15 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
     norm = colors.Normalize(vmin=0, vmax=1)
     for i in range(10):
         plt.close()
-        '''
-        if number == 4:
-            plt.figure(figsize=[12,8])
-        else:
-            plt.figure(figsize=[12,6])
         axL=[]
-        
-        for nn in range(number-1):
-            axL.append(plt.subplot(number,1,nn+1,projection='3d'))
-        axL.append(plt.subplot(number,1,number))
-        '''
-        axL=[]
+        caxL=[]
         figL=[]
         for nn in range(number):
-            if nn <number-1:
-                fig=plt.figure(figsize=[5,5])
-                axL.append(fig.add_subplot(projection='3d'))
-            else:
-                fig=plt.figure(figsize=[6,2])
-                axL.append(fig.add_subplot())
+            fig=plt.figure(figsize=[7.5,5])
+            grids=plt.GridSpec(10,4)
+            #axL.append(fig.add_subplot(projection='3d'))
+            axL.append(fig.add_subplot(grids[0:9,:],projection='3d'))
+            caxL.append(fig.add_subplot(grids[9,1:3]))
             figL.append(fig)
         for j in range(0,mul,3):
             print(j)
@@ -3845,7 +3862,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
             xlim=[0,500]
             ylim=[-0.5,mul-0.5]
             zlim=[0,8]
-            box = [3,6,1]
+            box = [3,6,1.25]
             elev = 40
             azim = -60
             tmpy0=y0[i,:,j,:]
@@ -3865,7 +3882,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
                 if k==1:
                     c= 'k'
                 else:
-                    c= 'rgbrym'[j]
+                    c= 'rrrgggbbbrrryyymmm'[j]
                 axL[0].plot(timeL[timeL<xlim[1]],tmpx[timeL<xlim[1],k],c,\
                     label=legend[k],linewidth=0.5,zs=j,zdir='y')
             #plt.legend()
@@ -3879,6 +3896,8 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
             axL[0].set_zticks([0,4])
             axL[0].set_box_aspect(box)
             axL[0].view_init(elev,azim)
+            caxL[0].axis('off')
+            figureSet.setColorbar(None,label='Probability',pos='bottom',isAppend=False)
             #plt.clim(0,1)
             #pc=plt.pcolormesh(timeLOut,f,tmpy0.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
             X,Z=np.meshgrid(timeLOut[timeLOut<xlim[1]],f)
@@ -3889,7 +3908,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
             axL[1].set_box_aspect(box)
             axL[1].view_init(elev,azim)
             #figureSet.setColorbar(pc,label='Probility',pos='right')
-            if number==4:
+            if number==3:
                 axL[1].plot(timeLOutL,f,'--k',linewidth=0.5,zs=j,zdir='y')
             axL[1].set_ylabel('index')
             axL[1].set_zlabel('f/Hz')
@@ -3900,8 +3919,11 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
             axL[1].set_zticks([f.max(),f.min()])
             #axL[1].set(clip_on=False)
             axL[1].set_yticks(np.arange(mul))
+            pc =cm.ScalarMappable(norm=norm, cmap=cmap)
+            #caxL[1].axis('off')
+            figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[1])
             #plt.colorbar(label='Probility')
-            if number==4:
+            if number==3:
                 #pc=plt.pcolormesh(timeLOut,f,tmpy.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
                 surf=axL[2].plot_surface(X,Y,Z,cmap='bwr',vmin=0,vmax=1,facecolors=cmap(norm(tmpy[timeLOut<xlim[1]].transpose())),rasterized=True,rstride=1, cstride=1)
                 surf._facecolors2d=surf._facecolors3d
@@ -3918,19 +3940,18 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=4):
                 axL[2].set_zticks([f.max(),f.min()])
                 axL[2].set_xlim(xlim)
                 axL[2].set_ylim(ylim)
-        pc =cm.ScalarMappable(norm=norm, cmap=cmap)
-        axL[number-1].axis('off')
-        #cax=figureSet.getCAX(pos='right')
-        figureSet.setColorbar(pc,label='Probability',pos='left')
+                pc =cm.ScalarMappable(norm=norm, cmap=cmap)
+                #caxL[2].axis('off')
+                figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[2])
         #plt.colorbar(label='Probility')
         #plt.gca().semilogx()
         for nn in range(number):
-            if number==4:
-                tail = 'with'
-                kind = ['wave','label','predict','colorbar'][nn]
             if number==3:
+                tail = 'with'
+                kind = ['wave','label','predict'][nn]
+            if number==2:
                 tail = 'without'
-                kind = ['wave','label','colorbar'][nn]
+                kind = ['wave','label'][nn]
             figL[nn].savefig('%s/%s_%s_%s.svg'%(outputDir,head,kind,tail),dpi=500)
 
 def analyModel(depth, v, resDir='predict/KEA20/'):
@@ -3989,9 +4010,23 @@ def corrSac(d, sac0, sac1, name0='', name1='', quakeName='', az=np.array([0, 0])
 
 
 iasp91 = taup(phase_list=['S', 's'])
+def IASP91(dep,deg):
+    tStart = iasp91(dep,deg)
+    if deg > 95:
+        tStart = deg*111.19 / 5.5
+    return tStart
 
-def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), dep=10, modelFile='', srcSac='', minSNR=5, isCut=False, maxDist=100000000.0, minDist=0, maxDDist=100000000.0, minDDist=0, isFromO=False, removeP=False, isLoadFv=False, fvD={}, quakeName='', isByQuake=False, specN=40, specThreshold=0.1, isDisp=False, maxCount=-1, **kwags):
+
+def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), dep=10, modelFile='', srcSac='', minSNR=5, isCut=False, maxDist=100000000.0, minDist=0, maxDDist=100000000.0, minDDist=0, isFromO=False, removeP=False, isLoadFv=False, fvD={}, quakeName='', isByQuake=False, specN=40, specThreshold=0.1, isDisp=False, maxCount=-1,plotDir='', **kwags):
     modelFileO = modelFile
+    if len(plotDir)!=0:
+        plt.close()
+        plt.figure(figsize=[10,5])
+        isPlot=False
+        if not os.path.exists(plotDir):
+            os.makedirs(plotDir)
+    TMIN=10000000
+    TMAX=-10000
     if len(sacsL) != len(sacNamesL):
         return []
     else:
@@ -4003,29 +4038,55 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
             distL[i] = sacsL[i][0].stats['sac']['dist']
             if isDisp:
                 sacsL[i][0].integrate()
-            to = 0
+            to = 30
             dto = to - sacsL[i][0].stats['sac']['b']
             io = max(0, int(dto / sacsL[i][0].stats['sac']['delta']))
-            te = distL[i] / 1.8 * 1.5
-            dte = te - sacsL[i][0].stats['sac']['b']
-            ie = min(sacsL[i][0].data.size, int(dte / sacsL[i][0].stats['sac']['delta']))
-            tStart = iasp91(sacsL[i][0].stats['sac']['evdp'], sacsL[i][0].stats['sac']['gcarc']) * 1.1
-            if tStart > 100000.0 or tStart < 5:
-                tStart = distL[i] / 5
-            t0 = min(distL[i] / 4.6, tStart)
+            te = 60
+            dte= te - sacsL[i][0].stats['sac']['b']
+            ie = max(0, int(dte / sacsL[i][0].stats['sac']['delta']))
+            TS = IASP91(sacsL[i][0].stats['sac']['evdp'], sacsL[i][0].stats['sac']['gcarc'])
+            tStart =  TS
+            degree = sacsL[i][0].stats['sac']['gcarc']
+            #if tStart > 100000.0 or tStart < 5:
+            #    tStart = distL[i] / 5
+            t0 = max(distL[i] /5, tStart)###min->max
+            t0 = distL[i]/5
             dt0 = t0 - sacsL[i][0].stats['sac']['b']
             i0 = max(0, int(dt0 / sacsL[i][0].stats['sac']['delta']))
-            tEnd = distL[i] / 1.5
+            tEnd = distL[i] / 2
             t1 = max(1, tEnd)
             dt1 = t1 - sacsL[i][0].stats['sac']['b']
             i1 = min(sacsL[i][0].data.size - 10, int(dt1 / sacsL[i][0].stats['sac']['delta']))
+            
             if i1 == sacsL[i][0].data.size:
                 SNR[i] = -1
                 continue
             if sacsL[i][0].data[i0:i1].std() == 0:
                 SNR[i] = -1
                 continue
-            SNR[i] = np.max(np.abs(sacsL[i][0].data[i0:i1])) / sacsL[i][0].data[io:io + int((i0 - io) / 5)].std()
+            maxI = np.abs(sacsL[i][0].data[i0:i1]).argmax()+i0
+            dTN  =int(50/sacsL[i][0].stats['sac']['delta'])
+            maxI0 = int(maxI*0.9)
+            maxI1 = int(maxI*1.1)
+            data=sacsL[i][0].data.copy()
+            data-=data.mean()
+            sigmaS= (data[maxI0:maxI1]**2).mean()**0.5
+            sigmaN= (data[io:ie]**2).mean()**0.5
+            SNR[i] = sigmaS / sigmaN
+            if SNR[i]>minSNR:
+                if len(plotDir)!=0:
+                    b=sacsL[i][0].stats['sac']['b']
+                    timeL = b+sacsL[i][0].stats['sac']['delta']*np.arange(len(sacsL[i][0].data))
+                    data = sacsL[i][0].data
+                    plt.plot(timeL,data/np.abs(data).max()+degree,'k',linewidth=0.25)
+                if len(plotDir)!=0:
+                    isPlot=True
+                    h0,=plt.plot([tStart,tStart],[degree-0.5,degree+0.5],'r',linewidth=0.5)
+                    h1,=plt.plot([tEnd,tEnd],[degree-0.5,degree+0.5],'b',linewidth=0.5)
+                    h2,=plt.plot([distL[i]/5,distL[i]/5],[degree-0.5,degree+0.5],'g',linewidth=0.5)
+                    h3,=plt.plot([TS,TS],[degree-0.5,degree+0.5],'y',linewidth=0.5)
+                    TMAX = max(TMAX,tEnd*1.2)
+                    TMIN = min(TMIN,min(tStart*0.8,distL[i] / 5*0.8))
             if removeP:
                 sacsL[i][0].data[:i0] *= 0
                 sacsL[i][0].data[i1:] *= 0
@@ -4054,7 +4115,7 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
                         az = np.array([sac0.stats['sac']['az'], sac1.stats['sac']['az']])
                         baz0 = sac0.stats['sac']['baz']
                         az01 = DistAz(sac0.stats['sac']['stla'], sac0.stats['sac']['stlo'], sac1.stats['sac']['stla'], sac1.stats['sac']['stlo']).getAz()
-                        dis01 = DistAz(sac0.stats['sac']['stla'], sac0.stats['sac']['stlo'], sac1.stats['sac']['stla'], sac1.stats['sac']['stlo']).getDelta() * 110.7
+                        dis01 = DistAz(sac0.stats['sac']['stla'], sac0.stats['sac']['stlo'], sac1.stats['sac']['stla'], sac1.stats['sac']['stlo']).getDelta() * 111.19
                         dis = np.array([sac0.stats['sac']['dist'], sac1.stats['sac']['dist']])
                         if dis.min() < minDist:
                             pass
@@ -4104,6 +4165,12 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
                                                             continue
                                                 corr = corrSac(d, sac0, sac1, name0, name1, quakeName, az, dura, M, dis, dep, modelFile, srcSac, isCut=isCut, maxCount=maxCount, **kwags)
                                                 corrL.append(corr)
+        if len(plotDir)!=0 and isPlot:
+            plt.legend([h0,h1,h2,h3],['start','end','dis/4.6','ts'])
+            plt.xlim([TMIN,TMAX])
+            print([TMAX,TMIN])
+            plt.savefig(plotDir+quakeName+'.jpg',dpi=300)
+            plt.close()
         return corrL
 
 class fkcorr:

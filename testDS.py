@@ -8,7 +8,7 @@ R = run.run(run.runConfig(run.paraTrainTest))
 run.d.Vav=-1
 #R.loadCorr()
 #R.saveTrainSet(isMat=True)
-
+R.calCorrOneByOne()
 isDisQC =True
 isCoverQC = True
 #R.plotGetDis()
@@ -27,7 +27,7 @@ R.calFromCorr()
 R.loadRes()
 #R.getAv(isCoverQC=True,isDisQC=False)
 R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
-run.run.analyRes(R,format='pdf')
+run.run.analyRes(R,format='jpg')
 #R.loadModelUp(R.config.para['modelFile'])
 reload(run)
 reload(run.fcn)

@@ -315,16 +315,16 @@ def findPos(y, moreN = 10):
     return yPos, yMax
 
 def disDegree(dis,maxD = 100, maxTheta=20):
-    delta = dis/110.7
-    theta0 = maxD/110.7
+    delta = dis/111.19
+    theta0 = maxD/111.19
     theta = theta0/np.sin(delta/180*np.pi)
     return min(theta,maxTheta)
 
 def disDegreeBak(dis,maxD = 100, maxTheta=20):
-    delta = dis/110.7
+    delta = dis/111.19
     if delta >90:
         delta = 90
-    theta0 = maxD/110.7
+    theta0 = maxD/111.19
     theta = theta0/np.sin(delta/180*np.pi)
     return min(theta,maxTheta)
 

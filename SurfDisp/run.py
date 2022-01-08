@@ -57,7 +57,8 @@ def loadListStr(file):
 class runConfig:
 	def __init__(self,para={}):
 		sacPara = {'pre_filt': (1/400, 1/300, 1/2, 1/1.5),\
-				   'output':'VEL','freq':[1/250,1/8*0+1/6],\
+				   'output':'VEL','freq':[1/200,1/6],\
+					#[1/250,1/8*0+1/6]
 				   'filterName':'bandpass',\
 				   'corners':4,'toDisp':False,\
 				   'zerophase':True,'maxA':1e15}
@@ -66,7 +67,7 @@ class runConfig:
 					'oRemoveL'    : [False],\
 					'avgPairDirL' : ['../models/ayu/Pairs_avgpvt/'],\
 					'pairDirL'    : ['../models/ayu/Pairs_pvtsel/'],\
-					'minSNRL'     : [5],\
+					'minSNRL'     : [3],\
 					'isByQuakeL'  : [True],\
 					'remove_respL': [True],\
 					'isLoadFvL'   : [False],#False********\
@@ -475,11 +476,11 @@ class run:
 		sigma = np.ones(len(self.config.para['T']))
 		N =len(self.config.para['T'])
 		N_5=int(N/5)
-		sigma[:N_5]=1.25
-		sigma[N_5:2*N_5]= 1.25
-		sigma[2*N_5:3*N_5]=1.5
-		sigma[3*N_5:4*N_5]=1.75
-		sigma[4*N_5:5*N_5]=2
+		sigma[:N_5]=1.5
+		sigma[N_5:2*N_5]= 1.5
+		sigma[2*N_5:3*N_5]=1.75
+		sigma[3*N_5:4*N_5]=2
+		sigma[4*N_5:5*N_5]=2.25
 		self.config.sigma=sigma
 		fcn.trainAndTestMul(self.model,self.corrDTrain,self.corrDValid,self.corrDTest,\
                         outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=3e-3,mul=para['mul'])#w0=3#4
@@ -633,16 +634,21 @@ class run:
 				self.corrL.save(para['matSaveDir'])
 				gc.collect()
 				
-	def calCorrOneByOne(self):
+	def calCorrOneByOne(self,isPlot=False):
 		config     = self.config
 		para       = config.para
 		N          = len(para['stationFileL'])
+		if isPlot:
+			plotDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/plot/'
+		else:
+			plotDir=''
 		with h5py.File(para['matH5'],'a') as h5:
 			for i in range(N):
 				sta     = seism.StationList(para['stationFileL'][i])
 				sta.inR(para['lalo'])
 				print('sta num:',len(sta))
 				sta.set('oRemove', para['oRemoveL'][i])
+				#sta.set('oRemove',isORemove)
 				sta.getInventory()
 				q       = seism.QuakeL(para['quakeFileL'][i])
 				print(para['quakeFileL'][i],len(q))
@@ -653,7 +659,7 @@ class run:
 				perN= self.config.para['perN']
 				fvDAverage={}
 				fvDAverage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
-				for j in range(self.config.para['gpuIndex'],int(len(q)/perN),self.config.para['gpuN']):#self.config.para['gpuIndex']
+				for j in range(self.config.para['gpuIndex'],int(len(q)/perN)+1,self.config.para['gpuN']):#self.config.para['gpuIndex']
 					print('doing for %d %d in %d'%(j*perN,min(len(q)-1,j*perN+perN),len(q)))
 					'''
 					corrL0  = para['dConfig'].quakeCorr(q,sta,\
@@ -665,10 +671,11 @@ class run:
 							byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
 							minSNR=para['minSNRL'][i],isLoadFv=False,\
 							fvD=fvDAverage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],\
-							resDir=para['eventDir'],maxCount=para['maxCount'])
+							resDir=para['eventDir'],maxCount=para['maxCount'],plotDir=plotDir)
 					self.corrL  = d.corrL(corrL0,maxCount=para['maxCount'])
 					if len(self.corrL)==0:
 						continue
+					print(self.corrL[0].name0)
 					self.corrL.reSetUp(up=para['up'])
 					#self.calRes()
 					self.corrL.saveH5(h5)
@@ -707,6 +714,9 @@ class run:
 						sta1=sta[k]['net']+'.'+sta[k]['sta']
 						if sta0>sta1:
 							sta1,sta0=[sta0,sta1]
+						dist = sta[j].dist(sta[k])
+						if dist<para['dConfig'].minDDist or dist>para['dConfig'].maxDDist:
+							continue
 						corrL.loadByPairsH5([sta0+'_'+sta1],h5)
 						if len(corrL)>M or (j==len(sta)-2 and k==j+1 and len(corrL)>0 ):
 							corrL.reSetUp(up=para['up'])
@@ -722,7 +732,18 @@ class run:
 							corrD=0
 							corrL = d.corrL()
 						gc.collect()
-	
+	def calFromCorrL(self):
+		para = self.config.para
+		fvDAverage={}
+		fvDAverage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
+		self.corrL.setTimeDis(fvDAverage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
+		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
+		set2One=True,move2Int=False,modelNameO=para['refModel'],noY=True)
+		self.corrL.reSetUp(up=para['up'])
+		corrD = d.corrD(self.corrL)
+		print('predicting')
+		corrD.getAndSaveOldPer(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
+		,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'],mul=para['mul'])
 	def calRes(self):
 		para = self.config.para
 		self.corrL1.setTimeDis(self.fvDAverage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
@@ -793,7 +814,7 @@ class run:
 		if isCoverQC:
 			self.coverQC(self.fvAvGet)
 		d.qcFvD(self.fvAvGet,threshold=self.config.para['threshold'],delta=1,stations=self.stations)
-	def showTest(self,threshold=0.015,isAverage=False):
+	def showTest(self):
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/waveform/'
 		corrD = d.corrD(self.corrDTest.corrL)
 		mul   = self.config.para['mul']
@@ -802,7 +823,7 @@ class run:
 		y =  self.model.predict(x)
 		x   =  self.model.inx(x)
 		iL  = np.array(corrD.corrL.iL).reshape([-1,mul])
-		d.showCorrD(x,y0,y,t,iL,corrD.corrL,resDir,T,mul=mul,number=4)
+		d.showCorrD(x,y0,y,t,iL,corrD.corrL,resDir,T,mul=mul,number=3)
 		#d.showCorrD(x,y0,y,t,iL,corrD.corrL,resDir,T,mul=mul,number=3)
 	def analyRes(self,threshold=0.015,format='eps',isAverage=False):
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
@@ -1508,16 +1529,18 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'maxCount'    : 512*3,\
+	'minSNRL'     : [2.5],\
+	'oRemoveL'    : [False],\
 	'trainMatDir'	  :'/media/jiangyr/1TSSD/matDir/',\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
 	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
-	'matH5'	  :'/media/jiangyr/1TSSD/all.h5',\
+	'matH5'	  :'/media/jiangyr/1TSSD/allClipNewV10.h5',\
 	'randA'       : 0.03,\
 	'midV'        : 4,\
 	'mul'		  : 12,\
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220106V6/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
-	'perN'        : 50,\
+	'resDir'      : '/media/jiangyr/MSSD/20220108V10/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'perN'        : 200,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           :[0,5,10,15,20,30,40,50,60,80,100,120,150,250,350,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
 	'T'           : (12**np.arange(0,1.000001,1/29))*10,\
@@ -1604,15 +1627,17 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220104-161924_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
+	'oRemoveL'    : [False],\
 	'maxCount'    : 512*3,\
+	'minSNRL'     : [2.5],\
 	'trainMatDir' :'/media/jiangyr/1TSSD/matDir/',\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
 	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
-	'matH5'	  :'/media/jiangyr/1TSSD/all.h5',\
+	'matH5'	  :'/media/jiangyr/1TSSD/allClipNewV5.h5',\
 	'randA'       : 0.03,\
 	'midV'        : 4,\
 	'mul'		  : 12,\
-	'resDir'      : '/media/jiangyr/MSSD/20220106NorthV6/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220108NorthV5/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 2,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           : [0,5,10,15,20,30,40,50,60,80,100,120,150,250,350,500],#[0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,175,200,250,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
