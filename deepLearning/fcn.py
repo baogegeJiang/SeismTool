@@ -17,6 +17,9 @@ from tensorflow.keras.utils import get_custom_objects
 import random
 import obspy
 import time
+from tensorflow.python.keras.layers.merge import dot
+
+from tensorflow.python.ops.math_ops import tensordot
 from .. import mathTool
 from ..mathTool.mathFunc import findPos
 import os
@@ -520,9 +523,11 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
         last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
     last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
     convL[i] =last
+    '''
     last = transpose(last,perm=[0,1,3,2])
     last = Dense(1,name='Dense'+layerStr+'1')(last)
-    last = transpose(last,perm=[0,1,3,2])
+    last = transpose(last,perm=[0,1,3,2])'''
+    last = DenseNew(1,name='DenseNew'+layerStr+'1')(last)
     if config.isBNL[i]:
         last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
     last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
@@ -937,7 +942,36 @@ class xyt:
     def __len__(self):
         return self.x.shape[0]
 
-
+class DenseNew(tf.keras.layers.Layer):
+    def __init__(self, units, **kwargs):
+        self.units = units
+        self.initializer = "glorot_uniform"
+        super(DenseNew, self).__init__(**kwargs)
+    def build(self, input_shape):
+        self.input_kernel = self.add_weight(\
+            shape=(1,1,self.units,input_shape[-2],input_shape[-1]),\
+            initializer=self.initializer,\
+            name="input_kernel",\
+        )
+        self.bias = self.add_weight(
+            shape=(1,1,self.units,input_shape[-1]),
+            initializer=self.initializer,
+            name="bias",
+        )
+        self.built = True
+    def call(self, inputs):
+        inputs = inputs
+        rInput=K.reshape(inputs,(-1,inputs.shape[1],1,inputs.shape[2],inputs.shape[3]))
+        return K.sum(rInput*self.input_kernel,axis=3)+self.bias
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'unit': self.unit,
+            'initializer': self.initializer,
+            'input_kernel': self.input_kernel,
+            'bias': self.bias,
+        })
+        return config
 tTrain = (10**np.arange(0,1.000001,1/29))*16
 
 def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTrain=tTrain,\
@@ -1308,7 +1342,7 @@ class fcnConfig:
             self.featureL      = [45,45,45,45,45,45,45]
             self.featureL      = [30,30,30,30,30,30,30]
             self.featureL      = [45,45,45,45,45,45,45]
-            self.featureL      = [30,30,30,30,30,30,60]
+            self.featureL      = [30,30,30,30,30,30,30]
             #self.featureL      = [8,12,16,32,48,64,96,128,160]
             #self.featureL      = [10,15,20,30,40,60,80,100,120]
             #self.featureL      = [10,15,20,30,50,80,100,120,160]
