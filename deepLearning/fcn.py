@@ -3,13 +3,14 @@ from tensorflow import keras
 from tensorflow.keras import  Model
 from tensorflow.keras.layers import Input, MaxPooling2D,\
   AveragePooling2D,Conv2D,Conv2DTranspose,concatenate,\
-  Dropout,BatchNormalization, Dense,Softmax,Conv1D,Reshape
+  Dropout,BatchNormalization, Dense,Softmax,Conv1D,Reshape,DenseFeatures
 from tensorflow.python.keras.layers import Layer, Lambda
 from tensorflow.python.keras import initializers, regularizers, constraints, activations
 #LayerNormalization = keras.layers.BatchNormalization
 import numpy as np
 #from tensorflow.keras import backend as K
 from tensorflow.compat.v1.keras import backend as K
+from tensorflow import transpose
 from matplotlib import pyplot as plt   
 from tensorflow.keras.layers import Activation
 from tensorflow.keras.utils import get_custom_objects
@@ -478,6 +479,8 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
             last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
         last = config.poolL[i](pool_size=config.strideL[i],\
             strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+    
+    '''
     name = 'Dense'
     i=depth-1
     layerStr='_%d_'%i
@@ -508,8 +511,40 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
             last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
         last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
     last = Reshape([1,config.mul,config.featureL[i-1]],name='Reshape'+layerStr+'0')(last)
-    convL[depth-1] =last
-    dConvL[depth-1] = convL[depth-1]
+    '''
+    name = 'Dense'
+    i=depth-1
+    layerStr='_%d_'%i
+    last = Dense(config.featureL[i],name='Dense'+layerStr+'0')(last)
+    if config.isBNL[i]:
+        last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
+    last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+    convL[i] =last
+    last = transpose(last,perm=[0,1,3,2])
+    last = Dense(1,name='Dense'+layerStr+'1')(last)
+    last = transpose(last,perm=[0,1,3,2])
+    if config.isBNL[i]:
+        last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
+    last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
+    
+    name = 'DDense'
+    i=depth-1
+    layerStr='_%d_%d'%(i,i)
+
+    last = Dense(config.featureL[i],name='Dense'+layerStr+'0')(last)
+    if config.isBNL[i]:
+        last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
+    last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+    last = concatenate([last]*config.mul,axis=2)
+
+    last = concatenate([last,convL[i]],axis=-1)
+    if config.doubleConv[i]:
+        last = Dense(config.featureL[i],name='Dense'+layerStr+'1')(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
+    last = concatenate([last,convL[i]],axis=-1)
+    dConvL[i] = last
     outputsL =[]
     for i in range(depth-2,-1,-1):
         name = 'DCONV'

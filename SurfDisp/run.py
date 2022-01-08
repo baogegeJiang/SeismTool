@@ -476,7 +476,7 @@ class run:
 		sigma = np.ones(len(self.config.para['T']))
 		N =len(self.config.para['T'])
 		N_5=int(N/5)
-		sigma[:N_5]=1.5
+		sigma[:N_5]=1.25
 		sigma[N_5:2*N_5]= 1.5
 		sigma[2*N_5:3*N_5]=1.75
 		sigma[3*N_5:4*N_5]=2
