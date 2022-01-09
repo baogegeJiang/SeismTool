@@ -15,7 +15,7 @@ import random
 from glob import glob
 from obspy.taup import TauPyModel
 from tensorflow.core.framework.attr_value_pb2 import _ATTRVALUE_LISTVALUE
-from ..io.seism import taup
+from ..io.seism import Dist, taup
 from ..io import seism
 from .fk import FK,getSourceSacName,FKL
 from ..mathTool.mathFunc import getDetec,xcorrSimple,xcorrComplex,flat,validL,randomSource,disDegree,QC,fitexp
@@ -369,7 +369,7 @@ class config:
                 pairKey = '%s.%s_%s.%s' % (stations[i]['net'], stations[i]['sta'],
                  stations[j]['net'], stations[j]['sta'])
                 if pairKey in fvFileD:
-                    fvD[pairKey] = fv((fvFileD[pairKey]), mode=mode)
+                    fvD[keyConvert(pairKey)] = fv((fvFileD[pairKey]), mode=mode)
 
         return fvD
 
@@ -382,21 +382,21 @@ class config:
                  stations[i]['net'], stations[i]['sta'], stations[j]['net'], stations[j]['sta']))
                 if len(file) > 0:
                     for f in file:
-                        getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake)
+                        getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake,stations=stations)
 
                 else:
                     file = glob('%s/%s.%s/*_%s.%s/Rayleigh/pvt.dat' % (quakeFvDir,
                      stations[i]['net'], stations[i]['sta'], stations[j]['net'], stations[j]['sta']))
                     if len(file) > 0:
                         for f in file:
-                            getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake)
+                            getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake,stations=stations)
 
                     else:
                         file = glob('%s/%s.%s_%s.%s-pvt*' % (quakeFvDir,
                          stations[i]['net'], stations[i]['sta'], stations[j]['net'], stations[j]['sta']))
                         if len(file) > 0:
                             for f in file:
-                                getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake)
+                                getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake,stations=stations)
 
         return (
          fvD, quakeD)
@@ -1203,9 +1203,9 @@ class fv:
         vL[df01R > 0.0001] = 1e-08
         return vL.reshape(shape0)
 
-    def save(self, filename, mode='num'):
+    def save(self, filename, mode='num',quake='',station0='',station1=''):
         if not os.path.exists(os.path.dirname(filename)):
-            os.mkdir(os.path.dirname(filename))
+            os.makedirs(os.path.dirname(filename))
         if mode == 'num':
             np.savetxt(filename, np.concatenate([self.f.reshape([-1, 1]),
                 self.v.reshape([-1, 1])],
@@ -1213,6 +1213,7 @@ class fv:
             return
         if mode == 'NEFile':
             with open(filename, 'w+') as (f):
+                f.write('remain\nremain\nremain\n')
                 for i in range(len(self.f)):
                     T = 1 / self.f[i]
                     v = self.v[i]
@@ -1220,6 +1221,31 @@ class fv:
                     if len(self.std) > 0:
                         std = self.std[i]
                     f.write('%f %f %f\n' % (T, v, std))
+        if mode=='pair':
+            with open(filename, 'a') as (f):
+                time = quake['time']
+                la = quake['la']
+                lo = quake['lo']
+                ml = quake['ml']
+                dep = quake['dep']
+                dist0 = station0.distaz(quake)
+                dist1 = station1.distaz(quake)
+                f.write('%s %s\n' % (station1['sta'], station0['sta']))
+                f.write('%s 5\n' % station1['comp'][(-1)])
+                f.write('%s %.5f\n' % (obspy.UTCDateTime(time).strftime('%Y %m %d %H %M'), time % 60))
+                f.write('%f %f\n' % (station1['la'], station1['lo']))
+                f.write('%.5f %.5f %.5f %.5f 0\n' % (la, lo,dep,ml))
+                f.write('%f %f 0 0 \n' % (dist0.getDelta(), dist0.getAz()))
+                f.write('%s 5\n' % station0['comp'][(-1)])
+                f.write('%s %.5f\n' % (obspy.UTCDateTime(time).strftime('%Y %m %d %H %M'), time % 60))
+                f.write('%f %f\n' % (station0['la'], station0['lo']))
+                f.write('%.5f %.5f %.5f %.5f 0\n' % (la, lo,dep,ml))
+                f.write('%f %f 0 0 \n' % (dist0.getDelta(), dist0.getAz()))
+                f.write('2 %d\n' % len(self.v))
+                for F in self.f:
+                    f.write('%f\n' % F)
+                for i in range(len(self.v)):
+                    f.write('%f %f\n' % (self.v[i],self.std[i]))
 
     def update(self, self1, isReplace=True, threshold=0.1):
         v = self1(self.f).reshape([-1])
@@ -1298,6 +1324,27 @@ class fv:
         return dv
 
 fvNone=fv(np.array([[0],[0]]))
+
+def saveFVD(fvD,stations,quakes='',saveDir='',formatType='pair'):
+    for key in fvD:
+        quake=''
+        STA0=''
+        STA1=''
+        if formatType == 'NEFile':
+            file = '%s/%s.dat'%(saveDir,key)
+        elif formatType == 'pair':
+            if '_' not in key:
+                continue
+            time,la,lo,sta0,sta1=key.split('_')
+            STA0 = stations.Find(sta0)
+            STA1 = stations.Find(sta1)
+            file = '%s/%s/%s_%s/Rayleigh/pvt.dat'%(saveDir,sta0,sta0,sta1)
+            quake=seism.Quake(time=float(time),la=float(la),lo=float(lo),dep=0)
+            if len(quakes)>0:
+                index = quakes.find(quake) 
+                if index>=0:
+                    quake = quakes[index]
+        fvD[key].save(file,mode=formatType,quake=quake,station0=STA0,station1=STA1)
 
 def keyDis(key, stations):
     if '_' not in key:
@@ -1687,8 +1734,17 @@ def compareInF(fvD0, fvD1, stations, fL, isSave=True, saveDir='predict/compareIn
     return (
      M, V0, V1)
 
+def keyConvert(key):
+    tmp=key.split('_')
+    if len(tmp)>=2:
+        if tmp[-2]>tmp[-1]:
+            tmp[-1],tmp[-2]=tmp[-2:]
+        key=tmp[0]
+        for t in tmp[1:]:
+            key=key+'_'+t
+    return key
 
-def getFVFromPairFile(file, fvD={}, quakeD=seism.QuakeL(), isPrint=False, isAll=False, isGetQuake=True):
+def getFVFromPairFile(file, fvD={}, quakeD=seism.QuakeL(), isPrint=False, isAll=False, isGetQuake=True,stations=''):
     with open(file) as (f):
         lines = f.readlines()
     stat = 'next'
@@ -1734,6 +1790,7 @@ def getFVFromPairFile(file, fvD={}, quakeD=seism.QuakeL(), isPrint=False, isAll=
             ml = float(line.split()[3])
             stat = 'deltaLoc0'
         elif stat == 'deltaLoc0':
+            Dist0 = float(line.split()[0])
             stat = 'comp1'
         elif stat == 'comp1':
             stat = 'quakeTime1'
@@ -1756,6 +1813,7 @@ def getFVFromPairFile(file, fvD={}, quakeD=seism.QuakeL(), isPrint=False, isAll=
         elif stat == 'QuakeInfo1':
             stat = 'deltaLoc1'
         elif stat == 'deltaLoc1':
+            Dist1 = float(line.split()[0])
             stat = 'fNum'
         elif stat == 'fNum':
             fNum = int(line.split()[1])
@@ -1810,13 +1868,21 @@ def getFVFromPairFile(file, fvD={}, quakeD=seism.QuakeL(), isPrint=False, isAll=
                         quake = quakeD[index]
 
                 name = quake.name('_', fmt='%.5f')
-                key = '%s_%s' % (name, pairKey)
+                key = keyConvert('%s_%s' % (name, pairKey))
                 if len(f) < 2:
                     continue
                 f = np.array(f)
                 v= np.array(v)
                 std= np.array(std)
-                #f=f[v<vMin]
+                if len(stations)>0:
+                    STA0 = stations.find(sta0)
+                    STA1 = stations.find(sta1)
+                    DDist_cal = np.abs(Dist1-Dist0)
+                    DDist_real = np.abs(quake.distaz(STA0).getDelta()-quake.distaz(STA1).getDelta())
+                    Ratio = DDist_real/DDist_cal
+                    if np.abs(Ratio-1)>0.01:
+                        print('**********to large differnt',sta0,sta1,Ratio)
+                    v = np.array(v)*Ratio
                 #std=std[v<vMin]
                 #v=v[v<vMin]
                 if isAll:
@@ -1931,7 +1997,7 @@ def getFVFromPairFileDis(file, fvD={}, quakeD={}, isPrint=True):
                 name = quake.name('_')
                 if name not in quakeD:
                     quakeD[name] = quake
-                key = '%s_%s' % (name, pairKey)
+                key = keyConvert('%s_%s' % (name, pairKey))
                 if len(f) < 2:
                     continue
                 fvD[key] = fv([f, v, p], mode='dis')
@@ -1981,7 +2047,7 @@ def wFunc(w, weightType):
     return w
 
 
-def averageFVL(fvL, minSta=5, threshold=0.82285, minThreshold=0.02, fL=[], isWeight=False, weightType='std'):
+def averageFVL(fvL, minSta=5, threshold=0.82285, minThreshold=0.02, fL=[], isWeight=False, weightType='std',it=1):
     qcFvL(fvL)
     if len(fvL) < minSta:
         return fv([np.array([-1]), np.array([-1]), np.array([10])])
@@ -2013,9 +2079,9 @@ def averageFVL(fvL, minSta=5, threshold=0.82285, minThreshold=0.02, fL=[], isWei
         for i in range(len(f)):
             if isWeight:
                 #print('w')
-                MEAN, STD, vN = QC((vMNew[i][(vMNew[i] > 1)]), threshold=threshold, minThreshold=minThreshold, minSta=minSta, wL=(wMNew[i][(vMNew[i] > 1)]), it=1)
+                MEAN, STD, vN = QC((vMNew[i][(vMNew[i] > 1)]), threshold=threshold, minThreshold=minThreshold, minSta=minSta, wL=(wMNew[i][(vMNew[i] > 1)]), it=it)
             else:
-                MEAN, STD, vN = QC((vMNew[i][(vMNew[i] > 1)]), threshold=threshold, minThreshold=minThreshold, minSta=minSta, it=1)
+                MEAN, STD, vN = QC((vMNew[i][(vMNew[i] > 1)]), threshold=threshold, minThreshold=minThreshold, minSta=minSta, it=it)
             v[i] = MEAN
             std[i] = STD
             #print(MEAN,STD,vMNew[i][(vMNew[i] > 1)])

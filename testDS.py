@@ -8,11 +8,11 @@ R = run.run(run.runConfig(run.paraTrainTest))
 run.d.Vav=-1
 #R.loadCorr()
 #R.saveTrainSet(isMat=True)
-R.calCorrOneByOne()
+#R.calCorrOneByOne()
 isDisQC =True
 isCoverQC = True
 #R.plotGetDis()
-R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=False,isDisQC=isDisQC,isAll=True)#True
+R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=True,isDisQC=isDisQC,isAll=True,isSave=True)#True
 R.getDisCover()
 R.plotTrainDis()
 R.model=None

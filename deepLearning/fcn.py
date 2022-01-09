@@ -518,15 +518,12 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
     name = 'Dense'
     i=depth-1
     layerStr='_%d_'%i
-    last = Dense(config.featureL[i],name='Dense'+layerStr+'0')(last)
+    last = DenseNew(config.mul,name='DenseNew'+layerStr+'0')(last)
     if config.isBNL[i]:
         last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
     last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
     convL[i] =last
-    '''
-    last = transpose(last,perm=[0,1,3,2])
-    last = Dense(1,name='Dense'+layerStr+'1')(last)
-    last = transpose(last,perm=[0,1,3,2])'''
+
     last = DenseNew(1,name='DenseNew'+layerStr+'1')(last)
     if config.isBNL[i]:
         last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
@@ -536,7 +533,7 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
     i=depth-1
     layerStr='_%d_%d'%(i,i)
 
-    last = Dense(config.featureL[i],name='Dense'+layerStr+'0')(last)
+    last = Dense(config.featureL[i-1],name='Dense'+layerStr+'0')(last)
     if config.isBNL[i]:
         last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
     last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
@@ -544,7 +541,7 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
 
     last = concatenate([last,convL[i]],axis=-1)
     if config.doubleConv[i]:
-        last = Dense(config.featureL[i],name='Dense'+layerStr+'1')(last)
+        last = Dense(config.featureL[i-1],name='Dense'+layerStr+'1')(last)
         if config.isBNL[i]:
             last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
         last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
@@ -966,10 +963,8 @@ class DenseNew(tf.keras.layers.Layer):
     def get_config(self):
         config = super().get_config().copy()
         config.update({
-            'unit': self.unit,
+            'units': self.units,
             'initializer': self.initializer,
-            'input_kernel': self.input_kernel,
-            'bias': self.bias,
         })
         return config
 tTrain = (10**np.arange(0,1.000001,1/29))*16
@@ -1326,7 +1321,7 @@ class fcnConfig:
         if mode=='surfUp':
             self.mul           = mul
             self.inputSize     = [512*3,mul,4]
-            self.outputSize    = [512*3*up,mul,30]
+            self.outputSize    = [512*3*up,mul,50]
             self.featureL      = [60,80,80,100,100,120,120,150]
             self.featureL      = [30,30,30,45,45,45,60,60]
             self.featureL      = [60,60,60,80,80,80,100,100]
@@ -1343,6 +1338,7 @@ class fcnConfig:
             self.featureL      = [30,30,30,30,30,30,30]
             self.featureL      = [45,45,45,45,45,45,45]
             self.featureL      = [30,30,30,30,30,30,30]
+            self.featureL      = [50,50,50,50,50,50,50]
             #self.featureL      = [8,12,16,32,48,64,96,128,160]
             #self.featureL      = [10,15,20,30,40,60,80,100,120]
             #self.featureL      = [10,15,20,30,50,80,100,120,160]
@@ -1352,7 +1348,8 @@ class fcnConfig:
             self.strideL       = [(4,1),(4,1),(4,1),(2,1),(2,1),(3,1),(2,1),(1,mul)  ,(up,1)]
             self.kernelL       = [(12,1),(12,1),(12,1),(6,1),(6,1),(6,1),(2,1),(1,mul*2),(up*3,1)]
             self.strideL       = [(2,1),(3,1),( 4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
-            self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(12,1),(8,1),(1,mul*2),(up*3,1)]
+            self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(12,1),(8,1),(1,mul*2),(up*6,1)]
+            #self.kernelL       = [(6,1),(6,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
             #self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(16,1),(8,1),(1,mul*2),(up*3,1)]
             self.isBNL       = [True]*20
             self.doubleConv    = [True]*20
