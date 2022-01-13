@@ -23,11 +23,66 @@ run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
 #R.train(up=5,isRand=True,isShuffle=True)
 #run.run.loadCorr(R,isLoad=False)
 #R.calResOneByOne()
-R.calFromCorr()
+R.calFromCorrL()
 R.loadRes()
 #R.getAv(isCoverQC=True,isDisQC=False)
 R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
-run.run.analyRes(R,format='jpg')
+run.run.analyRes(R,format='eps')
+
+resDir = R.config.para['resDir']
+for mul in [1,6,12,18]:
+    up=2
+    R.config.para['resDir']='%s/%d_%d/'%(resDir,mul,up)
+    R.config.para['up']=up
+    R.config.para['mul']=mul
+    R.model=None
+    run.run.loadModelUp(R)
+    run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+    run.run.calFromCorrL(R)
+    run.run.loadRes(R)
+    #R.getAv(isCoverQC=True,isDisQC=False)
+    R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+    run.run.analyRes(R,format='eps')
+
+for up in [1,3,4]:
+    mul=1
+    R.config.para['resDir']='%s_%d_%d/'%(resDir[:-1],mul,up)
+    R.config.para['up']=up
+    R.config.para['mul']=mul
+    R.model=None
+    run.run.loadModelUp(R)
+    run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+    run.run.calFromCorrL(R)
+    run.run.loadRes(R)
+    #R.getAv(isCoverQC=True,isDisQC=False)
+    R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+    run.run.analyRes(R,format='eps')
+
+isRand=True
+up =2
+mul=12
+R.config.para['resDir']='%s/%d_%d_rand/'%(resDir,mul,up)
+R.config.para['up']=up
+R.config.para['mul']=mul
+R.model=None
+run.run.loadModelUp(R)
+run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+run.run.calFromCorrL(R,isRand=True)
+R.loadRes()
+#R.getAv(isCoverQC=True,isDisQC=False)
+R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.analyRes(R,format='eps')
+
+
+
+
+
+
+
+
+
+
+
 #R.loadModelUp(R.config.para['modelFile'])
 reload(run)
 reload(run.fcn)
@@ -40,7 +95,7 @@ R.config=run.runConfig(run.paraTrainTest)
 run.run.preDS(R,isByTrain=True)
 run.run.preDSTrain(R)
 run.run.preDSSyn(R,isByTrain=False)
-R.DS.plotHJ(p2L=R.config.para['p2L'],R=R.config.para['R'])
+R.DS.plotHJ(R=R.config.para['R'])
 R.corrL1.reSetUp(5)
 run.run.calRes(R)
 run.run.loadRes(R)
@@ -53,10 +108,10 @@ R.getDisCover()
 R.loadRes()
 run.run.getAv(R,isCoverQC=True)
 run.run.preDS(R,isByTrain=True)
-R.loadAndPlot(R.DS,isPlot=False)
-R.loadAndPlot(R.DSTrain,isPlot=False)
+R.loadAndPlot(R.DS,isPlot=True)
+R.loadAndPlot(R.DSTrain,isPlot=True)
 R.compare(R.DS,R.DSTrain,isCompare=True)
-
+R1.calFromCorr()
 run.d.qcFvD(R.fvAvGet)
 run.d.qcFvD(R.fvDGet)
 run.d.compareFvD(R.fvAvGet,R.fvDAverage,1/R.config.para['T'],resDir='predict/compare300/',keyL=R.fvTest,stations=R.stations)
@@ -73,6 +128,8 @@ run.d.compareFvD(R.fvAvGet,R.fvDAverage,1/R.config.para['T'],resDir='predict/com
 
 run.d.plotFVM(R.fvMGet,R.fvAvGet,R.fvDAverage,resDir='predict/'+'pairsTrainTest220101V2/',isDouble=True,fL0=1/R.config.para['T'],stations=R.stations,keyL=R.fvTest)
 
+run.d.plotFVM(R1.fvMGet,R1.fvAvGet,R1.fvAvGet,resDir='predict/'+'pairsTrainTestNorth220111V1/',isDouble=True,fL0=1/R.config.para['T'],stations=R.stations,keyL=R.fvTest)
+
 M,V0,V1=run.d.compareInF(R.fvDAverage,R.fvAvGet,R.stations,1/R.config.para['T'],R=R.config.para['R'])
 from SeismTool.mathTool import mathFunc
 mathFunc.showQC('predict/QC.eps')
@@ -82,7 +139,10 @@ reload(run)
 R1=run.run(run.runConfig(run.paraNorth))
 R1.model=R.model
 #R1.calResOneByOne()
+
 R1.loadRes(isGetQuake=False)
+
+R2=run.run(run.runConfig(run.paraOrdos))
 reload(run)
 R1.config=run.runConfig(run.paraNorth)
 from glob import glob
@@ -243,3 +303,28 @@ for i in range(3):
     f,v=m.calByGpdc(order=0,pog='p',T= run.np.arange(1,300,1).astype(run.np.float))
     f = run.d.fv([f,v],'num')
     f.save('predict/KEA20/'+name)
+
+
+
+sigma = run.np.ones(len(R.config.para['T']))
+N =len(R.config.para['T'])
+N_5=int(N/5)
+sigma[:N_5]        =1.5
+sigma[N_5:2*N_5]   = 1.75
+sigma[2*N_5:3*N_5] = 2.0
+sigma[3*N_5:4*N_5] = 2.25
+sigma[4*N_5:5*N_5] = 2.5
+R.config.sigma=sigma
+
+
+staL=[]
+for key in R.fvDAverage:
+    if '_' not in key:
+        continue
+    if len(R.fvDAverage[key].f)<3:
+        continue
+    sta0,sta1=key.split('_')
+    if sta0 not in staL: 
+        staL.append(sta0)
+    if sta1 not in staL: 
+        staL.append(sta1)

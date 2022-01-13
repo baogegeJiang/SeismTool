@@ -13,6 +13,7 @@ import time
 from time import ctime
 from glob import glob
 from numba import jit
+from tensorflow.python.ops.variable_scope import enable_resource_variables
 from ..mathTool.distaz import DistAz
 from .dataLib import filePath
 from ..mathTool.mathFunc import rotate,getDetec
@@ -306,6 +307,7 @@ class StationList(list):
 	def __init__(self,*argv,**kwargs):
 		super().__init__()
 		self.inD = {}
+		self.Loc=np.zeros([0,2])
 		if len(argv)>0:
 			if isinstance(argv[0],list):
 				for sta in argv[0]:
@@ -457,7 +459,15 @@ class StationList(list):
 			laL.append(sta['la'])
 			loL.append(sta['lo'])
 		return np.array(laL),np.array(loL)
-
+	def findByLoc(self,la,lo):
+		if len(self.Loc)!=len(self):
+			self.Loc=np.array(self.loc()).transpose()
+		dLaLo=self.Loc-np.array([la,lo]).reshape([1,2])
+		dLaLo2 = (dLaLo**2).sum(axis=1)**0.5
+		if dLaLo2.min()<0.3:
+			return self[dLaLo2.argmin()]
+		else:
+			return None
 		
 class Record(Dist):
 	def __init__(self,*argv,**kwargs):

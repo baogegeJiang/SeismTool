@@ -56,12 +56,12 @@ def readnetcdf(R,file='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd'):
     loI1 = np.abs(lo-R1[1]).argmin()+2
     z=nc.variables['z'][:]
     return np.array(la[laI0:laI1]),np.array(lo[loI0:loI1]),np.array(z[laI0:laI1,loI0:loI1])
-def plotLaLoLine(m,dLa=10,dLo=10):
+def plotLaLoLine(m,dLa=10,dLo=10,**kwags):
     parallels = np.arange(0.,90,dLa)
-    m.drawparallels(parallels,labels=[False,True,True,False])
+    m.drawparallels(parallels,labels=[1,0,0,1],**kwags)
     meridians = np.arange(10.,360.,dLo)
     plt.gca().yaxis.set_ticks_position('right')
-    m.drawmeridians(meridians,labels=[True,False,False,True])
+    m.drawmeridians(meridians,labels=[True,False,False,True],**kwags)
 
 def getDlaDlo(R):
     DLA = R[1] -R[0]

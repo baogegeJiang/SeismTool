@@ -221,7 +221,7 @@ globalFL = [0]
 def printRes_old(yin, yout,resL=globalFL,isUpdate=False):
     #       0.01  0.8  0.36600 0.9996350
     strL   = 'maxD   minP hitRate rightRate F mean  std old'
-    strfmt = '\n%5.3f %3.1f %7.5f %7.5f %7.5f %7.5f %7.5f'
+    strfmt = '\n%5.3f&%3.1f&%7.5f&%7.5f&%7.5f&%7.3f&%7.3f'
     yinPos  = yin.argmax( axis=1)
     youtPos = yout.argmax(axis=1)
     yinMax = yin.max(axis=1)
@@ -230,7 +230,7 @@ def printRes_old(yin, yout,resL=globalFL,isUpdate=False):
         for minP in [0.5,0.6,0.8]:
             hitRate,rightRate,F,mean,std = rateNp(\
                 yinPos,youtPos,yinMax,youtMax,maxD=maxD,minP=minP)
-            tmpStr=strfmt%(maxD, minP, hitRate, rightRate,F,mean,std)
+            tmpStr=strfmt%(maxD, minP, hitRate, rightRate,F,mean*100,std*100)
             strL += tmpStr
             if maxD == 0.015 and minP==0.5 and (not np.isnan(F)) and isUpdate:
                 resL.append(F)
@@ -482,7 +482,6 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
             last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
         last = config.poolL[i](pool_size=config.strideL[i],\
             strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
-    
     '''
     name = 'Dense'
     i=depth-1
@@ -515,37 +514,40 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
         last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
     last = Reshape([1,config.mul,config.featureL[i-1]],name='Reshape'+layerStr+'0')(last)
     '''
-    name = 'Dense'
-    i=depth-1
-    layerStr='_%d_'%i
-    last = DenseNew(config.mul,name='DenseNew'+layerStr+'0')(last)
-    if config.isBNL[i]:
-        last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
-    last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
-    convL[i] =last
+    if config.mul>1:
+        name = 'Dense'
+        i=depth-1
+        layerStr='_%d_'%i
+        last = DenseNew(config.mul,name='DenseNew'+layerStr+'0')(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        convL[i] =last
 
-    last = DenseNew(1,name='DenseNew'+layerStr+'1')(last)
-    if config.isBNL[i]:
-        last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
-    last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
-    
-    name = 'DDense'
-    i=depth-1
-    layerStr='_%d_%d'%(i,i)
-
-    last = Dense(config.featureL[i-1],name='Dense'+layerStr+'0')(last)
-    if config.isBNL[i]:
-        last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
-    last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
-    last = concatenate([last]*config.mul,axis=2)
-
-    last = concatenate([last,convL[i]],axis=-1)
-    if config.doubleConv[i]:
-        last = Dense(config.featureL[i-1],name='Dense'+layerStr+'1')(last)
+        last = DenseNew(1,name='DenseNew'+layerStr+'1')(last)
         if config.isBNL[i]:
             last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
         last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
-    last = concatenate([last,convL[i]],axis=-1)
+        
+        
+        name = 'DDense'
+        i=depth-1
+        layerStr='_%d_%d'%(i,i)
+
+        last = Dense(config.featureL[i-1],name='Dense'+layerStr+'0')(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,name='BN'+layerStr+'0')(last)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        if config.mul>1:
+            last = concatenate([last]*config.mul,axis=2)
+        last = concatenate([last,convL[i]],axis=-1)
+        if config.doubleConv[i]:
+            last = Dense(config.featureL[i-1],name='Dense'+layerStr+'1')(last)
+            if config.isBNL[i]:
+                last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
+            last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
+        last = concatenate([last,convL[i]],axis=-1)
+    i=depth-1
     dConvL[i] = last
     outputsL =[]
     for i in range(depth-2,-1,-1):
@@ -571,9 +573,11 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
                 dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'1')(dConvL[j])
                 dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'1')
             if i <config.deepLevel and j==0:
-                if config.strideL[-1][0]>1:
-                    upL[j]= Conv2DTranspose(config.outputSize[-1]*2,kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],\
-                    bias_initializer=config.bias_initializerL[j])(dConvL[0])
+                if config.strideL[-1][0]>0:
+                    if config.strideL[-1][0]>1:
+                        upL[j]= Conv2DTranspose(config.outputSize[-1]*2,kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(dConvL[0])
+                    else:
+                        upL[j]= Conv2D(config.outputSize[-1]*2,kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name=name+layerStr+'0'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(dConvL[0])
                     if config.isBNL[-1]:
                         upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'0'+'_Up')(upL[j])
                     upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
@@ -1120,7 +1124,7 @@ def trainAndTestMul(model,corrDTrain,corrDValid,corrDTest,outputDir='predict/',t
     for level in range(-1,-model.config.deepLevel-1,-1):
         model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
         T=tTrain,outputDir=tmpOutputDir,level=level)
-
+    return head+'_model.h5'
 
 def trainAndTestSq(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTrain=tTrain,\
     sigmaL=[4,3,2,1.5],count0=3,perN=2,w0=4):
@@ -1348,7 +1352,7 @@ class fcnConfig:
             self.strideL       = [(4,1),(4,1),(4,1),(2,1),(2,1),(3,1),(2,1),(1,mul)  ,(up,1)]
             self.kernelL       = [(12,1),(12,1),(12,1),(6,1),(6,1),(6,1),(2,1),(1,mul*2),(up*3,1)]
             self.strideL       = [(2,1),(3,1),( 4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
-            self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(12,1),(8,1),(1,mul*2),(up*6,1)]
+            self.kernelL       = [(5,1),(8,1),(10,1),(10,1),(10,1),(10,1),(1,mul*2),(up*4,1)]
             #self.kernelL       = [(6,1),(6,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
             #self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(16,1),(8,1),(1,mul*2),(up*3,1)]
             self.isBNL       = [True]*20
@@ -1836,6 +1840,7 @@ class model(Model):
         self.compile(loss=self.config.lossFunc, optimizer='Nadam')
         K.set_value(self.optimizer.lr,  lr0)
 
+batchMax=8*12
 class modelUp(Model):
     def __init__(self,weightsFile='',metrics=rateNp,\
         channelList=[0],onlyLevel=-1000,up=1,mul=1):
@@ -1859,7 +1864,7 @@ class modelUp(Model):
         super().__init__(inputs=inputs,outputs=outputs)
         self.compile(loss=config.lossFunc, optimizer='Nadam')
         return model
-    def predict(self,x,batch_size=32,**kwargs):
+    def predict(self,x,batch_size=batchMax,**kwargs):
         #print('inx')
         maxN = 512
         NX = len(x)
@@ -1869,7 +1874,7 @@ class modelUp(Model):
             for i in range(0,NX,maxN):
                 X = self.inx(x[i:min(i+maxN,NX)])
                 if len(X)>0:
-                    Y.append(super().predict(X,batch_size=batch_size,**kwargs))
+                    Y.append(super().predict(X,batch_size=int(batch_size/self.mul),**kwargs))
             Y=np.concatenate(Y,axis=0)
             return Y
         else:
@@ -2053,7 +2058,8 @@ class modelUp(Model):
         resL.append(0)
         if k0>0:
             K.set_value(self.optimizer.lr, k0)
-        indexL = range(len(XYT))
+        indexL = list(range(len(XYT)))
+        indexLMul = indexL*100
         sampleDone = np.zeros(len(XYT))
         #print(indexL)
         lossMin =100
@@ -2066,9 +2072,10 @@ class modelUp(Model):
         print('training',xTrain.shape,len(iL))
         sampleTime=0
         r = len(XYT)/len(XYT.corrL)
+        batchSize = int(batchMax/self.mul)
         for i in range(N):
             gc.collect()
-            iL = random.sample(indexL,int(perN/mul))
+            iL = random.sample(indexLMul,int(perN/mul))
             for ii in iL:
                 sampleDone[ii]+=r*mul
             x, y , t0L = XYT(iL,mul=mul,N=mul)
@@ -2111,8 +2118,7 @@ class modelUp(Model):
                         K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.85)
                         print('learning rate: ',self.optimizer.lr)
                     if True:#i>10 and i%50==0:
-                        batchSize += batchSize
-                        batchSize = min(32, batchSize)
+                        batchSize = int(batchMax/self.mul)
                         print('batchSize ',batchSize)
         self.set_weights(w0)
         return resStr,trainTestLoss

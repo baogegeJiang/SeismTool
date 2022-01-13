@@ -319,7 +319,7 @@ class Model:
             vTmp = vTmp[:,::-1]
         for i in range(nxyz[0]):
             for j in range(nxyz[1]): 
-                v[i,j,:] = interpolate.interp1d(self.z,vTmp[i,j])(z)
+                v[i,j,:] = interpolate.interp1d(self.z,vTmp[i,j],bounds_error=False,fill_value=1e-8,kind='linear')(z)
         v[v<0]=np.nan
         return v
     def OutputGriddata(self,la,lo,z,isPer=False,vR='',P2='',maxH=300,vM=''):

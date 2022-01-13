@@ -19,6 +19,7 @@ from ..io.seism import Dist, taup
 from ..io import seism
 from .fk import FK,getSourceSacName,FKL
 from ..mathTool.mathFunc import getDetec,xcorrSimple,xcorrComplex,flat,validL,randomSource,disDegree,QC,fitexp
+from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from ..mathTool.distaz import DistAz
 import gc
 from matplotlib import colors,cm
@@ -373,7 +374,7 @@ class config:
 
         return fvD
 
-    def loadQuakeNEFV(self, stations, quakeFvDir='models/QuakeNEFV', quakeD=seism.QuakeL(), isGetQuake=True):
+    def loadQuakeNEFV(self, stations, quakeFvDir='models/QuakeNEFV', quakeD=seism.QuakeL(), isGetQuake=True,**kwags):
         fvD = {}
         for i in range(len(stations)):
             print('do for %d in %d' % (i + 1, len(stations)))
@@ -382,21 +383,21 @@ class config:
                  stations[i]['net'], stations[i]['sta'], stations[j]['net'], stations[j]['sta']))
                 if len(file) > 0:
                     for f in file:
-                        getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake,stations=stations)
+                        getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake,stations=stations,**kwags)
 
                 else:
                     file = glob('%s/%s.%s/*_%s.%s/Rayleigh/pvt.dat' % (quakeFvDir,
                      stations[i]['net'], stations[i]['sta'], stations[j]['net'], stations[j]['sta']))
                     if len(file) > 0:
                         for f in file:
-                            getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake,stations=stations)
+                            getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake,stations=stations,**kwags)
 
                     else:
                         file = glob('%s/%s.%s_%s.%s-pvt*' % (quakeFvDir,
                          stations[i]['net'], stations[i]['sta'], stations[j]['net'], stations[j]['sta']))
                         if len(file) > 0:
                             for f in file:
-                                getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake,stations=stations)
+                                getFVFromPairFile(f, fvD, quakeD, isGetQuake=isGetQuake,stations=stations,**kwags)
 
         return (
          fvD, quakeD)
@@ -1427,7 +1428,7 @@ def outputFvDist(fvD, stations, t=16 ** np.arange(0, 1.000001, 0.020408163265306
     print(len(nameL))
     return (np.array(distL).reshape([-1, 1]), np.array(vL), fL, averageFVL(fvL, fL=fL), KEYL)
 
-disMap ='hot_r'
+disMap ='GnBu'
 def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minDis=[], maxDis=[], fLDis=[], R=0.001):
     VL = vL.reshape([-1])
     DISTL = (distL + vL * 0).reshape([-1])
@@ -1439,21 +1440,25 @@ def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minD
     binD = np.arange(18) / 18 * 1800
     print(DISTL.max())
     plt.close()
-    plt.figure(figsize=[2.5, 2])
+    plt.figure(figsize=[3, 2])
     plt.hist2d(DISTL, FL, bins=(binD, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
+    plt.gca().set_yscale('log')
+    plt.gca().set_position([0.15,0.2,0.6,0.7])
+    ax=plt.gca()
+    ax_divider = make_axes_locatable(plt.gca())
+    cax = ax_divider.append_axes('right', size="7%", pad="10%",)
+    plt.colorbar(cax=cax,label='count')
     if isCover:
-        plt.plot( minDis,fLDis, 'g',linewidth=0.5,label='cover')
-        plt.plot( maxDis, fLDis,'g',linewidth=0.5)
+        ax.plot( minDis,fLDis, 'k',linewidth=0.5,label='cover')
+        ax.plot( maxDis, fLDis,'k',linewidth=0.5)
         #plt.plot( minDis * (1 - R), fLDis,'-.k',linewidth=0.5,label='control')
         #plt.plot( maxDis * (1 + R), fLDis,'-.k',linewidth=0.5)
-        plt.legend()
-    plt.colorbar(label='count')
-    plt.gca().set_yscale('log')
-    plt.xlabel('DDis(km)')
+        ax.legend()
+    plt.xlabel('$\Delta$(km)')
     plt.ylabel('f(Hz)')
     plt.xlim([0,1800])
-    plt.title(title)
-    plt.tight_layout()
+    #plt.title(title)
+    #plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close()
 
@@ -1506,22 +1511,27 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
     binF.sort()
     binV = np.arange(2.8, 5.2, 0.02)
     plt.close()
-    plt.figure(figsize=[2.5, 2])
+    plt.figure(figsize=[3, 2])
     plt.hist2d(VL, FL, bins=(binV, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
-    plt.colorbar(label='count')
+    #plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('v(km/s)')
     plt.xlim([3, 5])
     plt.ylabel('f(Hz)')
-    plt.title(title)
+    plt.gca().set_position([0.15,0.2,0.6,0.7])
+    ax =plt.gca()
+    ax_divider = make_axes_locatable(plt.gca())
+    cax = ax_divider.append_axes('right', size="7%", pad="10%",)
+    plt.colorbar(cax=cax,label='count')
+    #plt.title(title)
     if isAverage:
-        linewidth = 0.25
-        h0,=plt.plot((fvAverage.v[(fvAverage.v > 1)]), (fvAverage.f[(fvAverage.v > 1)]), '-g', linewidth=linewidth,label='mean')
+        linewidth = 0.5
+        h0,=ax.plot((fvAverage.v[(fvAverage.v > 1)]), (fvAverage.f[(fvAverage.v > 1)]), '-k', linewidth=linewidth,label='mean')
         for thres in thresL:
-            h1,=plt.plot((fvAverage.v[(fvAverage.v > 1)] * (1 + thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.g', linewidth=linewidth,label='$\pm$1.5%')
-            plt.plot((fvAverage.v[(fvAverage.v > 1)] * (1 - thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.g', linewidth=linewidth)
-        plt.legend()
-    plt.tight_layout()
+            h1,=ax.plot((fvAverage.v[(fvAverage.v > 1)] * (1 + thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.k', linewidth=linewidth,label='$\pm$1.5%')
+            ax.plot((fvAverage.v[(fvAverage.v > 1)] * (1 - thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.k', linewidth=linewidth)
+        ax.legend()
+    #plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close()
     plt.figure(figsize=[2.5, 2])
@@ -1542,7 +1552,7 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     FLGet = fLGet.reshape([1, -1]) + vLGet * 0
     dv = VLGet - VL
     dvR = dv / VL
-    thresholdText = '$d_r \\leq %.1f $%%\n' % (threshold * 100)
+    thresholdText = '$d_r \\leq %.1f $%%; ' % (threshold * 100)
     if thresholdForGet > 0:
         thresholdText = thresholdText + '$\\sigma \\leq %.1f$%%' % (thresholdForGet * 100)
     else:
@@ -1555,43 +1565,62 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     binF.sort()
     binF[(-1)] *= 1.00000001
     binF[0] *= 0.99999999
-    binDVR = np.arange(-0.08, 0.08, 0.001)
+    binDVR = np.arange(-0.05, 0.051, 0.001)
     TL = DISL / Vav
     THRESHOLD = delta / TL
     THRESHOLD[THRESHOLD <= threshold] = threshold
-    plt.figure(figsize=[3, 3])
+    plt.figure(figsize=[4, 2.25])
     plt.hist2d((dvR[((VL > 1) * (VLGet > 1))]), (FL[((VL > 1) * (VLGet > 1))]), bins=(binDVR, binF), rasterized=True, cmap='Greys')
-    plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('$dv/v_0$')
     plt.ylabel('$f$(Hz)')
-    plt.title(title)
-    plt.tight_layout()
+    plt.yticks([1/100,1/10])
+    #plt.title(title)
+    #plt.tight_layout()
     plt.text((binDVR[(-2)]), (binF[(-2)]), thresholdText, va='top', ha='right')
+    plt.gca().set_position([0.15,0.2,0.6,0.7])
+    ax_divider = make_axes_locatable(plt.gca())
+    cax = ax_divider.append_axes('right', size="7%", pad="10%",)
+    plt.colorbar(cax=cax,label='count')
     plt.savefig(filename, dpi=300)
-    plt.figure(figsize=[3, 3])
-    plt.hist((FL[(VL > 1)]), bins=binF)
-    plt.hist((FL[((VL > 1) * (VLGet > 1))]), bins=binF)
-    plt.hist((FL[((VL > 1) * (VLGet > 1) * (np.abs(dvR) <= THRESHOLD))]), bins=binF)
+    plt.close()
+    plt.figure(figsize=[4, 2.25])
+    #plt.hist((FL[(VL > 1)]), bins=binF)
+    #plt.hist((FL[((VL > 1) * (VLGet > 1))]), bins=binF)
+    #plt.hist((FL[((VL > 1) * (VLGet > 1) * (np.abs(dvR) <= THRESHOLD))]), bins=binF)
+    label=FL[(VL > 1)]
+    pick=FL[((VL > 1) * (VLGet > 1))]
+    pickRight = FL[((VL > 1) * (VLGet > 1) * (np.abs(dvR) <= THRESHOLD))]
+    plt.hist((label,pick,pickRight), bins=binF,color=['cornflowerblue','yellowgreen','lightcoral'],label=['$T_P+F_N$','$T_P+F_P$','$T_P$'])
+    #plt.hist((pickRight,pick,label,), bins=binF,color=['lightcoral','yellowgreen','cornflowerblue',],label=['$T_P$','$T_P+F_P$','$T_P+F_N$',])
     countAll, a = np.histogram((FL[(VL > 1)]), bins=binF)
     countR, a = np.histogram((FL[((VL > 1) * (VLGet > 1))]), bins=binF)
     countP, a = np.histogram((FL[((VL > 1) * (VLGet > 1) * (np.abs(dvR) <= THRESHOLD))]), bins=binF)
     binMid = (binF[1:] + binF[:-1]) / 2
     ax1 = plt.gca()
     ax2 = ax1.twinx()
-    ax2.plot(binMid, (countP / countAll * 100), 'k-o', markersize=2, linewidth=1)
-    ax2.plot(binMid, (countP / countR * 100), 'r-d', markersize=2, linewidth=1)
-    print((countP / countAll)[-2:])
+    R =countP / countAll * 100
+    P= countP / countR * 100
+    F1 = 2/(1/R+1/P)
+    hR, = ax2.plot(binMid, R, '-d', markersize=2, linewidth=1,label='R',color='dimgray')
+    hP, = ax2.plot(binMid, P, 'o-', markersize=2, linewidth=1,label= 'P',color='seagreen')
+    hF1,= ax2.plot(binMid, F1, '.-', markersize=2, linewidth=1,label= 'F1',color='coral')
+    #print((countP / countAll)[-2:])
+    #plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc='lower left',ncol=3)
+    ax1.legend(loc='lower center',ncol=3)
+    ax2.legend(loc='upper left',ncol=3)
     plt.gca().set_xscale('log')
     ax1.set_ylabel('count')
     ax1.set_xlabel('$f$(Hz)')
     ax2.set_ylabel('Rate(%)')
-    ax1.set_ylim([0, 1.25 * countR.max()])
-    ax2.set_ylim([min(np.min(countP / countAll * 100) - 5, 50), 106])
-    plt.xlim([fL.max(), fL.min()])
-    ax2.text((binF[2]), 105, thresholdText, va='top', ha='right')
-    plt.title(title)
-    plt.tight_layout()
+    ax1.set_ylim([0, 1.45 * countR.max()])
+    ax2.set_ylim([min(np.min(countP / countAll * 100) - 5, 50), 112])
+    ax2.text((binF[-1]*0.98), 110, thresholdText, va='top', ha='right')
+    plt.xlim([binF.min()*0.99, binF.max()*1.01])
+    #plt.title(title)
+    #plt.tight_layout()
+    ax1.set_position([0.15,0.2,0.7,0.7])
+    ax2.set_position([0.15,0.2,0.7,0.7])
     plt.savefig((filename[:-4] + 'FCount' + filename[-4:]), dpi=300)
     plt.close()
     if isCount:
@@ -1658,6 +1687,12 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
 
             plt.savefig(('%s/%.2fmHZ.jpg' % (resDir, fL[i] * 1000)), dpi=300)
             plt.close()
+    RSum =countP.sum() / countAll.sum() 
+    PSum= countP.sum() / countR.sum() 
+    F1Sum = 2/(1/RSum+1/PSum)
+    mean = dvR[np.abs(dvR)<3*threshold].mean()
+    std = dvR[np.abs(dvR)<3*threshold].std()
+    return  '%.3f&%.4f&%.4f&%.4f&%.3f&%.3f'%(threshold*100,RSum,PSum,F1Sum,mean*100,std*100)
 
 
 def compareInF(fvD0, fvD1, stations, fL, isSave=True, saveDir='predict/compareInF/', R=[]):
@@ -1744,11 +1779,13 @@ def keyConvert(key):
             key=key+'_'+t
     return key
 
-def getFVFromPairFile(file, fvD={}, quakeD=seism.QuakeL(), isPrint=False, isAll=False, isGetQuake=True,stations=''):
+def getFVFromPairFile(file, fvD={}, quakeD=seism.QuakeL(), isPrint=False, isAll=False, isGetQuake=True,stations='',isCheck=True):
     with open(file) as (f):
         lines = f.readlines()
     stat = 'next'
     fileName = file.split('/')[(-1)]
+    if not isCheck:
+        stations=''
     if fileName[:3] == 'pvt':
         staDir = file.split('/')[(-3)]
     else:
@@ -1875,8 +1912,11 @@ def getFVFromPairFile(file, fvD={}, quakeD=seism.QuakeL(), isPrint=False, isAll=
                 v= np.array(v)
                 std= np.array(std)
                 if len(stations)>0:
-                    STA0 = stations.find(sta0)
-                    STA1 = stations.find(sta1)
+                    staName0,staName1 = pairKey.split('_')
+                    STA0 = stations.Find(staName0)
+                    STA1 = stations.Find(staName1)
+                    #STA0 =stations.findByLoc(sta0La,sta0Lo)
+                    #STA1 =stations.findByLoc(sta1La,sta1Lo)
                     DDist_cal = np.abs(Dist1-Dist0)
                     DDist_real = np.abs(quake.distaz(STA0).getDelta()-quake.distaz(STA1).getDelta())
                     Ratio = DDist_real/DDist_cal
@@ -2244,7 +2284,7 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1], t
     plt.ylabel('f(Hz)')
     plt.ylim([fL.min(), fL.max()])
     plt.xlim([3, 5])
-    plt.tight_layout()
+    #plt.tight_layout()
     plt.subplot(1, 2, 2)
     if fvRef != None:
         f = fL
@@ -2264,7 +2304,7 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1], t
             plt.ylim([f.min(), f.max()])
             plt.xlim([3, 5])
             plt.xlabel('v(km/s)')
-            plt.tight_layout()
+            #plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close()
 
@@ -3252,6 +3292,7 @@ class corrL(list):
                 if randN > randR:
                     dT = (Rand0 - 0.5) * 2 * (self[i].dDis / midV) * randA * Rand1
                     dN = int(np.round(dT * self[i].fs).astype(np.int))
+                    t0L[ii]-=float(dN)/self[i].fs
                     if np.random.rand() < 0.001:
                         print('##random ', dT, dN, self[i].dDis)
                     if dN > 0:
@@ -3897,7 +3938,7 @@ class corrD(dict):
             v, prob, vM, probM = self.corrL.getV((Y.transpose([0, 2, 1, 3]).reshape([-1, Y.shape[1], 1, Y.shape[(-1)]])), isSimple=isSimple, D=D, isLimit=isLimit, isFit=isFit)
             self.corrL.saveV(v, prob, T, (self.corrL.iL), stations, resDir=resDir, minProb=minProb)
 
-def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
+def showCorrD_(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
     f = 1/T
     dirName = os.path.dirname(outputDir)
     if not os.path.exists(dirName):
@@ -4019,6 +4060,104 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
                 tail = 'without'
                 kind = ['wave','label'][nn]
             figL[nn].savefig('%s/%s_%s_%s.svg'%(outputDir,head,kind,tail),dpi=500)
+
+def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
+    f = 1/T
+    dirName = os.path.dirname(outputDir)
+    if not os.path.exists(dirName):
+        os.makedirs(dirName)
+    count = x.shape[1]
+    cmap = plt.cm.bwr
+    norm = colors.Normalize(vmin=0, vmax=1)
+    for i in range(10):
+        plt.close()
+        axL=[]
+        caxL=[]
+        figL=[]
+        for nn in range(number):
+            fig=plt.figure(figsize=[5,3])
+            grids=plt.GridSpec(5,4)
+            #axL.append(fig.add_subplot(projection='3d'))
+            axL.append(fig.add_subplot(grids[0:4,:]))
+            caxL.append(fig.add_subplot(grids[4,:]))
+            figL.append(fig)
+        for j in range(1):
+            print(j)
+            index= iL[i,j]
+            if j==0:
+                sta0,sta1 = corrL[index].modelFile.split('_')[-2:]
+                head = sta0+'_'+sta1
+            timeL    = corrL[index].timeL-corrL[index].timeL[0]+t[i,j]
+            timeLOut = corrL[index].timeLOut-corrL[index].timeLOut[0]+t[i,j]
+            xlim=[0,500]
+            ylim=[-4,4]
+            tmpy0=y0[i,:,j,:]
+            tmpy=y[i,:,j,:]
+            tmpx = x[i,:,j,:]
+            pos0  =tmpy0.argmax(axis=0)
+            timeLOutL0=timeLOut[pos0.astype(np.int)]
+            timeLOutL0[tmpy0.max(axis=0)<0.5]=np.nan
+            pos  =tmpy.argmax(axis=0).astype(np.float)
+            timeLOutL=timeLOut[pos.astype(np.int)]
+            timeLOutL[tmpy.max(axis=0)<0.5]=np.nan
+            #plt.subplot(number,1,1)
+            #axL[0].title('%s%d'%(outputDir,i))
+            legend = ['r s','i s',\
+            'r h','i h']
+            for k in range(2):
+                if k==1:
+                    c= 'k'
+                else:
+                    c= 'rrrgggbbbrrryyymmm'[j]
+                axL[0].plot(timeL[timeL<xlim[1]],tmpx[timeL<xlim[1],k],c,\
+                    label=legend[k],linewidth=0.5,zs=j,zdir='y')
+            #plt.legend()
+            axL[0].set_xlim(xlim)
+            axL[0].set_ylim(ylim)
+            axL[0].set_xlabel('t/s')
+            axL[0].set_ylabel('A')
+            #axL[0].set_yticks(np.arange(mul))
+            axL[0].set_yticks([-2,0,2])
+            caxL[0].axis('off')
+            figureSet.setColorbar(None,label='Probability',pos='bottom',isAppend=False)
+            #plt.clim(0,1)
+            #pc=plt.pcolormesh(timeLOut,f,tmpy0.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
+            surf=axL[1].pcolormesh(timeLOut[timeLOut<xlim[1]],f,tmpy0[timeLOut<xlim[1]].transpose(),vmin=0,vmax=1,cmap='bwr',rasterized=True)
+            #figureSet.setColorbar(pc,label='Probility',pos='right')
+            ##if number==3:
+            #    axL[1].plot(timeLOutL,f,'--k',linewidth=0.5)
+            axL[1].set_ylabel('f/Hz')
+            axL[1].set_xlabel('t/s')
+            axL[1].set_yscale('log')
+            axL[1].set_xlim(xlim)
+            axL[1].set_ylim(ylim)
+            pc =cm.ScalarMappable(norm=norm, cmap=cmap)
+            #caxL[1].axis('off')
+            figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[1])
+            #plt.colorbar(label='Probility')
+            if number==3:
+                #pc=plt.pcolormesh(timeLOut,f,tmpy.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
+                surf=axL[2].pcolormesh(timeLOut[timeLOut<xlim[1]],f,tmpy[timeLOut<xlim[1]].transpose(),vmin=0,vmax=1,cmap='bwr',rasterized=True)
+                axL[2].plot(timeLOutL0,f,'--k',linewidth=0.5)
+                axL[2].set_ylabel('f/Hz')
+                axL[2].set_xlabel('t/s')
+                axL[2].set_yscale('log')
+                #axL[2].set_zticks([f.max(),f.min()])
+                axL[2].set_xlim(xlim)
+                axL[2].set_ylim(ylim)
+                pc =cm.ScalarMappable(norm=norm, cmap=cmap)
+                #caxL[2].axis('off')
+                figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[2])
+        #plt.colorbar(label='Probility')
+        #plt.gca().semilogx()
+        for nn in range(number):
+            if number==3:
+                tail = 'with'
+                kind = ['wave','label','predict'][nn]
+            if number==2:
+                tail = 'without'
+                kind = ['wave','label'][nn]
+            figL[nn].savefig('%s/%s_%s_%s.pdf'%(outputDir,head,kind,tail),dpi=500)
 
 def analyModel(depth, v, resDir='predict/KEA20/'):
     if not os.path.exists(resDir):

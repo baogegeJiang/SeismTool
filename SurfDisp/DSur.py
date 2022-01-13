@@ -6,13 +6,16 @@ from matplotlib import pyplot as plt
 import pycpt
 from netCDF4 import Dataset
 from ..mapTool import mapTool as mt
+from ..mapTool.mapTool import getDlaDlo
 from ..mathTool.distaz import DistAz
 from ..mathTool.mathFunc_bak import Model as Model0,outR
 #import cmath
 
 #cmap = pycpt.load.gmtColormap('cpt/temperatureInv')
 cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
-#cmap = 'bwr_r'
+cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/seis.cpt')
+cmap = 'jet_r'
+diffMap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/seismicNew.cpt')
 ##程序中又控制的大bug
 ##必须按顺序(period source)
 faultL = mt.readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')
@@ -62,12 +65,14 @@ class DS:
     def __init__(self,runPath='DS/',config=config(),mode='real'):
         self.runPath = runPath
         if not os.path.exists(runPath):
-            os.mkdir(runPath)
+            os.makedirs(runPath)
         self.config = config
         self.config.para['modelPara']['runPath']= runPath
         self.config.para['GSPara']['runPath']= runPath
         self.config.para['GCPara']['runPath']= runPath
         self.mode = mode
+        self.fastP=''
+        self.fast=''
 
     def writeInput(self,perI=-1):
         '''
@@ -244,20 +249,26 @@ class DS:
                     f.write(period)
     def plotByZ(self,p2L=[],R=[],self1='',isCompare=False):
         if self.mode == 'syn':
-            self.modelTrue.plotByZ(self.runPath,self1=self.fastTrue,head='true',R=R,isVol=False,maxDep=9000)
-            self.modelRes.plotByZ(self.runPath,self1=self.fast,R=R,head='depth',isVol=False,maxDep=9000)
+            self.modelTrue.plotByZ(self.runPath,self1=self.fastTrue,head='true',R=R,isVol=False,maxDep=9000,isFault=False)
+            self.modelRes.plotByZ(self.runPath,self1=self.fast,R=R,head='depth',isVol=False,maxDep=9000,isFault=False)
             #self.fast.plotArrByZ(self.runPath,head='fast')
-            self.modelPeriod.plotByZ(self.runPath,self1=self.fastP,head='period',R=R,isVol=False)
+            self.modelPeriod.plotByZ(self.runPath,self1=self.fastP,head='period',R=R,isVol=False,isFault=False)
             return
         '''
         for p2 in p2L:
             self.modelRes.plotByP2(self.runPath,head='P2',P2=p2,vR=self.config.para['vR'])
         '''
+
         if self1!='' and isCompare:
-            self.fastDiff = self.fast.copy()
-            self.fastDiff.v = self.fastDiff.v - self1.fast.v
-            self.fastPDiff = self.fastP.copy()
-            self.fastPDiff.v = self.fastPDiff.v - self1.fastP.v
+            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth')
+            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R)
+            self1.modelRes.plotByZ(self1.runPath,vR=self1.config.para['vR'],self1=self1.fast,R=R,head='depth',selfRef=self.modelRes)
+            self1.modelPeriod.plotByZ(self1.runPath,vR=self1.config.para['vR'],self1=self1.fastP,head='period',R=R,selfRef=self.modelRes)
+            if self.config.para['iso']=='F':
+                self.fastDiff = self.fast.copy()
+                self.fastDiff.v = self.fastDiff.v - self1.fast.v
+                self.fastPDiff = self.fastP.copy()
+                self.fastPDiff.v = self.fastPDiff.v - self1.fastP.v
             self.modelResDiff = self.modelRes.copy()
             self.modelResDiff.v = self.modelResDiff.v/self1.modelRes.v-1
             self.modelPeriodDiff = self.modelPeriod.copy()
@@ -266,11 +277,11 @@ class DS:
             self.modelPeriodDiff.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastPDiff,head='period',R=R,isDiff=True)
         if self1!='' :
             self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth',selfRef=self1.modelRes)
-            self.fast.plotArrByZ(self.runPath,head='fast')
+            #self.fast.plotArrByZ(self.runPath,head='fast')
             self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R,selfRef=self1.modelPeriod)
         else:
             self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth')
-            self.fast.plotArrByZ(self.runPath,head='fast')
+            #self.fast.plotArrByZ(self.runPath,head='fast')
             self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R)
     def plotTK(self):
         nxyz,la,lo,z = self.config.output()
@@ -298,7 +309,7 @@ class DS:
             os.mkdir(resDir)
         for i in range(nxyz[-1]):
             index = np.abs(z[i]-z0).argmin()
-            v = interpolate.interp2d(lo0,la0,vsv0[index],kind='cubic')(lo,la) 
+            v = interpolate.interp2d(lo0,la0,vsv0[index],kind='linear')(lo,la) 
             print(la)
             plt.close()
             plt.pcolormesh(lo,la,-v,cmap=cmap,rasterized=True)
@@ -311,21 +322,27 @@ class DS:
         vR = ''#self.config.para['vR']
         if self.mode == 'syn':
             self.modelTrue = Model(self.config,mode='DSFile',runPath=self.runPath,file='MODVs.true',vR =vR)
-            self.fastTrue      = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.real',vR =vR)
+            if self.config.para['iso']=='F':
+                self.fastTrue      = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.real',vR =vR)
         self.model0 = Model(self.config,mode='DSFile',runPath=self.runPath,file='MOD',vR =vR)
         self.modelPeriod = Model(self.config,mode='DSP',runPath=self.runPath,file='period_Azm_tomo.inv',vR =vR)
         #self.GsTrue = Model(self.config,mode='GSO',runPath=self.runPath,file='MODGs.true')
         #self.GcTrue = Model(self.config,mode='GCO',runPath=self.runPath,file='MODGc.true')
         #self.modelInit = Model(self.config,mode='DSFile',runPath=self.runPath,file='MOD')
         self.modelRes = Model(self.config,mode='DS',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
-        self.GsRes = Model(self.config,mode='GS',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
-        self.GcRes = Model(self.config,mode='GC',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
-        self.fast = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
-        self.fastP = Model(self.config,mode='fastP',runPath=self.runPath,file='period_Azm_tomo.inv',vR =vR)
-    def plotHJ(self,p2L=[],R=[],self1='',isCompare=False):
+        if self.config.para['iso']=='F':
+            self.GsRes = Model(self.config,mode='GS',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
+            self.GcRes = Model(self.config,mode='GC',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
+            self.fast = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
+            self.fastP = Model(self.config,mode='fastP',runPath=self.runPath,file='period_Azm_tomo.inv',vR =vR)
+    def plotHJ(self,p2L=[],R=[],isCompare=False):
         vR = ''
-        self.HJ = Model(self.config,mode='HJ',runPath=self.runPath,vR =vR)
-        self.HJ.plotByZ(self.runPath,vR=self.config.para['vR'],R=R,head='depth(USTC)')
+        self.HJ = Model(self.config,mode='HJ',runPath=self.runPath,vR =vR,self1=self.modelRes)
+        self.HJ.plotByZ(self.runPath,vR=self.config.para['vR'],R=R,head='depth(USTC)')#,selfRef=self.modelRes
+        if isCompare:
+           self.modelResHJDiff = self.HJ.copy()
+           self.modelResHJDiff.v = self.modelResHJDiff.v/self.modelRes.v-1
+           self.modelResHJDiff.plotByZ(self.runPath,vR=self.config.para['vR'],R=R,head='depth(USTC)',isDiff=True)
     def outputRef(self):
         self.modelRes.outputRef(self.config.para['modelPara']['file'])
 
@@ -468,6 +485,13 @@ class Model(Model0):
             out  = outR(vR,self.la,self.lo)
             #print(out)
             self.v[out]=np.nan
+        if self1!='':
+            nxyz0,la0,lo0,z0 = self1.config.output()
+            self.v = self.output(la0,lo0,z0)
+            self.nxyz = [len(la0),len(lo0),len(z0)]
+            self.z  =  z0#.reshape([-1,1,1])
+            self.la = la0#.reshape([1,-1,1])
+            self.lo = lo0#.reshape([1,1,-1])
     def copy(self):
         self1 = Model(self.config,'byModel','','',self.la,self.lo,self.z,self,Gs='',Gc='',vR='')
         self1.mode = self.mode
@@ -479,7 +503,7 @@ class Model(Model0):
         v = self.v[i0,i1,i2]
         return v 
     
-    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False,selfRef='',isVol=False,maxDep=20):
+    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False,selfRef='',isVol=False,maxDep=20,isFault=True):
         R0=R
         resDir = runPath+'/'+'plot/'
         if not os.path.exists(resDir):
@@ -487,8 +511,8 @@ class Model(Model0):
         nxyz,la,lo,z = self.config.output()
         if self.mode=='DSP':
             nxyz,la,lo,z = self.config.outputP()
-        if self.mode=='HJ':
-            nxyz,la,lo,z = self.nxyz,self.la,self.lo,self.z
+        #if self.mode=='HJ':
+        #    nxyz,la,lo,z = self.nxyz,self.la,self.lo,self.z
         Lo,La,Z    =  np.meshgrid(lo,la,z)
         laO,loO = [la,lo]
         #V            =  self.output(la,lo,z)
@@ -522,6 +546,8 @@ class Model(Model0):
             if selfRef!='':
                 vRef = VRef[:,:,i]
                 vRef[outRef]=np.nan
+                if len(vRef[np.isnan(v)==False])==0:
+                    continue
                 mean = vRef[np.isnan(v)==False].mean()
                 print('###by ref mean###')
             else:
@@ -566,24 +592,29 @@ class Model(Model0):
                 perA=0.05
                 if z[i]> maxDep:
                     perA=0.03
-                vmin=-np.abs(per[np.isnan(per)==False]).max()*0-perA
-                vmax=np.abs(per[np.isnan(per)==False]).max()*0+perA
+                vmin=-perA
+                vmax=+perA
+            ac =plt.gca()
+            if self1 !='':
+                x0,y0= m(R[2],R[1])
+                x1,y1= m(R[3],R[0])
+                dx1 = (x1-x0)/maxA/nxyz1[1]
+            if self1 !='':
+                x1,y1= m(lo1,la1)
+            
             if isDiff:
-                plotPlane(m,x,y,per*100,R,z[i],mean*100,vmin*100,vmax*100,isFault=True,head=head,isVol=False,cLabel='V. D.(%)',meanLabel='%',midName='abs mean',cmap='bwr_r')
+                plotPlane(m,x,y,per*100,R,z[i],mean*100,vmin*100,vmax*100,isFault=isFault,head=head,isVol=False,cLabel='V. D.(%)',meanLabel='%',midName='abs mean',cmap=diffMap)
             else:
-                plotPlane(m,x,y,per*100,R,z[i],mean,vmin*100,vmax*100,isFault=True,head=head,isVol=isVol,cLabel='V. A.(%)',midName='$v_0$',cmap=cmap)
+                plotPlane(m,x,y,per*100,R,z[i],mean,vmin*100,vmax*100,isFault=isFault,head=head,isVol=isVol,cLabel='V. A.(%)',midName='$v_0$',cmap=cmap)
             #plotPlane(m,x,y,out,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False)
             plt.gca().set(facecolor='w')
             if self1 !='':
-                color='limegreen'
+                color='k'
                 v1 = V1[:,:,i]
-                x1,y1= m(lo1,la1)
-                dx1 = (x1.max()-x1.min())/maxA/nxyz1[1]
-                x0,y0= m(R[2],R[1])
                 #printplt.arrow(x0+0.01*dx1,y0-0.05*dx1,0,0.03*dx1,color='b')
-                plt.plot([x0+0.01*dx1,x0+0.01*dx1],\
-                    [y0-0.05*dx1,y0-0.05*dx1+0.03*dx1],color=color,linewidth=1)
-                plt.text(x0+0.01*dx1,y0-0.05*dx1,'0.03',ha='left',va='top',color='r',size=10)
+                ac.plot([x0+0.01*dx1,x0+0.01*dx1],\
+                    [y0-0.05*dx1,y0-0.05*dx1+0.03*dx1],color=color,linewidth=0.75)
+                ac.text(x0+0.01*dx1,y0-0.05*dx1,'0.03',ha='left',va='top',color='r',size=10)
                 for ii in range(v1.shape[0]):
                     for jj in range(v1.shape[1]):
                         if vR!='':
@@ -591,13 +622,13 @@ class Model(Model0):
                                 continue
                         dX,dY=[np.imag(v1[ii,jj])*dx1,np.real(v1[ii,jj])*dx1]
                         #plt.arrow(x1[jj]-0.5*dX,y1[ii]-0.5*dY,dX,dY,color='b',)
-                        plt.plot([x1[jj]-0.5*dX,x1[jj]+0.5*dX],\
-                            [y1[ii]-0.5*dY,y1[ii]+0.5*dY],color=color,linewidth=1)
-            fig.tight_layout()
+                        ac.plot([x1[jj]-0.5*dX,x1[jj]+0.5*dX],\
+                            [y1[ii]-0.5*dY,y1[ii]+0.5*dY],color=color,linewidth=0.75)
+            #fig.tight_layout()
             headNew = head
             if isDiff:
                 headNew=head+'Diff'
-            plt.savefig('%s/%s_%f.svg'%(resDir,headNew,self.z[i]),dpi=500)
+            plt.savefig('%s/%s_%f.eps'%(resDir,headNew,self.z[i]),dpi=500)
             plt.close()
     def plotByP2(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,P2=[],N=300):
         resDir = runPath+'/'+'plot/'
@@ -752,7 +783,7 @@ class Model(Model0):
             x,y= m(lo,la)
             plotPlane(m,x,y,dper,R,z,0,-0.02,0.02,isFault=True,head=head+'diff')
             plt.subtitle('depth: %.2f km mean: %.3f'%(self.z[i],mean))
-            plt.savefig('%s/%s_%f.jpg'%(resDir,head,self.z[i]),dpi=500)
+            plt.savefig('%s/%s_%f.eps'%(resDir,head,self.z[i]),dpi=500)
             #plt.ylim([35,55])
             plt.close()
     def outputRef(self,filename):
@@ -773,18 +804,19 @@ def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
     if isFault:
         for fault in faultL:
             if fault.inR(R):
-                fault.plot(m,markersize=0.3,)
+                fault.plot(m,markersize=0.3,color='dimgray',linewidth=0.5)
     if isVol:
         vX,vY=m(mt.volcano[:,0],mt.volcano[:,1])
         m.plot(vX, vY,'^r')
     pc=m.pcolormesh(x,y,per,cmap=cmap,shading='auto',rasterized=True)
-    m.drawcoastlines(linewidth=0.8, linestyle='dashdot', color='k')
+    #m.drawcoastlines(linewidth=0.8, linestyle='dashdot', color='k')
     plt.clim(vmin=vmin,vmax=vmax)
     plt.title('%s %.2f km %s: %.3f %s'%(head,z,midName,mean,meanLabel))
     if 'period' in head:
         plt.title('%s %.2f s %s: %.3f %s'%(head,z,midName,mean,meanLabel))
     dLa,dLo=mt.getDlaDlo(R)
-    mt.plotLaLoLine(m,dLa,dLo)
+    mt.plotLaLoLine(m,dLa,dLo,dashes=[3,3],color='dimgrey',linewidth=0.5)
+    plt.gca().set_position([0.15,0.2,0.6,0.7])
     figureSet.setColorbar(pc,cLabel,pos='right')
     #cbar=plt.colorbar(fraction=0.035)
     #cbar.set_label(cLabel)
@@ -818,7 +850,7 @@ def loadModelHJ_(phase='p',fileDir='../models/SRL_2018209_esupp_Velocity/'):
         Z = z[i]
         v[i,:,:]=np.loadtxt('%s/Z_v%s%d.txt'%(fileDir,phase,Z))[:,2].reshape([len(lo),len(la)]).transpose()
     return z,la,lo,v
-def loadModelHJ(phase='p',file='models/USTClith2.0/USTClitho2.0.wrst.sea_level.txt'):
+def loadModelHJ(phase='p',file='models/USTClith2.0/USTClitho2.0.txt'):#models/USTClith2.0/USTClitho2.0.wrst.sea_level.txt'
     data = np.loadtxt(file)
     lo  = np.unique(data[:,0])
     la  = np.unique(data[:,1])
