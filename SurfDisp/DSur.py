@@ -263,7 +263,7 @@ class DS:
             self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth')
             self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R)
             self1.modelRes.plotByZ(self1.runPath,vR=self1.config.para['vR'],self1=self1.fast,R=R,head='depth',selfRef=self.modelRes)
-            self1.modelPeriod.plotByZ(self1.runPath,vR=self1.config.para['vR'],self1=self1.fastP,head='period',R=R,selfRef=self.modelRes)
+            self1.modelPeriod.plotByZ(self1.runPath,vR=self1.config.para['vR'],self1=self1.fastP,head='period',R=R,selfRef=self.modelPeriod)
             if self.config.para['iso']=='F':
                 self.fastDiff = self.fast.copy()
                 self.fastDiff.v = self.fastDiff.v - self1.fast.v
@@ -300,7 +300,7 @@ class DS:
             plt.savefig('%s/TK_%f.jpg'%(resDir,z[i]),dpi=200)
             plt.ylim([35,55])
             plt.close()
-    def plotHJ(self):
+    def plotHJ_(self):
         nxyz,la,lo,z = self.config.output()
         la = la[::-1]
         z0,la0,lo0,vsv0= loadModelHJ('s')
@@ -343,6 +343,14 @@ class DS:
            self.modelResHJDiff = self.HJ.copy()
            self.modelResHJDiff.v = self.modelResHJDiff.v/self.modelRes.v-1
            self.modelResHJDiff.plotByZ(self.runPath,vR=self.config.para['vR'],R=R,head='depth(USTC)',isDiff=True)
+    def plotWS(self,p2L=[],R=[],isCompare=False):
+        vR = ''
+        self.WS = Model(self.config,mode='WS',runPath=self.runPath,vR =vR,self1=self.modelRes)
+        self.WS.plotByZ(self.runPath,vR=self.config.para['vR'],R=R,head='depth(WS)')#,selfRef=self.modelRes
+        if isCompare:
+           self.modelResWSDiff = self.WS.copy()
+           self.modelResWSDiff.v = self.modelResWSDiff.v/self.modelRes.v-1
+           self.modelResWSDiff.plotByZ(self.runPath,vR=self.config.para['vR'],R=R,head='depth(WS)',isDiff=True)
     def outputRef(self):
         self.modelRes.outputRef(self.config.para['modelPara']['file'])
 
@@ -393,6 +401,8 @@ class Model(Model0):
             #.reshape([-1])
             #shape = self.vsv
             #self.vsv=self.vsv.reshape([-1])
+        if mode =='WS':
+            z,la,lo,v=loadModelWS()
         if mode=='byModel':
             v = self1.output(la,lo,z)
         if mode=='prem':
@@ -485,9 +495,13 @@ class Model(Model0):
             out  = outR(vR,self.la,self.lo)
             #print(out)
             self.v[out]=np.nan
-        if self1!='':
+        if self1!='' and mode!='byModel':
             nxyz0,la0,lo0,z0 = self1.config.output()
             self.v = self.output(la0,lo0,z0)
+            for i in range(len(z0)):
+                VTmp = self.v[:,:,i]
+                VTmp[VTmp<1]=VTmp[VTmp>2].mean()
+                self.v[:,:,i]=VTmp
             self.nxyz = [len(la0),len(lo0),len(z0)]
             self.z  =  z0#.reshape([-1,1,1])
             self.la = la0#.reshape([1,-1,1])
@@ -628,7 +642,7 @@ class Model(Model0):
             headNew = head
             if isDiff:
                 headNew=head+'Diff'
-            plt.savefig('%s/%s_%f.eps'%(resDir,headNew,self.z[i]),dpi=500)
+            plt.savefig('%s/%s_%f.jpg'%(resDir,headNew,self.z[i]),dpi=500)
             plt.close()
     def plotByP2(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,P2=[],N=300):
         resDir = runPath+'/'+'plot/'
@@ -850,13 +864,42 @@ def loadModelHJ_(phase='p',fileDir='../models/SRL_2018209_esupp_Velocity/'):
         Z = z[i]
         v[i,:,:]=np.loadtxt('%s/Z_v%s%d.txt'%(fileDir,phase,Z))[:,2].reshape([len(lo),len(la)]).transpose()
     return z,la,lo,v
-def loadModelHJ(phase='p',file='models/USTClith2.0/USTClitho2.0.txt'):#models/USTClith2.0/USTClitho2.0.wrst.sea_level.txt'
+def loadModelHJ(phase='p',file='models/USTClith2.0/USTClitho2.0.wrst.sea_level.txt'):#models/USTClith2.0/USTClitho2.0.wrst.sea_level.txt'
     data = np.loadtxt(file)
     lo  = np.unique(data[:,0])
     la  = np.unique(data[:,1])
     z  = np.unique(data[:,2])
     v = data[:,4].reshape([len(z),len(la),len(lo)]).transpose([1,2,0])
     return z,la,lo,v
+def loadModelWS(phase='p',file='data/China_2015_Vs_v1.0/'):#models/USTClith2.0/USTClitho2.0.wrst.sea_level.txt'
+    lo=np.arange(75,143.5,0.5)
+    la=np.arange(19.5,55,0.5)
+    z = np.arange(0,200,0.5)[::10]
+    data = np.zeros([len(la),len(lo),len(z)])
+    NPFILE= file+'model6.npy'
+    if not os.path.exists(NPFILE):
+        for i in range(len(la)):
+            for j in range(len(lo)):
+                La = la[i]
+                Lo = lo[j]
+                if La%1==0:
+                    La = str(int(La))
+                else:
+                    La = '%.1f'%La
+                if Lo%1==0:
+                    Lo = str(int(Lo))
+                else:
+                    Lo = '%.1f'%Lo
+                File = '%s/%s_%s.mod'%(file,Lo,La)
+                if os.path.exists(File):
+                    DATA = np.loadtxt(File)
+                    if len(DATA.shape)==2:
+                        print(File)
+                        data[i,j] = DATA[::10,1]
+        np.save(NPFILE,data)
+    else:
+        data = np.load(NPFILE)
+    return z,la,lo,data
 
 def denseLaLo(La,Lo,Per,N=500):
     Per = Per+0

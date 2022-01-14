@@ -1323,6 +1323,8 @@ class fv:
         dv = v1 - v0
         dv[np.isnan(v1)] = -100
         return dv
+    def copy(self):
+        return fv([self.f,self.v,self.std],mode='num')
 
 fvNone=fv(np.array([[0],[0]]))
 
@@ -1428,7 +1430,7 @@ def outputFvDist(fvD, stations, t=16 ** np.arange(0, 1.000001, 0.020408163265306
     print(len(nameL))
     return (np.array(distL).reshape([-1, 1]), np.array(vL), fL, averageFVL(fvL, fL=fL), KEYL)
 
-disMap ='GnBu'
+disMap ='gray_r'
 def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minDis=[], maxDis=[], fLDis=[], R=0.001):
     VL = vL.reshape([-1])
     DISTL = (distL + vL * 0).reshape([-1])
@@ -1449,8 +1451,8 @@ def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minD
     cax = ax_divider.append_axes('right', size="7%", pad="10%",)
     plt.colorbar(cax=cax,label='count')
     if isCover:
-        ax.plot( minDis,fLDis, 'k',linewidth=0.5,label='cover')
-        ax.plot( maxDis, fLDis,'k',linewidth=0.5)
+        ax.plot( minDis,fLDis, 'r',linewidth=0.5,label='cover')
+        ax.plot( maxDis, fLDis,'r',linewidth=0.5)
         #plt.plot( minDis * (1 - R), fLDis,'-.k',linewidth=0.5,label='control')
         #plt.plot( maxDis * (1 + R), fLDis,'-.k',linewidth=0.5)
         ax.legend()
@@ -1526,10 +1528,14 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
     #plt.title(title)
     if isAverage:
         linewidth = 0.5
-        h0,=ax.plot((fvAverage.v[(fvAverage.v > 1)]), (fvAverage.f[(fvAverage.v > 1)]), '-k', linewidth=linewidth,label='mean')
+        h0,=ax.plot((fvAverage.v[(fvAverage.v > 1)]), (fvAverage.f[(fvAverage.v > 1)]), '-r', linewidth=linewidth,label='mean')
         for thres in thresL:
-            h1,=ax.plot((fvAverage.v[(fvAverage.v > 1)] * (1 + thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.k', linewidth=linewidth,label='$\pm$1.5%')
-            ax.plot((fvAverage.v[(fvAverage.v > 1)] * (1 - thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.k', linewidth=linewidth)
+            if thres <1:
+                h1,=ax.plot((fvAverage.v[(fvAverage.v > 1)] * (1 + thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.r', linewidth=linewidth,label='$\pm$1.5%')
+                ax.plot((fvAverage.v[(fvAverage.v > 1)] * (1 - thres)), (fvAverage.f[(fvAverage.v > 1)]), '-.r', linewidth=linewidth)
+            else:
+                h1,=ax.plot(fvAverage.v[(fvAverage.v > 1)] + thres*fvAverage.std[(fvAverage.v > 1)], (fvAverage.f[(fvAverage.v > 1)]), '-.r', linewidth=linewidth,label='$\pm$%d std'%thres)
+                ax.plot(fvAverage.v[(fvAverage.v > 1)] - thres*fvAverage.std[(fvAverage.v > 1)], (fvAverage.f[(fvAverage.v > 1)]), '-.r', linewidth=linewidth)
         ax.legend()
     #plt.tight_layout()
     plt.savefig(filename, dpi=300)
@@ -4069,17 +4075,17 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
     count = x.shape[1]
     cmap = plt.cm.bwr
     norm = colors.Normalize(vmin=0, vmax=1)
-    for i in range(10):
+    for i in range(20):
         plt.close()
         axL=[]
         caxL=[]
         figL=[]
         for nn in range(number):
-            fig=plt.figure(figsize=[5,3])
-            grids=plt.GridSpec(5,4)
+            fig=plt.figure(figsize=[4,2])
+            grids=plt.GridSpec(8,4)
             #axL.append(fig.add_subplot(projection='3d'))
             axL.append(fig.add_subplot(grids[0:4,:]))
-            caxL.append(fig.add_subplot(grids[4,:]))
+            caxL.append(fig.add_subplot(grids[6,:]))
             figL.append(fig)
         for j in range(1):
             print(j)
@@ -4087,10 +4093,10 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             if j==0:
                 sta0,sta1 = corrL[index].modelFile.split('_')[-2:]
                 head = sta0+'_'+sta1
-            timeL    = corrL[index].timeL-corrL[index].timeL[0]+t[i,j]
-            timeLOut = corrL[index].timeLOut-corrL[index].timeLOut[0]+t[i,j]
-            xlim=[0,500]
-            ylim=[-4,4]
+            timeL    = corrL[index].timeL-corrL[index].timeL[0]#+t[i,j]
+            timeLOut = corrL[index].timeLOut-corrL[index].timeLOut[0]#+t[i,j]
+            xlim=[0,1000]
+            ylim=[-6,6]
             tmpy0=y0[i,:,j,:]
             tmpy=y[i,:,j,:]
             tmpx = x[i,:,j,:]
@@ -4110,10 +4116,10 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
                 else:
                     c= 'rrrgggbbbrrryyymmm'[j]
                 axL[0].plot(timeL[timeL<xlim[1]],tmpx[timeL<xlim[1],k],c,\
-                    label=legend[k],linewidth=0.5,zs=j,zdir='y')
+                    label=legend[k],linewidth=0.5)
             #plt.legend()
             axL[0].set_xlim(xlim)
-            axL[0].set_ylim(ylim)
+            #axL[0].set_ylim(ylim)
             axL[0].set_xlabel('t/s')
             axL[0].set_ylabel('A')
             #axL[0].set_yticks(np.arange(mul))
@@ -4130,7 +4136,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             axL[1].set_xlabel('t/s')
             axL[1].set_yscale('log')
             axL[1].set_xlim(xlim)
-            axL[1].set_ylim(ylim)
+            #axL[1].set_ylim(ylim)
             pc =cm.ScalarMappable(norm=norm, cmap=cmap)
             #caxL[1].axis('off')
             figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[1])
@@ -4144,7 +4150,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
                 axL[2].set_yscale('log')
                 #axL[2].set_zticks([f.max(),f.min()])
                 axL[2].set_xlim(xlim)
-                axL[2].set_ylim(ylim)
+                #axL[2].set_ylim(ylim)
                 pc =cm.ScalarMappable(norm=norm, cmap=cmap)
                 #caxL[2].axis('off')
                 figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[2])
@@ -4157,7 +4163,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             if number==2:
                 tail = 'without'
                 kind = ['wave','label'][nn]
-            figL[nn].savefig('%s/%s_%s_%s.pdf'%(outputDir,head,kind,tail),dpi=500)
+            figL[nn].savefig('%s/%s_%s_%s.eps'%(outputDir,head,kind,tail),dpi=500)
 
 def analyModel(depth, v, resDir='predict/KEA20/'):
     if not os.path.exists(resDir):

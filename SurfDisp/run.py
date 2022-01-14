@@ -594,7 +594,7 @@ class run:
 			self.model = fcn.modelDt(channelList=[0],maxCount=self.config.para['maxCount'])
 		if file != '':
 			self.model.load_weights(file, by_name= True)	
-	def calResOneByOne(self,isLoadModel=False):
+	def calResOneByOne(self,isLoadModel=False,isPlot=False,isRand=False):
 		config     = self.config
 		para       = config.para
 		N          = len(para['stationFileL'])
@@ -603,11 +603,16 @@ class run:
 		if 'modelFile' in para and isLoadModel:
 			print('loadFile')
 			self.loadModelUp(para['modelFile'])
+		if isPlot:
+			plotDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/plot/'
+		else:
+			plotDir=''
 		for i in range(N):
 			sta     = seism.StationList(para['stationFileL'][i])
 			sta.inR(para['lalo'])
 			print('sta num:',len(sta))
 			sta.set('oRemove', para['oRemoveL'][i])
+			#sta.set('oRemove',isORemove)
 			sta.getInventory()
 			q       = seism.QuakeL(para['quakeFileL'][i])
 			print(para['quakeFileL'][i],len(q))
@@ -616,19 +621,11 @@ class run:
 			q.set('sort','sta')
 			q.sort()
 			perN= self.config.para['perN']
-			for j in range(self.config.para['gpuIndex'],int(len(q)/perN),self.config.para['gpuN']):#self.config.para['gpuIndex']
+			fvDAverage={}
+			fvDAverage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
+			for j in range(self.config.para['gpuIndex'],int(len(q)/perN)+1,self.config.para['gpuN']):#self.config.para['gpuIndex']
 				print('doing for %d %d in %d'%(j*perN,min(len(q)-1,j*perN+perN),len(q)))
-				'''
-				corrL0  = para['dConfig'].quakeCorr(q,sta,\
-							byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
-							minSNR=para['minSNRL'][i],isLoadFv=para['isLoadFvL'][i],\
-							fvD=fvD,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],resDir=para['eventDir'],maxCount=para['maxCount'],up=para['up'])
-				'''
-				corrL0  = para['dConfig'].quakeCorr(q[j*perN:min(len(q)-1,j*perN+perN)],sta,\
-						byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
-						minSNR=para['minSNRL'][i],isLoadFv=False,\
-						fvD=fvDAverage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],\
-						resDir=para['eventDir'],maxCount=para['maxCount'])
+				corrL0  = para['dConfig'].quakeCorr(q[j*perN:min(len(q)-1,j*perN+perN)],sta,byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],minSNR=para['minSNRL'][i],isLoadFv=False,fvD=fvDAverage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],resDir=para['eventDir'],maxCount=para['maxCount'],plotDir=plotDir)
 				self.corrL  = d.corrL(corrL0,maxCount=para['maxCount'])
 				if len(self.corrL)==0:
 					continue
@@ -636,13 +633,12 @@ class run:
 				#self.calRes()
 				para = self.config.para
 				self.corrL.setTimeDis(fvDAverage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
-				byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
-				set2One=True,move2Int=False,modelNameO=para['refModel'],noY=True)
-				self.corrL.getAndSaveOld(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
-				,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'])
+							byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
+							set2One=True,move2Int=False,modelNameO=para['refModel'],noY=True,randMove=isRand,randA=para['randA'])
+				self.corrL.getAndSaveOld(self.model,'%s/CEA_P_'%para['resDir'],self.stations,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'],)
 				corrL0 = 0
 				self.corrL = 0
-				self.corrL.save(para['matSaveDir'])
+				#self.corrL.save(para['matSaveDir'])
 				gc.collect()
 				
 	def calCorrOneByOne(self,isPlot=False):
@@ -672,12 +668,6 @@ class run:
 				fvDAverage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
 				for j in range(self.config.para['gpuIndex'],int(len(q)/perN)+1,self.config.para['gpuN']):#self.config.para['gpuIndex']
 					print('doing for %d %d in %d'%(j*perN,min(len(q)-1,j*perN+perN),len(q)))
-					'''
-					corrL0  = para['dConfig'].quakeCorr(q,sta,\
-								byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
-								minSNR=para['minSNRL'][i],isLoadFv=para['isLoadFvL'][i],\
-								fvD=fvD,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],resDir=para['eventDir'],maxCount=para['maxCount'],up=para['up'])
-					'''
 					corrL0  = para['dConfig'].quakeCorr(q[j*perN:min(len(q)-1,j*perN+perN)],sta,\
 							byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
 							minSNR=para['minSNRL'][i],isLoadFv=False,\
@@ -825,6 +815,9 @@ class run:
 		if isCoverQC:
 			self.coverQC(self.fvAvGet)
 		d.qcFvD(self.fvAvGet,threshold=self.config.para['threshold'],delta=1,stations=self.stations)
+		self.fvAvGetO={}
+		for key in self.fvAvGet:
+			self.fvAvGetO[key]=self.fvAvGet[key].copy()
 	def showTest(self):
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/waveform/'
 		corrD = d.corrD(self.corrDTest.corrL)
@@ -889,14 +882,15 @@ class run:
 			f.write('%s&average&%s\\\\[2pt]\n'%('valid',averageValid))
 			f.write('%s&average&%s\\\\[2pt]\n'%('test',averageTest))
 
-		M,V0,V1=d.compareInF(self.fvDAverage,self.fvAvGet,self.stations,1/self.config.para['T'],R=self.config.para['R'],saveDir=resDir+'compareInF/')
+		M,V0,V1=d.compareInF(self.fvDAverage,self.fvAvGetO,self.stations,1/self.config.para['T'],R=self.config.para['R'],saveDir=resDir+'compareInF/')
 		d.plotFVM(self.fvMGet,self.fvAvGet,self.fvDAverage,resDir=resDir+'/compare/',isDouble=True,fL0=1/self.config.para['T'],format=format,stations=self.stations,keyL=self.fvTest)
 	def getAV(self):
-		self.fvAvGetL = [self.fvAvGet[key] for key in self.fvAvGet]
+		self.fvAvGetL = [self.fvAvGetO[key] for key in self.fvAvGetO]
 		self.FVAV     = d.averageFVL(self.fvAvGetL)
-	def limit(self,threshold=3):
+	def limit(self,):
 		for key in self.fvAvGet:
-			self.FVAV.limit(self.fvAvGet[key],threshold=threshold)
+			self.fvAvGet[key] = self.fvAvGetO[key].copy()
+			self.FVAV.limit(self.fvAvGet[key],threshold=self.config.para['areasLimit'])
 		d.qcFvD(self.fvAvGet)
 	def getAreas(self):
 		self.areas=d.areas(laL=self.config.para['laL'],\
@@ -1065,6 +1059,11 @@ class run:
 
 		disL,vL,fL,fvAverage_ ,keyL= d.outputFvDist(self.fvDGet,self.stations,t=self.config.para['T'],keys=self.fvTest)
 		d.plotFV(vL,fL,resDir+'FVTestSingleGet.eps',isAverage=True,fvAverage=fvAverage,thresL=[0.05,0.1])
+	def plotGetAvDis(self):
+		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
+		#fvAverage = self.fvDAverage['models/prem']
+		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvAvGetO,self.stations,t=self.config.para['T'],keys=[])
+		d.plotFV(vL,fL,resDir+'FVGet.eps',isAverage=True,fvAverage=self.FVAV,thresL=[self.config.para['areasLimit']])
 
 paraOrdos={ 'quakeFileL'  : ['phaseLPickCEA'],\
 	'stationFileL': ['stations/CEA.sta_know_few'],#**********'stations/CEA.sta_know_few'\
@@ -1555,9 +1554,10 @@ paraAllONew={ 'quakeFileL'  : ['../phaseLPickCEA'],\
 
 N = 50
 N1 =N-1
+N2 =N1/2
 paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'stationFileL': ['../stations/CEA.sta_labeled_sort'],#**********'stations/CEA.sta_know_few'\
-	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220104-161924_model.h5',
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220113-025122_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'maxCount'    : 512*3,\
@@ -1569,20 +1569,20 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'matH5'	  :'/media/jiangyr/1TSSD/allClipNewV10.h5',\
 	'randA'       : 0.05,\
 	'midV'        : 4,\
-	'mul'		  : 12,\
-	'up'          :  2,\
+	'mul'		  : 1,\
+	'up'          :  1,\
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220113V1_1_1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220113V3_1_1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 200,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           :[0,5,10,15,20,30,40,50,60,80,100,120,150,250,350,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
 	'T'           : (12**np.arange(0,1.000001,1/N1))*10,\
 	'Tav'         : (12**np.arange(0-1/N1,1.000001+1/N1,1/N1))*10,\
-	'tSur'        : (12**np.arange(0,1.000001,1/N1))*10,\
-	'surPara'     : { 'nxyz':[19,28,15], 'lalo':[55,110],#[40,60,0][55,108]\
-					'dlalo':[1,1], 'maxN':60,#[0.5,0.5]\
+	'tSur'        : (12**np.arange(0,1.000001,1/N2))*10,\
+	'surPara'     : { 'nxyz':[38,55,15], 'lalo':[55,110],#[40,60,0][55,108]\
+					'dlalo':[0.5,0.5], 'maxN':60,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.3,\
-					'maxIT':20,'nBatch':1,'smoothDV':20,'smoothG':40,'vR':np.array([[53.5,122.1],[48,134.1],[42.1,131.1],[39.1,125],[39.9,115.1],[42,111.9],[45,111.9],[53.5,122.1]]),'perAGs':0.02,'perAGc':0.02,'perN':[3,3,5],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.04,'iso':'F',},\
+					'maxIT':20,'nBatch':1,'smoothDV':20,'smoothG':40,'vR':np.array([[53.5,122.1],[48,134.1],[42.1,131.1],[39.1,125],[39.9,115.1],[42,111.9],[45,111.9],[53.5,122.1]]),'perAGs':0.02,'perAGc':0.02,'perN':[4,4,5],'perNG':[8,8,5],'noiselevel':0.00,'perA':0.04,'iso':'F',},\
 	'runDir'      : '../DS/20220111_CEA160_TrainTest/',#_man/',\
 	'gpuIndex'    : 0,\
 	'gpuN'        : 1,\
@@ -1644,7 +1644,7 @@ paraSC={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'minSta'      : 3,\
 	'laL'         : [],\
 	'loL'         : [],\
-	'areasLimit'  :  3,\
+	'areasLimit'  :  5,\
 	'up'          :  up,\
 	'refModel'    : 'models/prem',\
 	'p2L':[\
@@ -1657,7 +1657,7 @@ paraSC={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'R':[38,55,110,135]}
 paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'stationFileL': ['../stations/CEA.sta_know_few'],\
-	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220104-161924_model.h5',
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220113-025122_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'oRemoveL'    : [False],\
@@ -1670,17 +1670,18 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'randA'       : 0.0,\
 	'midV'        : 4,\
 	'mul'		  : 1,\
-	'resDir'      : '/media/jiangyr/MSSD/20220110NorthV1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'up'          :  1,
+	'resDir'      : '/media/jiangyr/MSSD/20220113NorthV3/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 2,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           : [0,5,10,15,20,30,40,50,60,80,100,120,150,250,350,500],#[0,5,10,15,20,25,30,35,45,55,65,80,100,130,160,175,200,250,300,350],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
 	'T'           : (12**np.arange(0,1.000001,1/N1))*10,\
 	'Tav'         : (12**np.arange(0-1/N1,1.000001+1/N1,1/N1))*10,\
-	'tSur'        : (12**np.arange(0,1.000001,1/N1))*10,\
-	'surPara'     : { 'nxyz':[27,38,16], 'lalo':[55,103],#[40,60,0][55,108]\
-					'dlalo':[1,1], 'maxN':350,#[0.5,0.5]\
-					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 2,\
-					'maxIT':60,'nBatch':60,'smoothDV':80,'smoothG':200,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[32,122.5],[32,103],[40,103],[43.9,110.9]]),'perAGs':0.01,'perAGc':0.01,'perN':[3,3,5],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.05},\
+	'tSur'        : (12**np.arange(0,1.000001,1/N2))*10,\
+	'surPara'     : { 'nxyz':[54,75,16], 'lalo':[55,103],#[40,60,0][55,108]\
+					'dlalo':[0.5,0.5], 'maxN':350,#[0.5,0.5]\
+					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 3,\
+					'maxIT':30,'nBatch':30,'smoothDV':10,'smoothG':20,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[32,122.5],[32,103],[40,103],[43.9,110.9]]),'perAGs':0.0,'perAGc':0.0,'perN':[4,4,5],'perNG':[8,8,5],'noiselevel':0.00,'perA':0.04,'iso':'T'},\
 	'runDir'      : '../DS/20211016_CEA160_TrainTest_North/',#_man/',\
 	'gpuIndex'    : 0,\
 	'gpuN'        : 1,\
@@ -1696,7 +1697,6 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'laL'         : [],\
 	'loL'         : [],\
 	'areasLimit'  :  3,\
-	'up'          :  up,\
 	'refModel'    : 'models/prem',\
 	'p2L':[\
 	[[45,115],[35,115]],\
@@ -1708,7 +1708,7 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'R':[32,55,103,136]}
 paraOrdos={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'stationFileL': ['../stations/CEA.sta_know_few'],\
-	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220104-161924_model.h5',
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220113-025122_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'oRemoveL'    : [False],\
@@ -1732,7 +1732,7 @@ paraOrdos={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'surPara'     : { 'nxyz':[13,13,16], 'lalo':[43,104],#[40,60,0][55,108]\
 					'dlalo':[1,1], 'maxN':80,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 2,\
-					'maxIT':20,'nBatch':1,'smoothDV':10,'smoothG':20,'vR':np.array([[42,105],[42,113],[34,113],[34,105],[42,103]]),'perAGs':0.0,'perAGc':0.0,'perN':[2,2,3],'perNG':[4,4,3],'noiselevel':0.00,'perA':0.04,'iso':'T'},\
+					'maxIT':20,'nBatch':1,'smoothDV':10,'smoothG':20,'vR':np.array([[42,105],[42,113],[34,113],[34,105],[42,103]]),'perAGs':0.02,'perAGc':0.02,'perN':[2,2,3],'perNG':[4,4,3],'noiselevel':0.00,'perA':0.04,'iso':'T'},\
 	'runDir'      : '../DS/20211016_CEA160_TrainTest_Ordos/',#_man/',\
 	'gpuIndex'    : 0,\
 	'gpuN'        : 1,\

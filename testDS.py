@@ -30,54 +30,42 @@ R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
 run.run.analyRes(R,format='eps')
 
 resDir = R.config.para['resDir']
-for mul in [1,6,12,18]:
-    up=2
-    R.config.para['resDir']='%s/%d_%d/'%(resDir,mul,up)
-    R.config.para['up']=up
-    R.config.para['mul']=mul
-    R.model=None
-    run.run.loadModelUp(R)
-    run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
-    run.run.calFromCorrL(R)
-    run.run.loadRes(R)
-    #R.getAv(isCoverQC=True,isDisQC=False)
-    R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
-    run.run.analyRes(R,format='eps')
 
-for up in [1,3,4]:
-    mul=1
-    R.config.para['resDir']='%s_%d_%d/'%(resDir[:-1],mul,up)
-    R.config.para['up']=up
-    R.config.para['mul']=mul
-    R.model=None
-    run.run.loadModelUp(R)
-    run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
-    run.run.calFromCorrL(R)
-    run.run.loadRes(R)
-    #R.getAv(isCoverQC=True,isDisQC=False)
-    R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
-    run.run.analyRes(R,format='eps')
 
-isRand=True
-up =2
-mul=12
-R.config.para['resDir']='%s/%d_%d_rand/'%(resDir,mul,up)
-R.config.para['up']=up
-R.config.para['mul']=mul
-R.model=None
-run.run.loadModelUp(R)
-run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+R.loadModelUp(R.config.para['modelFile'])
+R.config.para['resDir']='/media/jiangyr/MSSD/20220113V3_1_1_rand/'
 run.run.calFromCorrL(R,isRand=True)
-R.loadRes()
+run.run.loadRes(R)
 #R.getAv(isCoverQC=True,isDisQC=False)
-R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.getAV(R)
+run.run.limit(R)
+run.run.plotGetAvDis(R)
 run.run.analyRes(R,format='eps')
 
+R.config.para['resDir']='/media/jiangyr/MSSD/20220113V3_1_1/'
+run.run.calFromCorrL(R)
+run.run.loadRes(R)
+#R.getAv(isCoverQC=True,isDisQC=False)
+run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.getAV(R)
+run.run.limit(R)
+run.run.analyRes(R,format='eps')
+run.run.plotGetAvDis(R)
 
 
 
 
 
+sigma = run.np.ones(len(R.config.para['T']))
+N =len(R.config.para['T'])
+N_5=int(N/5)
+sigma[:N_5]        =1.5
+sigma[N_5:2*N_5]   = 1.75
+sigma[2*N_5:3*N_5] = 2.0
+sigma[3*N_5:4*N_5] = 2.25
+sigma[4*N_5:5*N_5] = 2.5
+R.config.sigma=sigma
 
 
 
@@ -92,7 +80,7 @@ run.run.train(R,up=5,isRand=True,isShuffle=False,isAverage=False)
 reload(run)
 run.run.loadRes(R,isCoverQC=True)
 R.config=run.runConfig(run.paraTrainTest)
-run.run.preDS(R,isByTrain=True)
+run.run.preDS(R,isByTrain=False)
 run.run.preDSTrain(R)
 run.run.preDSSyn(R,isByTrain=False)
 R.DS.plotHJ(R=R.config.para['R'])
@@ -108,8 +96,8 @@ R.getDisCover()
 R.loadRes()
 run.run.getAv(R,isCoverQC=True)
 run.run.preDS(R,isByTrain=True)
-R.loadAndPlot(R.DS,isPlot=True)
-R.loadAndPlot(R.DSTrain,isPlot=True)
+R.loadAndPlot(R.DS,isPlot=False)
+R.loadAndPlot(R.DSTrain,isPlot=False)
 R.compare(R.DS,R.DSTrain,isCompare=True)
 R1.calFromCorr()
 run.d.qcFvD(R.fvAvGet)
@@ -119,6 +107,11 @@ reload(run.d)
 run.d.plotPair(R.fvAvGet,R.stations)
 
 disL,vL,fL,fvAverage = run.d.outputFvDist(R.fvD0,R.stations,t=R.config.para['T'],keys=R.fvTest,)
+
+
+R.loadAndPlot(R.DS,isPlot=False)
+R.loadAndPlot(R.DSTrain,isPlot=False)
+R.compare(R.DS,R.DSTrain,isCompare=True)
 
 
 reload(run.fcn)
@@ -328,3 +321,34 @@ for key in R.fvDAverage:
         staL.append(sta0)
     if sta1 not in staL: 
         staL.append(sta1)
+
+
+
+#############
+for mul in [1,6,12,18]:
+    up=2
+    R.config.para['resDir']='%s/%d_%d/'%(resDir,mul,up)
+    R.config.para['up']=up
+    R.config.para['mul']=mul
+    R.model=None
+    run.run.loadModelUp(R)
+    run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+    run.run.calFromCorrL(R)
+    run.run.loadRes(R)
+    #R.getAv(isCoverQC=True,isDisQC=False)
+    R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+    run.run.analyRes(R,format='eps')
+
+for up in [1,3,4]:
+    mul=1
+    R.config.para['resDir']='%s_%d_%d/'%(resDir[:-1],mul,up)
+    R.config.para['up']=up
+    R.config.para['mul']=mul
+    R.model=None
+    run.run.loadModelUp(R)
+    run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+    run.run.calFromCorrL(R)
+    run.run.loadRes(R)
+    #R.getAv(isCoverQC=True,isDisQC=False)
+    R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+    run.run.analyRes(R,format='eps')
