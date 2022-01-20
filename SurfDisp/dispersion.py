@@ -6,7 +6,7 @@ from numba import jit
 from sklearn import cluster
 import multiprocessing
 from numba import jit,float32, int64
-from scipy import fftpack,interpolate
+from scipy import fftpack,interpolate,signal
 import os 
 from scipy import io as sio
 import obspy
@@ -25,6 +25,7 @@ import gc
 from matplotlib import colors,cm
 import h5py
 from ..plotTool import figureSet
+from mathTool import mathFunc
 figureSet.init()
 gpdcExe = '/home/jiangyr/program/geopsy/bin/gpdc'
 Vav = -1
@@ -1325,8 +1326,62 @@ class fv:
         return dv
     def copy(self):
         return fv([self.f,self.v,self.std],mode='num')
-
+    def getDVK(self,f):
+        v = self(f)
+        N = len(v)
+        DV = []
+        K  = []
+        for i in range(N):
+            if i ==0:
+                vL = [v[0],v[1],v[2]]
+                fL = [f[0],f[1],f[2]]
+                vRef = v[0]
+                fRef = f[0]
+            elif i == N-1:
+                vL = [v[-1],v[-2],v[-3]]
+                fL = [f[-1],f[-2],f[-3]]
+                vRef = v[-1]
+                fRef = f[-1]
+            else:
+                vL = [v[i-1],v[i],v[i+1]]
+                fL = [f[i-1],f[i],f[i+1]]
+                vRef = v[i]
+                fRef = f[i]
+            dv,k =self.calDVK(fL,vL,fRef,vRef)
+            DV.append(dv)
+            K.append(k)
+        return DV,K
+    def calDVK(self,f,v,fRef,vRef):
+        v = np.array(v)
+        f = np.array(f)
+        if v.min()<1:
+            return -999,-999
+        v = v/vRef
+        f = f/fRef
+        dv = (v[-1]-v[0])/(f[-1]-f[0])
+        dv0= (v[1]-v[0])/(f[1]-f[0])
+        dv1=(v[-1]-v[1])/(f[-1]-f[1])
+        ddv = (dv1-dv0)*2/(f[-1]-f[0])
+        K = np.abs(ddv)/(1+dv**2)**(3/2)
+        return dv,K
 fvNone=fv(np.array([[0],[0]]))
+
+def getDVK(fvD,f):
+    DV=[]
+    K=[]
+    V=[]
+    for key in fvD:
+        if isinstance(key,str):
+            FV = fvD[key]
+        else:
+            FV = key
+        if not isinstance(FV,fv):
+            FV = FV.copy()
+        dv,k=FV.getDVK(f)
+        DV.append(dv)
+        K.append(k)
+        V.append(FV(f))
+    return np.array(DV),np.array(K),V
 
 def saveFVD(fvD,stations,quakes='',saveDir='',formatType='pair'):
     for key in fvD:
@@ -1348,6 +1403,16 @@ def saveFVD(fvD,stations,quakes='',saveDir='',formatType='pair'):
                 if index>=0:
                     quake = quakes[index]
         fvD[key].save(file,mode=formatType,quake=quake,station0=STA0,station1=STA1)
+
+def defineEdge(A,per,minA=-100):
+    AL = []
+    for i in range(A.shape[1]):
+        a = A[:,i]
+        a = a[a>minA]
+        a.sort()
+        index = int(len(a)*per)
+        AL.append(a[index])
+    return np.array(AL)
 
 def keyDis(key, stations):
     if '_' not in key:
@@ -2323,7 +2388,7 @@ def figSet():
     plt.ylabel('f/Hz')
 
 
-def fvD2fvL(fvD, stations, f, isRef=False, fvRef=None):
+def fvD2fvL(fvD, stations, f, isRef=False, fvRef=None,threshold=-1):
     indexL = [[] for station in stations]
     vL = [[] for station in stations]
     for i in range(len(stations)):
@@ -2342,6 +2407,9 @@ def fvD2fvL(fvD, stations, f, isRef=False, fvRef=None):
             if isIn:
                 indexL[i].append(j)
                 v = fvD[key](f)
+                if threshold>0:
+                    std = fvD[key].STD(f)
+                    v[std/v>threshold]=0
                 if isRef:
                     vRef = fvRef(f)
                     v[v > 1] = vRef[(v > 1)]
@@ -2892,8 +2960,126 @@ class corr:
 
     def save(self, fileName):
         sio.savemat(fileName, {'corr': self.toMat()})
+    def getFV(self,f,fvRef,minDV,maxDV,maxK,minPer,maxPer,N=20,v0=1.5,v1=5.,k=0):
+        data = self.xx.real.copy()
+        Loop = np.arange(-1,N)
+        d    = np.abs(self.dis[0]-self.dis[1])
+        #print(d)
+        #i0 = np.abs(d/v1-120-self.timeL).argmin()
+        i1 = np.abs(d/v0+300-self.timeL).argmin()
+        i0 = 0
+        #i1 = data.shape[0]
+        data = data[i0:i1].copy()
+        #data -= data.mean()
+        #data=signal.detrend(data)
+        timeL = self.timeL[i0:i1].copy()
+        '''TMax = timeL[-1]-timeL[0]
+        fMin = 1/TMax
+        f = np.round(f[f>=fMin]/fMin)*fMin
+        f =np.unique(f)'''
+        vRef=fvRef(f)
+        dvRef,KRef = fvRef.getDVK(f)
+        tRef = d/vRef
+        
+        Phi = calPhi(data,timeL,f,tRef)
+
+        t = (-Phi/np.pi/2/(f)).reshape([-1,1])+Loop.reshape([1,-1])/f.reshape([-1,1])
+        dt = t- tRef.reshape([-1,1])
+        v = f*0
+        T=-10000
+        for i in range(len(t)-1,-1,-1):
+            if T<0 or tRef[i]*f[i]<4:
+                index = np.abs(dt[i]**2).argmin()
+            else:
+                index = np.abs(dt[i]**2+(t[i]-T)**2).argmin()
+            T = t[i,index]
+            v[i]=d/T
+            #print(d/t[i],v[i])
+        FV = fv([f.copy(),v],mode='num')
+        dv,K = FV.getDVK(f)
+        #print(f,v,dv,K)
+        per = v/vRef-1
+        F =[]
+        V =[] 
+        for i in range(len(t)):
+            #print(dv[i],K[i],per[i])
+            if dv[i]-dvRef[i]>minDV[i]-(maxDV[i]-minDV[i])*k/2*0 and dv[i]-dvRef[i]<maxDV[i]+(maxDV[i]-minDV[i])*k/2*0 and K[i]>=0 and  K[i]<maxK[i]*(1+k*0) and per[i]>minPer[i]-(maxPer[i]-minPer[i])*k*0 and per[i]<maxPer[i]+(maxPer[i]-minPer[i])*k*0:
+                 #print('yes')
+                 F.append(f[i])
+                 V.append(v[i])
+        return fv([np.array(F),np.array(V),np.array(V)*0-1],mode='num')
 
 
+def calPhi_(data,timeL,f,sigmaF=8,deltaF=0/100,sigmaT=4,deltaT=0):
+    spec0 = np.fft.fft(data)
+    delta= timeL[1]-timeL[0]
+    fMax  = 1/(delta)
+    N = len(timeL)
+    fL = fMax*np.arange(N)/N
+    fL[N-1:int((N-1)/2):-1]=fL[0:int((N)/2)]
+    Phi = f*0
+    for i in range(len(f)):
+        F = f[i]
+        spec = spec0*np.exp(-((F-fL)/(fL[1]*sigmaF+deltaF))**2)
+        dataF = np.abs(np.fft.ifft(spec))
+        iMax  = dataF.argmax()
+        timeF = timeL[iMax]
+        w     = np.exp(-((timeF-timeL)/(1/F*sigmaT+deltaT))**2)
+        i0    = max(0,int(iMax-sigmaT/F/delta-deltaT))
+        i1    = min(len(data),int(iMax+sigmaT/F/delta+deltaT))
+        #w0    = signal.hilbert(w)
+        #data = data*w
+        Phi[i] =np.angle(calSpec(data[i0:i1],timeL[i0:i1],np.array([F])))[0]
+        #print(timeF,Phi)
+    return Phi
+
+def calPhi(data,timeL,f,tRef,gamma=3,deltaF=0/100,gammaW=15,deltaT=0):
+    delta= timeL[1]-timeL[0]
+    fMax  = 1/(delta)
+    N = len(timeL)
+    fMin = fMax/N
+    Phi = f*0
+    emin=7
+    #f= np.round(f/fMin)*fMin
+    #f=np.unique(f)
+    for i in range(len(f)):
+        TRef = tRef[i]
+        i0 = np.abs(timeL-TRef*0.8).argmin()
+        i1 = np.abs(timeL-TRef*1.2).argmin()
+        F = f[i]
+        wn = 2*np.pi*F
+        alpha = gamma**2 * wn
+        t0 = np.sqrt( emin * np.log(10) * 4 * alpha) / wn
+        it0 =  t0/delta;
+        it0 = round(it0/2) * 2
+        nfil = it0 * 2 - 1;
+
+        tfil = delta *  ( np.arange(nfil) - it0+1 )
+        yfil = wn / (2 * np.sqrt( np.pi * alpha )) * np.exp( - wn**2 / ( 4 * alpha ) * tfil**2)
+        yfil = yfil * np.cos( wn * tfil )
+        x1x2h = np.convolve(data,yfil)
+        x1x2h = x1x2h[it0-1:len(data)+it0-1]
+        x1x2h = signal.detrend(x1x2h)
+        x1x2h -=x1x2h.mean()
+        indexMax= np.abs(x1x2h[i0:i1]).argmax()+i0
+        alpha = (gammaW)**2 * wn
+        h = ((np.arange(len(data))-indexMax)*delta)**2 * wn**2 / (4*alpha);
+        h = np.exp(-h);
+        x1x2h = x1x2h * h
+        x1x2h = signal.detrend(x1x2h)
+        x1x2h -=x1x2h.mean()
+        Phi[i] =np.angle(calSpec(x1x2h,timeL,np.array([F])))[0]
+        #print(timeF,Phi)
+    return Phi
+
+def calSpec(data,timeL,f):
+        timeLT=timeL.reshape([1,-1])
+        fLT = f.reshape([-1,1])
+        dataT = data.reshape([1,-1])
+        #print(dataT.shape,fLT.shape,timeLT.shape)
+        MS  = (dataT*np.sin(-fLT*timeLT*np.pi*2)).sum(axis=1)
+        MC  = (dataT*np.cos(-fLT*timeLT*np.pi*2)).sum(axis=1)
+        return 1j*MS+MC
 def compareList(i0, i1):
     di = np.array(i0) - np.array(i1)
     return np.sum(np.abs(di)) < 0.1
@@ -3281,7 +3467,7 @@ class corrL(list):
                         print('******* rand1:', rand1)
                     dDis = dDis * rand1
             delta0 = self[i].timeL[1] - self[i].timeL[0]
-            timeMin = dDis / 5.0
+            timeMin = dDis / 6.0
             timeMax = dDis / 2.0
             I0 = int(np.round(timeMin / delta0).astype(np.int))
             I1 = int(np.round(timeMax / delta0).astype(np.int))
@@ -3415,7 +3601,7 @@ class corrL(list):
         self.deltaL = np.array(deltaL)
         self.indexL = np.array(indexL)
         self.fL = np.array(fL)
-    def getV(self, yout, isSimple=True, D=0.1, isLimit=False, isFit=False):
+    def getV(self, yout, isSimple=True, D=0.1, isLimit=False, isFit=False,maxN=5):
         if isSimple:
             maxDis = self.dDisL.max()
             minDis = self.dDisL.min()
@@ -3423,8 +3609,11 @@ class corrL(list):
             tmax = maxDis / 2 + 10
             i0 = int(max(1, tmin / self.deltaL[0]))
             i1 = int(min(yout.shape[1] - 1, tmax / self.deltaL[0]))
-            pos = yout[:, i0:i1, 0, :].argmax(axis=1) + i0
-            prob = pos.astype(np.float64) * 0
+            #pos,prob = yout[:, i0:i1, 0, :].argmax(axis=1) + i0
+            #prob = pos.astype(np.float64) * 0
+            pos,prob = mathFunc.Max(yout[:, i0:i1, 0, :],N=maxN) 
+            pos+= i0
+            #prob = pos.astype(np.float64) * 0
             vM = []
             probM = []
             for i in range(pos.shape[0]):
@@ -3435,11 +3624,11 @@ class corrL(list):
                     time = self.t0L[i] + POS * self.deltaL[i]
                     vM[(-1)].append(self.dDisL[i] / time)
                     probM[(-1)].append(yout[(i, POS, 0, j)])
-
+            '''
             for i in range(pos.shape[0]):
                 for j in range(pos.shape[1]):
                     prob[(i, j)] = yout[(i, pos[(i, j)], 0, j)]
-
+            '''
             time = self.t0L.reshape([-1, 1]) + pos * self.deltaL.reshape([-1, 1])
             v = self.dDisL.reshape([-1, 1]) / time
         else:
@@ -4100,12 +4289,12 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             tmpy0=y0[i,:,j,:]
             tmpy=y[i,:,j,:]
             tmpx = x[i,:,j,:]
-            pos0  =tmpy0.argmax(axis=0)
-            timeLOutL0=timeLOut[pos0.astype(np.int)]
-            timeLOutL0[tmpy0.max(axis=0)<0.5]=np.nan
-            pos  =tmpy.argmax(axis=0).astype(np.float)
-            timeLOutL=timeLOut[pos.astype(np.int)]
-            timeLOutL[tmpy.max(axis=0)<0.5]=np.nan
+            pos0,A0  = mathFunc.Max(tmpy0.rehshape([1,tmpy0.shape[0],-1]))[0]
+            timeLOutL0=timeLOut[0]+pos0*(timeLOut[1]-timeLOut[0])
+            timeLOutL0[A0<0.5]=np.nan
+            pos,A  = mathFunc.Max(tmpy.rehshape([1,tmpy.shape[0],-1]))[0]
+            timeLOutL=timeLOut[0]+pos*(timeLOut[1]-timeLOut[0])
+            timeLOutL[A<0.5]=np.nan
             #plt.subplot(number,1,1)
             #axL[0].title('%s%d'%(outputDir,i))
             legend = ['r s','i s',\
@@ -4227,7 +4416,8 @@ def IASP91(dep,deg):
         tStart = deg*111.19 / 5.5
     return tStart
 
-
+vMax = 6
+vMin = 2
 def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), dep=10, modelFile='', srcSac='', minSNR=5, isCut=False, maxDist=100000000.0, minDist=0, maxDDist=100000000.0, minDDist=0, isFromO=False, removeP=False, isLoadFv=False, fvD={}, quakeName='', isByQuake=False, specN=40, specThreshold=0.1, isDisp=False, maxCount=-1,plotDir='', **kwags):
     modelFileO = modelFile
     if len(plotDir)!=0:
@@ -4249,10 +4439,10 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
             distL[i] = sacsL[i][0].stats['sac']['dist']
             if isDisp:
                 sacsL[i][0].integrate()
-            to = 30
+            to = -120
             dto = to - sacsL[i][0].stats['sac']['b']
             io = max(0, int(dto / sacsL[i][0].stats['sac']['delta']))
-            te = 60
+            te = 120
             dte= te - sacsL[i][0].stats['sac']['b']
             ie = max(0, int(dte / sacsL[i][0].stats['sac']['delta']))
             TS = IASP91(sacsL[i][0].stats['sac']['evdp'], sacsL[i][0].stats['sac']['gcarc'])
@@ -4260,11 +4450,11 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
             degree = sacsL[i][0].stats['sac']['gcarc']
             #if tStart > 100000.0 or tStart < 5:
             #    tStart = distL[i] / 5
-            t0 = max(distL[i] /5, tStart)###min->max
-            t0 = distL[i]/5
+            #t0 = max(distL[i] /5, tStart)###min->max
+            t0 = distL[i]/vMax
             dt0 = t0 - sacsL[i][0].stats['sac']['b']
             i0 = max(0, int(dt0 / sacsL[i][0].stats['sac']['delta']))
-            tEnd = distL[i] / 2
+            tEnd = distL[i] / vMin
             t1 = max(1, tEnd)
             dt1 = t1 - sacsL[i][0].stats['sac']['b']
             i1 = min(sacsL[i][0].data.size - 10, int(dt1 / sacsL[i][0].stats['sac']['delta']))
@@ -4277,12 +4467,14 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
                 continue
             maxI = np.abs(sacsL[i][0].data[i0:i1]).argmax()+i0
             dTN  =int(50/sacsL[i][0].stats['sac']['delta'])
-            maxI0 = int(maxI*0.9)
-            maxI1 = int(maxI*1.1)
+            maxI0 = int(maxI*0.75)
+            maxI1 = int(maxI*1.25)
             data=sacsL[i][0].data.copy()
             data-=data.mean()
-            sigmaS= (data[maxI0:maxI1]**2).mean()**0.5
-            sigmaN= (data[io:ie]**2).mean()**0.5
+            #sigmaS= (data[maxI0:maxI1]**2).mean()**0.5
+            #sigmaN= (data[io:ie]**2).mean()**0.5
+            sigmaS= data[maxI0:maxI1].std()
+            sigmaN= data[io:ie].std()
             SNR[i] = sigmaS / sigmaN
             if SNR[i]>minSNR:
                 if len(plotDir)!=0:
@@ -4302,6 +4494,7 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
                 sacsL[i][0].data[:i0] *= 0
                 sacsL[i][0].data[i1:] *= 0
                 sacsL[i][0].data[i0:i1] -= sacsL[i][0].data[i0:i1].mean()
+                sacsL[i][0].data[i0:i1] = signal.detrend(sacsL[i][0].data[i0:i1])
             STD = sacsL[i][0].data.std()
             if STD == 0:
                 SNR[i] = -1

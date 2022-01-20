@@ -31,6 +31,9 @@ run.run.analyRes(R,format='eps')
 
 resDir = R.config.para['resDir']
 
+reload(run.d)
+fvD=run.run.calByDKV(R,k=0,maxCount=len(R.corrL)*0+100)
+run.np.abs(fvD[key](R.fvD0[key].f)/R.fvD0[key].v*100-100).mean()
 
 R.loadModelUp(R.config.para['modelFile'])
 R.config.para['resDir']='/media/jiangyr/MSSD/20220113V3_1_1_rand/'
@@ -40,17 +43,19 @@ run.run.loadRes(R)
 run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
 run.run.getAV(R)
 run.run.limit(R)
+
+run.run.analyRes(R,format='jpg')
 run.run.plotGetAvDis(R)
-run.run.analyRes(R,format='eps')
 
 R.config.para['resDir']='/media/jiangyr/MSSD/20220113V3_1_1/'
 run.run.calFromCorrL(R)
 run.run.loadRes(R)
 #R.getAv(isCoverQC=True,isDisQC=False)
+R.fvDGet = fvD
 run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
 run.run.getAV(R)
 run.run.limit(R)
-run.run.analyRes(R,format='eps')
+run.run.analyRes(R,format='jpg')
 run.run.plotGetAvDis(R)
 
 
@@ -66,7 +71,9 @@ sigma[2*N_5:3*N_5] = 2.0
 sigma[3*N_5:4*N_5] = 2.25
 sigma[4*N_5:5*N_5] = 2.5
 R.config.sigma=sigma
-
+key='1275335509.90000_11.16000_93.70000_HE.KAB_HL.JGD'
+fvD=run.run.calByDKV(R,k=0.5,maxCount=len(R.corrL)*0+100)
+fvD[key](R.fvD0[key].f)/R.fvD0[key].v*100-100
 
 
 
@@ -99,6 +106,7 @@ run.run.preDS(R,isByTrain=True)
 R.loadAndPlot(R.DS,isPlot=False)
 R.loadAndPlot(R.DSTrain,isPlot=False)
 R.compare(R.DS,R.DSTrain,isCompare=True)
+R.loadAndPlot(R.DSSyn,isPlot=True)
 R1.calFromCorr()
 run.d.qcFvD(R.fvAvGet)
 run.d.qcFvD(R.fvDGet)

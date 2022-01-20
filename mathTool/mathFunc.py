@@ -557,3 +557,19 @@ def calNSigma(N,q0=0.95):
     b = 2/(pi*a)
     dr = ( ((b+L/2)**2-L/a)**0.5 -(b+L/2) )**0.5
     return dr*sqrt2
+
+
+def Max(data,N=5):
+    shape = list(data.shape)
+    shapeNew= shape[:1]+shape[2:]
+    data = data.reshape([shape[0],shape[1],-1])
+    line = np.arange(-N,N+1)
+    pos = data[:,N+1:-N-1].argmax(axis=1)+N+1
+    A  = data[:,N+1:-N-1].max(axis=1)
+    for i in range(data.shape[0]):
+        for j in range(data.shape[-1]):
+            POS = pos[i,j]
+            if A[i,j]>0.1:
+                DATA = data[i,POS+line,j]
+                pos[i,j]+=(DATA*line).sum()/DATA.sum()
+    return pos.reshape(shapeNew),A.reshape(shapeNew)

@@ -260,8 +260,8 @@ class DS:
         '''
 
         if self1!='' and isCompare:
-            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth')
-            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R)
+            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth',selfRef=self.modelRes)
+            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R,selfRef=self.modelPeriod)
             self1.modelRes.plotByZ(self1.runPath,vR=self1.config.para['vR'],self1=self1.fast,R=R,head='depth',selfRef=self.modelRes)
             self1.modelPeriod.plotByZ(self1.runPath,vR=self1.config.para['vR'],self1=self1.fastP,head='period',R=R,selfRef=self.modelPeriod)
             if self.config.para['iso']=='F':
@@ -560,9 +560,9 @@ class Model(Model0):
             if selfRef!='':
                 vRef = VRef[:,:,i]
                 vRef[outRef]=np.nan
-                if len(vRef[np.isnan(v)==False])==0:
+                if len(vRef[np.isnan(vRef)==False])==0:
                     continue
-                mean = vRef[np.isnan(v)==False].mean()
+                mean = vRef[np.isnan(vRef)==False].mean()
                 print('###by ref mean###')
             else:
                 mean = v[np.isnan(v)==False].mean()
@@ -578,7 +578,7 @@ class Model(Model0):
             dLoO = loO.max()-lo.min()
             if len(R)==0:
                 R = [laO.min()-dLaO*0.1,la.max()+dLaO*0.1,lo.min()-dLoO*0.1,lo.max()+dLoO*0.1]
-            la,lo,per=self.denseLaLoGrid(v.copy(),doDense=True,N=300,dIndex=1)
+            la,lo,per=self.denseLaLoGrid(v.copy(),doDense=True,N=100,dIndex=1)
             #print(per)
             if isinstance(per,type(None)):
                 plt.close()
@@ -642,7 +642,7 @@ class Model(Model0):
             headNew = head
             if isDiff:
                 headNew=head+'Diff'
-            plt.savefig('%s/%s_%f.jpg'%(resDir,headNew,self.z[i]),dpi=500)
+            plt.savefig('%s/%s_%f.eps'%(resDir,headNew,self.z[i]),dpi=500)
             plt.close()
     def plotByP2(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,P2=[],N=300):
         resDir = runPath+'/'+'plot/'
@@ -797,7 +797,7 @@ class Model(Model0):
             x,y= m(lo,la)
             plotPlane(m,x,y,dper,R,z,0,-0.02,0.02,isFault=True,head=head+'diff')
             plt.subtitle('depth: %.2f km mean: %.3f'%(self.z[i],mean))
-            plt.savefig('%s/%s_%f.eps'%(resDir,head,self.z[i]),dpi=500)
+            plt.savefig('%s/%s_%f.jpg'%(resDir,head,self.z[i]),dpi=500)
             #plt.ylim([35,55])
             plt.close()
     def outputRef(self,filename):
