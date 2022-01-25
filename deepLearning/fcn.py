@@ -602,7 +602,7 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
                     if config.isBNL[-1]:
                         upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'0'+'_Up')(upL[j])
                     upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
-                    upL[j]  = Conv2D(config.outputSize[-1]*6,kernel_size=config.kernelL[-1],strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(upL[j])
+                    upL[j]  = Conv2D(config.outputSize[-1]*4,kernel_size=config.kernelL[-1],strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(upL[j])
                     if config.isBNL[-1]:
                         upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'1'+'_Up')(upL[j])
                     upL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1'+'_Up')(upL[j])
@@ -1508,7 +1508,16 @@ class fcnConfig:
             self.featureL      = [30,30,30,30,30,30,30]
             self.featureL      = [45,45,45,45,45,45,45]
             self.featureL      = [30,30,30,30,30,30,30]
+            self.featureL      = [80,80,80,80,80,80,80]
+            self.featureL      = [50,50,75,75,100,125,150]
+            self.featureL      = [50,50,75,75,100,125,150]
+            self.featureL      = [50,50,50,50,50,50,50]
+            self.featureL      = [50,50,50,50,75,100,125]
+            self.featureL      = [50,50,75,100,125,150,150]
+            self.featureL      = [50,75,100,125,150,200,150]
             self.featureL      = [50,50,75,75,100,100,150]
+            self.featureL      = [50,75,100,125,150,200,150]
+            self.featureL      = [50,50,75,100,125,150,150]
             #self.featureL      = [50,50,75,75,100,100,125]
             #self.featureL      = [50,75,75,100,125,150,200]
             #self.featureL      = [75,75,75,75,75,75,75]
@@ -1520,8 +1529,8 @@ class fcnConfig:
             self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(2,1),(1,mul*2),(up*3,1)]
             self.strideL       = [(4,1),(4,1),(4,1),(2,1),(2,1),(3,1),(2,1),(1,mul)  ,(up,1)]
             self.kernelL       = [(12,1),(12,1),(12,1),(6,1),(6,1),(6,1),(2,1),(1,mul*2),(up*3,1)]
-            self.strideL       = [(2,1),(3,1),( 4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
-            self.kernelL       = [(5,1),(8,1),(10,1),(10,1),(10,1),(10,1),(1,mul*2),(up*4,1)]
+            self.strideL       = [(2,1),(3,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(4,1),(6,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
             #self.kernelL       = [(6,1),(6,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
             #self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(16,1),(8,1),(1,mul*2),(up*3,1)]
             self.isBNL       = [True]*20
@@ -1539,7 +1548,7 @@ class fcnConfig:
             self.poolL        = [MaxPooling2D,MaxPooling2D,MaxPooling2D,\
             MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,\
             MaxPooling2D,MaxPooling2D,MaxPooling2D]
-            self.poolL        = [MaxPooling2D]*20
+            self.poolL        = [MaxPooling2D,AveragePooling2D]*20
             self.lossFunc     = lossFuncSoft(w=10)#10
             self.inAndOutFunc = inAndOutFuncNewNetDenseUp#inAndOutFuncNewUp
             self.lossFuncNP     = lossFuncSoftNP()

@@ -6,31 +6,84 @@ from SeismTool.mathTool import mathFunc
 from tensorflow.python.framework.tensor_util import FastAppendBFloat16ArrayToTensorProto
 R = run.run(run.runConfig(run.paraTrainTest))
 run.d.Vav=-1
-#R.loadCorr()
-#R.saveTrainSet(isMat=True)
-#R.calCorrOneByOne()
 isDisQC =True
 isCoverQC = True
-#R.plotGetDis()
-R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=True,isDisQC=isDisQC,isAll=True,isSave=True)#True
+R.calCorrOneByOne()
+R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=True,isDisQC=isDisQC,isAll=True,isSave=True,isAllTrain=False)#True
 R.getDisCover()
-R.plotTrainDis()
 R.model=None
 R.loadModelUp()
 run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
-#run.d.corrL.saveH5(cL,'/media/jiangyr/1TSSD/trainSet2.h5')
-#run.run.train(R,isAverage=False,isRand=True,isShuffle=True)
-#R.train(up=5,isRand=True,isShuffle=True)
-#run.run.loadCorr(R,isLoad=False)
-#R.calResOneByOne()
+
 R.calFromCorrL()
-R.loadRes()
-#R.getAv(isCoverQC=True,isDisQC=False)
-R.getAv(isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.loadRes(R)
+run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.getAV(R)
+run.run.limit(R)
 run.run.analyRes(R,format='eps')
+run.run.plotGetAvDis(R)
+R.plotTrainDis()
+R.plotStaDis()
+R.showTest()
+R.preDS()
+R.preDSTrain()
+R.preDSSyn()
 
 resDir = R.config.para['resDir']
 
+R.config.para['resDir']=resDir[:-1]+'_rand/'
+R.calFromCorrL(isRand=True)
+run.run.loadRes(R)
+run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.getAV(R)
+run.run.limit(R)
+run.run.analyRes(R,format='eps')
+run.run.plotGetAvDis(R)
+
+R.config.para['resDir']=resDir
+R.plotDVK(R.fvD0)
+fvDAll = R.calByDKV(R.corrL1,fvD0=R.fvD0,isControl=False)
+run.run.plotDVK(R,fvDAll,fvD0=R.fvD0,isRight=True,format='eps')
+run.run.plotDVK(R,fvDAll,fvD0=R.fvD0,isRight=False,format='eps')
+fvD = run.run.calByDKV(R,R.corrL,isControl=True)
+R.fvDGet = fvD
+run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.getAV(R)
+run.run.limit(R)
+resDirSave = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fv/'
+resDirAvSave = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fvAv/'
+run.d.saveFVD(fvD,R.stations,R.quakes,resDirSave,'pair',)
+run.d.saveFVD(R.fvAvGet,R.stations,R.quakes,resDirAvSave,'NEFile')
+R.config.para['resDir']=resDir[:-1]+'_tra/'
+run.run.analyRes(R,format='eps')
+run.run.plotGetAvDis(R)
+
+
+run.run.plotGetAvDis(R)
+
+R.config.para['resDir']=resDir[:-1]+'_up=1/'
+R.config.para['up']=1
+R.model=None
+R.loadModelUp()
+run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+R.calFromCorrL()
+run.run.loadRes(R)
+run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.analyRes(R,format='eps')
+
+R.config.para['resDir']=resDir[:-1]+'_up=3/'
+R.config.para['up']=3
+R.model=None
+R.loadModelUp()
+run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+R.calFromCorrL()
+run.run.loadRes(R)
+run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+run.run.analyRes(R,format='eps')
+
+
+run.run.analyRes(R,format='eps')
+run.run.plotGetAvDis(R)
 reload(run.d)
 fvD=run.run.calByDKV(R,k=0,maxCount=len(R.corrL)*0+100)
 run.np.abs(fvD[key](R.fvD0[key].f)/R.fvD0[key].v*100-100).mean()
@@ -44,8 +97,11 @@ run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='p
 run.run.getAV(R)
 run.run.limit(R)
 
-run.run.analyRes(R,format='jpg')
+run.run.analyRes(R,format='eps')
 run.run.plotGetAvDis(R)
+
+
+
 
 R.config.para['resDir']='/media/jiangyr/MSSD/20220113V3_1_1/'
 run.run.calFromCorrL(R)
@@ -55,20 +111,22 @@ R.fvDGet = fvD
 run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
 run.run.getAV(R)
 run.run.limit(R)
-run.run.analyRes(R,format='jpg')
+run.run.analyRes(R,format='eps')
 run.run.plotGetAvDis(R)
 
 
-
-
+resDir = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fv_tra/'
+resDirAv = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fvAv_tra/'
+run.d.saveFVD(fvD,R.stations,R.quakes,resDir,'pair',)
+run.d.saveFVD(R.fvAvGet,R.stations,R.quakes,resDirAv,'NEFile')
 
 sigma = run.np.ones(len(R.config.para['T']))
 N =len(R.config.para['T'])
 N_5=int(N/5)
-sigma[:N_5]        =1.5
-sigma[N_5:2*N_5]   = 1.75
-sigma[2*N_5:3*N_5] = 2.0
-sigma[3*N_5:4*N_5] = 2.25
+sigma[:N_5]        = 1.25
+sigma[N_5:2*N_5]   = 1.5
+sigma[2*N_5:3*N_5] = 1.75
+sigma[3*N_5:4*N_5] = 2.0
 sigma[4*N_5:5*N_5] = 2.5
 R.config.sigma=sigma
 key='1275335509.90000_11.16000_93.70000_HE.KAB_HL.JGD'
@@ -214,6 +272,11 @@ R.fvL = run.loadListStr(trainSetDir+'fvL')
 R.fvTrain = run.loadListStr(trainSetDir+'fvTrain')
 R.fvTest = run.loadListStr(trainSetDir+'fvTest')
 R.fvValid = run.loadListStr(trainSetDir+'fvValid')
+#run.d.corrL.saveH5(cL,'/media/jiangyr/1TSSD/trainSet2.h5')
+#run.run.train(R,isAverage=False,isRand=True,isShuffle=True)
+#R.train(up=5,isRand=True,isShuffle=True)
+#run.run.loadCorr(R,isLoad=False)
+#R.calResOneByOne()
 '''
 R.config= run.runConfig(run.paraTrainTest)
 R.calResOneByOne()

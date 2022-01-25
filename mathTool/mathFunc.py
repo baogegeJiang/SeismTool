@@ -569,7 +569,7 @@ def Max(data,N=5):
     for i in range(data.shape[0]):
         for j in range(data.shape[-1]):
             POS = pos[i,j]
-            if A[i,j]>0.1:
+            if A[i,j]>10:
                 DATA = data[i,POS+line,j]
                 pos[i,j]+=(DATA*line).sum()/DATA.sum()
     return pos.reshape(shapeNew),A.reshape(shapeNew)

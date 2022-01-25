@@ -918,7 +918,7 @@ class Quake(Dist):
 		return len(self.records)
 	def getSacFiles(self,stations,isRead=False,resDir = 'eventSac/',strL='ENZ',\
 		byRecord=True,maxDist=-1,minDist=-1,remove_resp=False,isDoneSkip=False,isPlot=False,\
-		isSave=False,respStr='_remove_resp',para={},isSkip=False):
+		isSave=False,respStr='_remove_resp',para={},isSkip=False,doSave=False):
 		sacsL = []
 		staIndexs = self.staIndexs()
 		tmpDir = self.resDir(resDir)
@@ -930,8 +930,10 @@ class Quake(Dist):
 		'zerophase' :True,\
 		'maxA'      :1e18,\
 		'output': 'VEL',\
-		'toDisp': False
+		'toDisp': False,
+		'gaussianTail':-1
 		}
+		para0= para0.copy()
 		para0.update(para)
 		#print(para0)
 		para = para0
@@ -1021,6 +1023,17 @@ class Quake(Dist):
 					#print(resSacNames)
 					try:
 						sacsL.append([ obspy.read(resSacName)[0] for resSacName in resSacNames])
+						for sac in sacsL[-1]:
+							sac.detrend()
+							sac.data -= sac.data.mean()
+							if para['gaussianTail']>1:
+								delta=sac.stats['sac']['delta']
+								num  = int(para['gaussianTail']/delta)
+								cosN = np.cos((np.arange(num)/(num-1)+1)*np.pi)*0.5+0.5
+								sac.data[:num]*=cosN
+								sac.data[-num:]*=cosN[-1::-1]
+								if np.random.rand()<0.01:
+									pass#print('cosN',cosN)
 						if isPlot:
 							plt.close()
 							for i in range(3):
@@ -1075,22 +1088,16 @@ class Quake(Dist):
 						continue
 					else:
 						pass
-					
-					for sac in sacsL[-1]:
-						sac.detrend()
-						sac.data -= sac.data.mean()
 
 					if para['toDisp']:
 						for sac in sacsL[-1]:
 							sac.integrate()
 							if np.random.rand()<0.01:
 								pass
-								#print('integrate to Disp')
-					
 					for sac in sacsL[-1]:
 						sac.detrend()
 						sac.data -= sac.data.mean()
-
+								#print('integrate to Disp')
 					if para['freq'][0] > 0  and station['doFilt']:
 						for sac in sacsL[-1]:
 							if para['filterName']=='bandpass':
@@ -1111,10 +1118,12 @@ class Quake(Dist):
 					if isPlot:
 						plt.savefig(resSacNames[0]+'.jpg',dpi=200)
 					if isSave and remove_resp and station['oRemove'] ==False:
-						if not respDone:
+						if (not respDone) or doSave:
 							resSacNames = station.baseSacName(tmpDir,strL=strL,infoStr=respStr)
 							for i in range(len(resSacNames)):
 								sacsL[-1][i].write(resSacNames[i],format='SAC')
+								if np.random.rand()<0.01:
+									print('do save',resSacNames[i])
 				else:
 					sacsL.append(resSacNames)
 		return sacsL

@@ -19,11 +19,11 @@ para0= {\
 'zerophase' :True,\
 'maxA'      :1e5,\
 }
-sacPara = {'pre_filt': (1/500, 1/350, 1/2, 1/1.5),\
+sacPara = {  #'pre_filt': (1/500, 1/350, 1/2, 1/1.5)
 'output':'DISP','freq':[-1,-1],\
 'filterName':'bandpass',\
 'corners':4,'toDisp':False,\
-'zerophase':True,'maxA':1e15}
+'zerophase':True,'maxA':1e15,'gaussianTail':600}
 para0.update(sacPara)
 
 quakes = seism.QuakeL('CEA_quakesAll')
@@ -39,4 +39,4 @@ if kind ==1:
         quake.getSacFiles(stations[n::N],isRead = True,strL='Z',\
         byRecord=False,minDist=0,maxDist=1e10,\
         remove_resp=True,para=para0,isSave=True,isSkip=False,isDoneSkip=False,\
-        resDir = '/media/jiangyr/1TSSD/eventSac/')
+        resDir = '/media/jiangyr/1TSSD/eventSac/',doSave=True)

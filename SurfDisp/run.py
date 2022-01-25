@@ -49,7 +49,7 @@ dConfig=d.config(originName='models/prem',srcSacDir=srcSacDir,\
 		isFlat=True,R=6371,flatM=-2,pog='p',calMode='gpdc',\
 		T=T,threshold=0.02,expnt=12,dk=0.05,\
 		fok='/k',order=0,minSNR=10,isCut=False,\
-		minDist=110*10,maxDist=110*170,minDDist=150,\
+		minDist=110*10,maxDist=110*170,minDDist=120,\
 		maxDDist=1600,para=para,isFromO=True,removeP=True)
 def saveListStr(file,strL):
 	with open(file,'w+') as f:
@@ -63,12 +63,12 @@ def loadListStr(file):
 	return l
 class runConfig:
 	def __init__(self,para={}):
-		sacPara = {'pre_filt': (1/500, 1/350, 1/2, 1/1.5),\
-				   'output':'DISP','freq':[1/150,1/8],\
+		sacPara = {#'pre_filt': (1/500, 1/350, 1/2, 1/1.5),\
+				   'output':'DISP','freq':[1/240,1/6],\
 					#[1/250,1/8*0+1/6]
 				   'filterName':'bandpass',\
 				   'corners':4,'toDisp':False,\
-				   'zerophase':True,'maxA':1e15}
+				   'zerophase':True,'maxA':1e15,'gaussianTail':600}
 		self.para={ 'quakeFileL'  : ['phaseLPickCEA'],\
 					'stationFileL': ['stations/CEA.sta_sel'],#**********'stations/CEA.sta_know_few'\
 					'oRemoveL'    : [False],\
@@ -173,7 +173,7 @@ class run:
 		mt.plotLaLoLine(m,dLa,dLo,dashes=[3,3],color='dimgrey',linewidth=0.75)
 		mt.fs.setColorbar(pc,'elevation(m)')
 		plt.savefig(resDir+'staDisWithTopo.pdf')
-	def loadCorr(self,isLoad=True,isLoadFromMat=False,isGetAverage=True,isDisQC=False,isAll=True,isSave=False):
+	def loadCorr(self,isLoad=True,isLoadFromMat=False,isGetAverage=True,isDisQC=False,isAll=True,isSave=False,isAllTrain=False):
 		trainSetDir = self.config.para['trainMatDir']
 		config     = self.config
 		corrL      = []
@@ -287,7 +287,7 @@ class run:
 								if modelName not in fvDAverageNewCount:
 									fvDAverageNewCount[modelName] = 0
 								fvDAverageNewCount[modelName]+=1
-								if modelName not in fvDAverageNew and fvDAverageNewCount[modelName]>=para['minSta'] and fvDAverageNewAllCount[modelName]>=12 :
+								if modelName not in fvDAverageNew and fvDAverageNewCount[modelName]>=para['minSta'] and fvDAverageNewAllCount[modelName]>=6 :
 									fvDAverageNew[modelName] = fvDAverage[modelName]
 			for corr in corrL:
 				key = corr.modelFile
@@ -299,7 +299,7 @@ class run:
 					modelName1 ='%s_%s'%(name1,name0)
 					#print(modelName0)
 					if modelName0 in fvDAverageNew or modelName1 in fvDAverageNew:
-						if key in fvD0 or isAll:
+						if key in fvD0 or isAllTrain:
 							corrL1.append(corr)
 						if key in fvD0:
 							fvDNew[key]=fvD[key]
@@ -444,9 +444,9 @@ class run:
 				for i in range(len(fvL)):
 					index = indexL[i]
 					print(i,index,disL[index],fvL[index])
-					if i%10==0:
+					if i%10==8:
 						fvValid.append(fvL[index])
-					elif i%10==1:
+					elif i%10==9:
 						fvTest.append(fvL[index])
 					else:
 						fvTrain.append(fvL[index])
@@ -477,15 +477,16 @@ class run:
 			fvD =self.fvD
 		else:
 			fvD =self.fvD0
+		move2Int=True
 		self.corrLTrain.setTimeDis(fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=False,move2Int=False,randMove=True,randA=para['randA'],midV=para['midV'],mul=para['mul'])
+		set2One=False,move2Int=move2Int,randMove=True,randA=para['randA'],midV=para['midV'],mul=para['mul'])
 		self.corrLTest.setTimeDis(fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=False,move2Int=False,randMove=True,randA=para['randA'],midV=para['midV'],mul=para['mul'])
+		set2One=False,move2Int=move2Int,randMove=True,randA=para['randA'],midV=para['midV'],mul=para['mul'])
 		self.corrLValid.setTimeDis(fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=False,move2Int=False,randMove=True,randA=para['randA'],midV=para['midV'],mul=para['mul'])
+		set2One=False,move2Int=move2Int,randMove=True,randA=para['randA'],midV=para['midV'],mul=para['mul'])
 		#self.loadModel()
 		self.corrDTrain = d.corrD(self.corrLTrain)
 		self.corrDTest = d.corrD(self.corrLTest)
@@ -493,11 +494,11 @@ class run:
 		sigma = np.ones(len(self.config.para['T']))
 		N =len(self.config.para['T'])
 		N_5=int(N/5)
-		sigma[:N_5]        = 1.25
-		sigma[N_5:2*N_5]   = 1.5
-		sigma[2*N_5:3*N_5] = 1.75
-		sigma[3*N_5:4*N_5] = 2.0
-		sigma[4*N_5:5*N_5] = 2.25
+		sigma[:N_5]        = 1.5
+		sigma[N_5:2*N_5]   = 1.75
+		sigma[2*N_5:3*N_5] = 2.0
+		sigma[3*N_5:4*N_5] = 2.25
+		sigma[4*N_5:5*N_5] = 2.5
 		self.config.sigma=sigma
 		self.config.para['modelFile']=fcn.trainAndTestMul(self.model,self.corrDTrain,self.corrDValid,self.corrDTest,\
                         outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=3e-3,mul=para['mul'])#w0=3#4
@@ -1078,10 +1079,12 @@ class run:
 		#fvAverage = self.fvDAverage['models/prem']
 		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvAvGetO,self.stations,t=self.config.para['T'],keys=[])
 		d.plotFV(vL,fL,resDir+'FVGet.eps',isAverage=True,fvAverage=self.FVAV,thresL=[self.config.para['areasLimit']])
-	def plotDVK(self,format='jpg'):
+	def plotDVK(self,fvD,format='jpg',head='',fvD0={},isRight=True):
 		f = 1/self.config.para['T']
-		DV,K,V = d.getDVK(self.fvD0,f)
+		DV,K,V = d.getDVK(fvD,f,fvD0=fvD0,isRight=isRight)
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
+		if not os.path.exists(resDir):
+			os.makedirs(resDir)
 		para = self.config.para
 		fvRef=self.fvDAverage[para['refModel']]
 		vRef = fvRef(f)
@@ -1092,19 +1095,26 @@ class run:
 		self.maxK = d.defineEdge(K,1-0.05)
 		self.minPer = d.defineEdge(per,0.025,-0.5)
 		self.maxPer = d.defineEdge(per,1-0.025,-0.5)
-		
-		dvBins = np.arange(-1,1,0.05)
-		KBins =np.arange(0,10,0.5)
+		tail='_all'
+		if len(fvD0)>0:
+			if isRight:
+				tail='right'
+			else:
+				tail= 'wrong'
+		head = head+ tail
+		dvBins = np.arange(-2,2,0.025)
+		KBins =np.arange(0,15,0.2)
 		fBins =f.copy()
 		fBins.sort()
-		perBins = np.arange(-0.2,0.2,0.01)
+		perBins = np.arange(-0.3,0.3,0.01)
 		F  = f.reshape([1,-1])+DV*0
 		plt.close()
 		plt.figure(figsize=(4,3))
 		plt.hist2d(DV[DV>-100],F[DV>-100],cmap='gray_r', norm=(colors.LogNorm()),bins=(dvBins,fBins))
 		plt.gca().set_position([0.15,0.15,0.7,0.7])
-		plt.plot(self.minDV,f,'b',linewidth=0.5)
-		plt.plot(self.maxDV,f,'b',linewidth=0.5,label='95%')
+		if isRight:
+			plt.plot(self.minDV,f,'b',linewidth=0.5)
+			plt.plot(self.maxDV,f,'b',linewidth=0.5,label='95%')
 		plt.plot(DVRef,f,'r',linewidth=0.5,label='ref')
 		plt.gca().set_yscale('log')
 		plt.legend()
@@ -1114,12 +1124,13 @@ class run:
 		ax_divider = make_axes_locatable(plt.gca())
 		cax = ax_divider.append_axes('right', size="7%", pad="10%",)
 		plt.colorbar(cax=cax,label='count')
-		plt.savefig(resDir+'dv.'+format,dpi=300)
+		plt.savefig(resDir+'dv'+head+'.'+format,dpi=300)
 		plt.close()
 		plt.figure(figsize=(4,3))
 		plt.hist2d(K[K>-100],F[K>-100],cmap='gray_r', norm=(colors.LogNorm()),bins=(KBins,fBins))
 		plt.gca().set_position([0.15,0.15,0.7,0.7])
-		plt.plot(self.maxK,f,'b',linewidth=0.5,label='95%')
+		if isRight:
+			plt.plot(self.maxK,f,'b',linewidth=0.5,label='95%')
 		plt.plot(KRef,f,'r',linewidth=0.5,label='ref')
 		plt.gca().set_yscale('log')
 		plt.xlabel('K')
@@ -1129,35 +1140,37 @@ class run:
 		ax_divider = make_axes_locatable(plt.gca())
 		cax = ax_divider.append_axes('right', size="7%", pad="10%",)
 		plt.colorbar(cax=cax,label='count')
-		plt.savefig(resDir+'K.'+format,dpi=300)
+		plt.savefig(resDir+'K'+head+'.'+format,dpi=300)
 		plt.close()
 		plt.figure(figsize=(4,3))
 		
 		plt.hist2d(per[per>-0.5],F[per>-0.5],cmap='gray_r', norm=(colors.LogNorm()),bins=(perBins,fBins))
 		plt.gca().set_position([0.15,0.15,0.7,0.7])
 		#plt.plot(self.maxK,f,'r')
-		plt.plot(self.minPer,f,'b',linewidth=0.5,label='95%')
-		plt.plot(self.maxPer,f,'b',linewidth=0.5)
+		if isRight:
+			plt.plot(self.minPer,f,'b',linewidth=0.5,label='95%')
+			plt.plot(self.maxPer,f,'b',linewidth=0.5)
+			plt.legend()
 		plt.gca().set_yscale('log')
 		plt.xlabel('dv/$v_{ref}$')
 		plt.ylabel('f(Hz)')
-		plt.legend()
+		
 		#plt.ylabel('f(Hz)'
 		ax=plt.gca()
 		ax_divider = make_axes_locatable(plt.gca())
 		cax = ax_divider.append_axes('right', size="7%", pad="10%",)
 		plt.colorbar(cax=cax,label='count')
-		plt.savefig(resDir+'per.'+format,dpi=300)
+		plt.savefig(resDir+'per'+head+'.'+format,dpi=300)
 		plt.close()
-		np.savetxt(resDir+'minDV',self.minDV)
-		np.savetxt(resDir+'maxDV',self.maxDV)
-		np.savetxt(resDir+'maxK',self.maxK)
-		np.savetxt(resDir+'minPer',self.minPer)
-		np.savetxt(resDir+'maxPer',self.maxPer)
-	def calByDKV(self,k=0,maxCount=-1):
+		np.savetxt(resDir+'minDV'+tail,self.minDV)
+		np.savetxt(resDir+'maxDV'+tail,self.maxDV)
+		np.savetxt(resDir+'maxK'+tail,self.maxK)
+		np.savetxt(resDir+'minPer'+tail,self.minPer)
+		np.savetxt(resDir+'maxPer'+tail,self.maxPer)
+	def calByDKV(self,corrL,k=0,maxCount=-1,fvD0={},**kwags):
 		fvD = {}
 		f = 1/self.config.para['T']
-		corrL = self.corrDTest.corrL
+		#corrL = self.corrDTest.corrL
 		if maxCount<0:
 			maxCount=len(corrL)
 		para = self.config.para
@@ -1165,7 +1178,10 @@ class run:
 		count=0
 		count0=0
 		for corr in corrL[:maxCount]:
-			FV=d.corr.getFV(corr,f,fvRef,self.minDV*0-0.25,self.maxDV*0+0.25,self.maxK*0+4,self.minPer*0-0.1,self.maxPer*0+0.1,k=k)
+			if len(fvD0)>0:
+				if corr.modelFile not in fvD0:
+					continue
+			FV=d.corr.getFV(corr,f,fvRef,self.minDV*0-0.3,self.maxDV*0+0.3,self.maxK*2,self.minPer*0-0.12,self.maxPer*0+0.12,k=k,**kwags)
 			count0+=1
 			if len(FV.f)>2:
 				fvD[corr.modelFile]=FV
@@ -1186,24 +1202,24 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
 	'maxCount'    : 512*3,\
-	'minSNRL'     : [2],\
+	'minSNRL'     : [2.5],\
 	'oRemoveL'    : [False],\
 	'trainMatDir'	  :'/media/jiangyr/1TSSD/matDir/',\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
 	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
-	'matH5'	  :'/media/jiangyr/1TSSD/allClip20220119V3DISP.h5',\
+	'matH5'	  :'/media/jiangyr/1TSSD/allClip20220125V1DISP.h5',\
 	'randA'       : 0.05,\
 	'midV'        : 4,\
 	'mul'		  : 1,\
 	'up'          :  1,\
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220120V6_1_1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220125V8_up1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 400,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
-	'z'           :[0,5,10,15,20,25,30,35,40,45,50,60,70,80,100,120,150,200,300],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
-	'T'           : (12**np.arange(0,1.000001,1/N1))*10,\
-	'Tav'         : (12**np.arange(0-1/N1,1.000001+1/N1,1/N1))*10,\
-	'tSur'        : (12**np.arange(0,1.000001,1/N2))*10,\
+	'z'           :[0,5,10,15,20,25,30,40,50,60,70,80,100,120,140,160,200,240,300,400,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+	'T'           : (16**np.arange(0,1.000001,1/N1))*10,\
+	'Tav'         : (16**np.arange(0-1/N1,1.000001+1/N1,1/N1))*10,\
+	'tSur'        : (16**np.arange(0,1.000001,1/N2))*10,\
 	'surPara'     : { 'nxyz':[19,28,15], 'lalo':[55,110],#[40,60,0][55,108]\
 					'dlalo':[1,1], 'maxN':60,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.3,\
@@ -1222,7 +1238,7 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'minSta'      : 4,\
 	'laL'         : [],\
 	'loL'         : [],\
-	'areasLimit'  :  5,\
+	'areasLimit'  :  6,\
 	'refModel'    : 'models/prem',\
 	'p2L':[
 		[[42,115],[11,22]],
