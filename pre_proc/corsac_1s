@@ -1,0 +1,486 @@
+#!/bin/tcsh -f
+#
+# Program: corsac_1s
+#
+# Description: 
+# Step 1 of pre-processing routines after extraction of data.
+# Preceeding: after_breq_1s, after_autodrm_1s
+# Following: merge_sac_1s
+# 
+# This script performs basic sac header corrections using the fortran routine
+# shc_cmt_1s.f. This code is run from the main dataset directory containing
+# the "date" folder where the sac data has been extracted to.
+#
+# Error Codes:
+# 
+# Andrew Schaeffer, January 2010. Modified from Sergei Lebedev's corsac_2s.f
+#	Modified: August 2010, AJS
+#			-> Minor changes to add more detail to email output.
+#
+# Required compiled binaries in user path:
+# - shc_cmt_1s
+#
+#
+
+if ($#argv < 1) then
+  echo 'Usage: corsac_1s <-data datadir -years yearlist> || < -file filepath>'
+  exit
+endif
+
+#-- source config file
+#source ~/bin/parse_config_csh
+
+unalias mv
+unalias rm
+
+#-- optional value...
+set dirlistfile = `echo 'ls-d'`
+set filelistfile = `echo 'ls-f'`
+
+#-- runtime options
+set use_infile = `echo 0`
+set years = `echo ''`
+
+#--set date
+set datenow = `date +%d-%b-%Y`
+set timenow = `date +%H:%M:%S`
+#echo "1"
+#-- parse input line
+if ( $#argv >= 1 ) then
+	set ival = `echo 1`
+#    echo "1"
+	while ( $ival < $#argv ) 
+		#-- if running using an input file
+ #       echo "2"
+		if ( `eval echo '$'$ival` == "-file" ) then
+			set ii = `expr $ival + 1`
+			set temp = `eval echo '$'$ii`
+  #          echo "3"
+			if ( `echo $temp | wc -w` > 0 ) then
+				if ( `echo $temp | awk '{print substr($1,1,1)}'` != "-" ) then
+					set infile = `echo $temp`
+					set use_infile = `echo 1`
+					set ival = `expr $ival + 2`
+				else
+					echo 'Usage: corsac_1s <-data datadir -years yearlist> || < -file filepath>'
+					exit
+				endif
+			else
+				echo 'Usage: corsac_1s <-data datadir -years yearlist> || < -file filepath>'
+				exit
+			endif
+	#	echo "4"
+		#-- set data directory
+		else if ( `eval echo '$'$ival` == "-data" ) then
+			set ii = `expr $ival + 1`
+			set temp = `eval echo '$'$ii`
+   #         echo "here"
+   #         echo $temp
+			if ( `echo $temp | wc -w` > 0 ) then
+				if ( `echo $temp | awk '{print substr($1,1,1)}'` != "-" ) then
+                 #   echo $temp
+					set p12 = `echo $temp`
+					set ival = `expr $ival + 2`
+				else
+					echo 'Usage: corsac_1s <-data datadir -years yearlist> || < -file filepath>'
+					exit
+				endif
+			else
+				echo 'Usage: corsac_1s <-data datadir -years yearlist> || < -file filepath>'
+				exit
+			endif
+		
+		#-- set input years
+		else if ( `eval echo '$'$ival` == "-years" ) then
+			set ii = `expr $ival + 1`
+			set temp = `eval echo '$'$ii`
+			while (`echo $temp | awk '{print substr($1,1,1)}'` != "-" )
+				if ( `echo $temp | wc -w` > 0 ) then
+					set years = `echo $years' '$temp`
+					set ii = `expr $ii + 1`
+					set temp = `eval echo '$'$ii`
+				else
+					break
+				endif
+			end
+			set ival = `expr $ii - 1`	
+		endif
+	end
+endif
+
+#-- set the data directory
+if ( ! -e $p12 ) then
+	echo " Dataset directory "$p12" doesn't exist"
+	exit
+endif
+
+##- data directory needs a full path
+if ( `echo $p12 | awk -F '/' '{print NF}'` == 1 ) then
+	set currdir = `pwd`
+	set p12 = `echo $currdir'/'$p12`
+endif
+
+##- make lists and corsac directory
+mkdir -p $p12/lists/corsac
+
+#-- generate the list of year directories to work on
+if ($use_infile != 1) then
+      if (`echo $years | wc -w` == 0 ) then
+            set years = `ls $p12 | grep '^[12][09][0189][0-9]$'`
+            ##set years = `cat $dirlistfile | grep '^[12][09][0189][0-9]$'`
+      endif
+      if (${#years} > 1) then
+            set fnmend = `echo _${years[1]}-${years[${#years}]}`
+      else
+            set fnmend = `echo _${years[1]}`
+      endif
+else
+      set fnmend = `echo ''`
+endif
+
+#-- generate the problem directory and lists
+set problems = `echo $p12/lists/corsac/problems_cor${fnmend}_$datenow`
+set dotones = `echo ""`
+while (1 == 1)
+	if ( -e $problems ) then
+		set problems = `echo $problems".1"`
+		set dotones = `echo $dotones".1"`
+	else
+		break
+	endif
+end
+touch $problems
+
+#-- set the log file 
+set logfile = `echo $p12/lists/corsac/corsac_${fnmend}.log`
+if ( -f $logfile ) then
+  echo "Warning: logfile "`basename $logfile`" already exists in: "
+  echo "  "`dirname $logfile`
+endif
+
+echo ' ' >> $logfile
+date >> $logfile
+echo `basename $0` $* >> $logfile
+echo ' ' >> $logfile
+echo "Datset directory: "$p12 >> $logfile
+echo "Problem file: "$problems >> $logfile
+
+
+
+if ($use_infile == 0) then
+# run the script based on a data directory and a number of year folders...
+# designed for the first run through a set of folders.
+	#-- move to data directory
+	cd $p12
+
+	#-- lock file?
+	set lockcount = 0
+	set lockedyears = ""
+	foreach year ($years)
+		if ( -e .corsac.$year.lock) then
+			set lockcount = 1
+			set lockedyears = `echo $lockedyears" "$year`
+		endif
+	end
+	if ($lockcount > 0) then
+		echo "CORSAC ALREADY RUN for Year(s): "$lockedyears
+		echo "  REMOVE LOCK FILES .corsac.[year].lock"
+		exit
+	endif
+
+
+
+	foreach year ($years)
+		if ( ! -e $year ) then
+			printf 'Missing Year: %4i\n' $year >> $logfile
+			continue
+		endif
+		#-- move to the year directory
+		cd $year
+		printf 'Year: %4i\n' $year >> $logfile
+		
+		#-- now list the available months
+		set months = `ls -F | grep '[01][0-9]/' | cut -c 1-2`
+		##set months = `cat $dirlistfile | grep '[01][0-9]'`  # if dirlist files present
+		
+		#-- loop through the months
+		foreach month ($months)
+			#-- move to month directory
+			cd $month
+			printf ' Month: %2s\n' $month >> $logfile
+			
+			#-- now list the available events
+			set events = `ls -F | grep '^[0-9]*_[0-9]*/' | cut -c 1-13`
+			##set events = `cat $dirlistfile | grep '^[0-9]*_[0-9]*/' | cut -c 1-13`
+			
+			#-- loop through the available events
+			foreach event ($events)
+				#-- move to event directory
+				cd $event
+				printf '   Event: %13s\n' $event >> $logfile
+				echo $event
+				#-- identify the cmtfile for this event
+				set currpath = `pwd`
+				set cmtfile = `ls | grep '^cmt'`
+				## set cmtfile = `grep '^cmt' $filelistfile`
+				
+				#-- check there is only one unique cmt file present
+				if (`echo $cmtfile | wc -w` != 1 ) then
+					printf '0 %s , no cmtfile %s\n' `pwd` $cmtfile >>! $problems
+					#-- move back to month directory
+					cd ..
+					continue
+				#else
+				#	set cmtfile = `echo $currpath/$cmtfile`
+				endif
+				
+				#-- get the alphabetically listed station folders
+				set an_folders = `ls -F | grep '^[0-9A-Za-z]/$' | cut -c 1-1`
+				##set an_folders = `cat $dirlistfile | grep '^[0-9A-Z]/$' | cut -c 1-1`
+				
+				#-- loop through the alphabetical folders
+				foreach AN_folder ($an_folders)
+					#-- move to the alphanumeric folder
+					cd $AN_folder
+					printf '     Folder %1s\n' $AN_folder >> $logfile
+						
+					#-- get the stations present in this folder
+					set stations = `ls | grep '^[0-9A-Za-z]*\.[0-9A-Za-z]*$'`
+					##set stations = `cat $dirlistfile | grep '^[0-9A-Z]*.[0-9A-Z]*$'`
+					
+					#-- loop through each station
+					foreach station ($stations)
+						#-- move to the station directory
+						cd $station
+						printf '       %s\n' $station >> $logfile
+						set stn = `echo $station | awk -F . '{print $2}' | tr "[A-Z]" "[a-z]"`
+						echo $station
+						if ( -f gsncorrected ) then
+							printf '3 %s , appears to be gsn corrected already\n' `pwd` >>! $problems
+							#-- move back to alphabetical folder
+							cd ..
+							continue
+						endif
+						
+						#-- list the sac files present for this station
+						set sfs = `ls | grep ^$event"."$stn".[bhl]h[zne12]"$`
+#						echo $sfs
+						##set sfs = `cat $filelistfile | grep ^$event"."$stn".[bl]h[zne12]"$`
+						
+						#-- check there are sac files, if not report error
+						if (`echo $sfs | wc -w` == 0) then
+							printf '1 %s , no sac files\n' `pwd` >>! $problems
+							#-- move back to alphabetical folder
+							cd ..
+							continue
+						endif
+												
+						#-- generate input file for shc_cmt.f
+						echo ../../$cmtfile >! corin
+						ls | grep ^$event"."$stn".[bhl]h[zne12]" >> corin
+						echo stop >> corin
+						
+						#-- if the output file already exists, remove it
+						if ( -e notcorr ) rm notcorr
+						
+						#-- run the fortran code
+						shc_cmt_1s < corin >& responses/shc_cmt.log
+						
+						#-- save the input file in the responses directory
+						mv corin responses/.
+						
+						#-- look at output from the program
+						if ( `cat notcorr | wc -c` > 3 ) then
+							printf '2 %s , sac not corrected\n' `pwd` >>! $problems
+							#-- deal with created files
+							if ( -e gsncorrected ) then
+								if ( `cat gsncorrected | wc -l` == 0 ) then
+									rm -f gsncorrected
+								endif
+							endif
+							#-- move back to alphabetical folder
+							cd ..
+							continue
+						else
+							rm notcorr
+						endif
+						
+						#-- did it create a gsncorrected file, and is there anything in it?
+						if ( -e gsncorrected ) then
+							if ( `cat gsncorrected | wc -l` == 0 ) then
+								rm -f gsncorrected
+							endif
+						endif
+						#-- move back to alphabetical folder directory
+						cd ..
+					end #-- foreach station					
+					#-- move back to event directory
+					cd ..
+				end #-- foreach AN_folder
+				#-- move back to month directory
+				cd ..
+			end #-- foreach event
+			#-- move back to year directory
+			cd ..
+		end #-- foreach month
+		#-- move back to data directory
+		cd ..
+		
+		#-- create year lock file
+		echo `date` !> $p12/.corsac.$year.lock
+	end #-- foreach year
+
+	
+	
+else if ($use_infile == 1) then
+# run through a set of directories (path to the station folder) relative to the
+# specified data directory. This is designed as a method for re-doing a specific
+# subset of folders or to add a specific set of data to the existing dataset without
+# having to redo all stations completed already.
+
+	#-- check the input file exists
+	if ( ! -f $infile ) then
+		echo "Input file does not exist"
+		exit
+	endif
+	
+	#-- list file needs full path
+	if ( `echo $infile | awk -F '/' '{print NF}'` == 1 ) then
+		set currdir = `pwd`
+		set infile = `echo $currdir'/'$infile`
+	endif
+	
+	#-- check again the input file exists
+	if ( ! -f $infile ) then
+		echo "Input file does not exist"
+		exit
+	endif
+
+	
+	#-- move to the data directory
+	cd $p12
+	
+	#-- loop through each entry in the input file
+	foreach line  (`cat $infile`)
+		#-- Decompose the line
+		set YYYY = `echo $line | awk -F '/' '{print $1}'`
+		set month = `echo $line | awk -F '/' '{print $2}'`
+		set event = `echo $line | awk -F '/' '{print $3}'`
+		set AN_folder = `echo $line | awk -F '/' '{print $4}'`
+		set station = `echo $line | awk -F '/' '{print $5}'`
+		
+		#-- lock file?
+		if (-e $p12/.corsac.$YYYY.lock) then
+			echo "CORSAC ALREADY RUN"
+			echo "  REMOVE LOCK FILES .corsac.$YYYY.lock"
+			continue
+		endif
+		
+		#-- output:
+		printf '%4s %2s %13s %1s %s\n' $YYYY $month $event $AN_folder $station >> $logfile
+		
+		#-- does the folder exist?
+		if ( ! -d $YYYY/$month/$event/$AN_folder/$station ) then
+			printf '      Path does not exist! %s\n' `echo $YYYY/$month/$event/$AN_folder/$station` >> $logfile
+			continue
+		endif
+		
+		#-- move to event folder
+		cd $YYYY/$month/$event
+		
+		#-- check cmt file
+		set cmtfile = `ls $event | grep '^cmt'`
+		## set cmtfile = `grep '^cmt' $filelistfile`
+		
+		#-- check there is only one unique cmt file present
+		if (`echo $cmtfile | wc -w` != 1 ) then
+			printf '0 %s , no cmtfile %s\n' `pwd` $cmtfile >>! $problems
+			cd $p12
+			continue
+		else
+			set cmtfile = `echo $p12/$YYYY/$month/$event/$cmtfile`
+		endif
+		
+		#-- move to station folder
+		cd $AN_folder/$station
+		set stn = `echo $station | awk -F . '{print $2}' | tr "[A-Z]" "[a-z]"`
+		
+		if ( -f gsncorrected ) then
+			printf '3 %s , appears to be gsn corrected already\n' `pwd` >>! $problems
+			cd $p12
+			continue
+		endif
+		
+		#-- list the sac files present for this station
+		set sfs = `ls | grep ^$event"."$stn".[bhl]h[zne12]"$`
+		##set sfs = `cat $filelistfile | grep ^$event"."$stn".[bl]h[zne12]"$`
+	*	
+		#-- check there are sac files, if not report error
+		if (`echo $sfs | wc -w` == 0) then
+			printf '1 %s , no sac files\n' `pwd` >>! $problems
+			cd $p12
+			continue
+		endif
+		
+		#-- generate input file for shc_cmt.f
+		echo $cmtfile >! corin
+		ls | grep ^"[890]" | grep ".[bhl]h[zne12]" >> corin
+		echo stop >> corin
+		
+		#-- if the output file already exists, remove it
+		if ( -e notcorr ) rm notcorr
+		
+		#-- run the fortran code
+		shc_cmt_1s < corin >& responses/shc_cmt.log
+		
+		#-- save the input file in the responses directory
+		mv corin responses/.
+		
+		#-- look at output from the program
+		if ( `cat notcorr | wc -c` > 3 ) then
+			printf '2 %s , sac not corrected\n' `pwd` >>! $problems
+			#-- deal with created files
+			if ( -e gsncorrected ) then
+				if ( `cat gsncorrected | wc -l` == 0 ) then
+					rm -f gsncorrected
+				endif
+			endif
+			cd $p12
+			continue
+		else
+			rm notcorr
+		endif
+		
+		#-- did it create a gsncorrected file, and is there anything in it?
+		if ( -e gsncorrected ) then
+			if ( `cat gsncorrected | wc -l` == 0 ) then
+				rm -f gsncorrected
+			endif
+		endif
+		
+		#-- move back to data directory
+		cd $p12
+		
+		#-- make lock file
+		echo `date` >! $p12/.corsac.$YYYY.lock
+	end
+endif
+
+cd ..
+
+
+#-- mail finished
+#if (! -z $email ) then
+#  echo `basename $0` $* >! mail.comp.$fnmend.$dotones
+ # echo "Start: "$datenow" "$timenow >> mail.comp.$fnmend.$dotones
+ # echo "End: "`date "+%d-%b-%Y %H:%M:%S"` >> mail.comp.$fnmend.$dotones
+ # echo " " >> mail.comp.$fnmend.$dotones
+ # echo "Working Directory: " >> mail.comp.$fnmend.$dotones
+ # echo $p12 >> mail.comp.$fnmend.$dotones
+#	if ( -f /usr/bin/mail ) then
+#		mail -s "corsac_1s complete" $emailproc < mail.comp.$fnmend.$dotones
+#	else if ( -f /usr/bin/mutt ) then
+#	  mutt -s "corsac_1s complete" $emailproc < mail.comp.$fnmend.$dotones
+#	endif
+#	rm -f mail.comp.$fnmend.$dotones
+#endif

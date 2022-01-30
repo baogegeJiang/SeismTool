@@ -1,0 +1,642 @@
+#!/bin/tcsh -f
+#
+# Program: clipped_1s
+#
+# Description: 
+# Step 3 of pre-processing routines after extraction of data.
+# Preceeding: merge_sac_1s
+# Following: resp_all_1s
+# 
+# This script scans the sac files for bad quality data and removes it from
+# the main data directories. The main form of bad data is clipped data. 
+# Those sac files which are determiend to be clipped are moved to a 
+# clipped directory in the data directory root folder. This script uses
+# the fortran binary file check_clip_1s.f This code is run from the
+# main dataset directory containing the "data" folder where the sac data
+# has been extracted to.
+#
+# Error Codes:
+# 
+# Andrew Schaeffer, January 2010. Modified from Sergei Lebedev's clipped_2s
+#	Modified: August 2010, AJS
+#			-> Minor changes to add more detail to email output.
+#
+# Required compiled binaries in user path:
+# - check_clip_sw_1s
+#
+#
+#
+
+if ($#argv < 1) then
+  echo 'Usage: clipped_1s <-data datadir -years yearlist> || < -file filepath>'
+  exit
+endif
+
+#-- source config file
+#source ~/bin/parse_config_csh
+
+unalias mv
+unalias rm
+
+#-- optional value...
+set dirlistfile = `echo 'ls-d'`
+set filelistfile = `echo 'ls-f'`
+
+#-- runtime options
+set use_infile = `echo 0`
+set years = `echo ''`
+
+#-- set date
+set datenow = `date +%d-%b-%Y`
+set timenow = `date +%H:%M:%S`
+
+#-- set clipping executable
+set checkclipprog = `echo "check_clip_sw_1s"`
+
+#-- parse input line
+if ( $#argv >= 1 ) then
+	set ival = `echo 1`
+	while ( $ival < $#argv ) 
+		#-- if running using an input file
+		if ( `eval echo '$'$ival` == "-file" ) then
+			set ii = `expr $ival + 1`
+			set temp = `eval echo '$'$ii`
+			if ( `echo $temp | wc -w` > 0 ) then
+				if ( `echo $temp | awk '{print substr($1,1,1)}'` != "-" ) then
+					set infile = `echo $temp`
+					set use_infile = `echo 1`
+					set ival = `expr $ival + 2`
+				else
+					echo 'Usage: clipped_1s <-data datadir -years yearlist> || < -file filepath>'
+					exit
+				endif
+			else
+				echo 'Usage: clipped_1s <-data datadir -years yearlist> || < -file filepath>'
+				exit
+			endif
+		
+		#-- set data directory
+		else if ( `eval echo '$'$ival` == "-data" ) then
+			set ii = `expr $ival + 1`
+			set temp = `eval echo '$'$ii`
+			if ( `echo $temp | wc -w` > 0 ) then
+				if ( `echo $temp | awk '{print substr($1,1,1)}'` != "-" ) then
+					set p12 = `echo $temp`
+					set ival = `expr $ival + 2`
+				else
+					echo 'Usage: clipped_1s <-data datadir -years yearlist> || < -file filepath>'
+					exit
+				endif
+			else
+				echo 'Usage: clipped_1s <-data datadir -years yearlist> || < -file filepath>'
+				exit
+			endif
+		
+		#-- set input years
+		else if ( `eval echo '$'$ival` == "-years" ) then
+			set ii = `expr $ival + 1`
+			set temp = `eval echo '$'$ii`
+			while (`echo $temp | awk '{print substr($1,1,1)}'` != "-" )
+				if ( `echo $temp | wc -w` > 0 ) then
+					set years = `echo $years' '$temp`
+					set ii = `expr $ii + 1`
+					set temp = `eval echo '$'$ii`
+				else
+					break
+				endif
+			end
+			set ival = `expr $ii - 1`	
+		
+		#-- use the more severe window length checking
+		else if ( `eval echo '$'$ival` == "-sw_window" ) then
+			set checkclipprog = `echo "check_clip_sw_1s"`
+			set ival = `expr $ival + 1`
+		else
+			set ival = `expr $ival + 1`
+		endif
+	end
+endif
+
+#echo ''
+#echo 'Using clipping check: '$checkclipprog
+#echo ''
+
+#-- set the data directory
+if ( ! -e $p12 ) then
+	echo " Dataset directory "$p12" doesn't exist"
+	exit
+endif
+
+##- data directory needs a full path
+if ( `echo $p12 | awk -F '/' '{print NF}'` == 1 ) then
+	set currdir = `pwd`
+	set p12 = `echo $currdir'/'$p12`
+endif
+
+#-- make list dir
+mkdir -p $p12/lists/clipsac
+
+#-- generate the list of year directories to work on
+if ($use_infile != 1) then
+      if (`echo $years | wc -w` == 0 ) then
+            set years = `ls $p12 | grep '^[12][09][0189][0-9]$'`
+            ##set years = `cat $dirlistfile | grep '^[12][09][0189][0-9]$'`
+      endif
+      if (${#years} > 1) then
+            set fnmend = `echo _${years[1]}-${years[${#years}]}`
+      else
+            set fnmend = `echo _${years[1]}`
+      endif
+else
+      set fnmend = `echo ''`
+endif
+
+#-- generate the problem directory and lists
+set dotones = `echo ""`
+set problems = `echo $p12/lists/clipsac/problems_clip${fnmend}_$datenow`
+while (1 == 1)
+      if ( -f $problems ) then
+            set problems = `echo $problems".1"`
+            set dotones = `echo $dotones".1"`
+      else
+            break
+      endif
+end
+touch $problems
+
+
+set clipped = `echo $p12/lists/clipsac/Clipped${fnmend}_$datenow`
+while (1 == 1)
+      if ( -f $clipped ) then
+            set clipped = `echo $clipped".1"`
+      else
+            break
+      endif
+end
+touch $clipped
+
+#-- set the log file 
+set logfile = `echo $p12/lists/clipsac/clipsac_${fnmend}.log`
+if ( -f $logfile ) then
+  echo "Warning: logfile "`basename $logfile`" already exists in: "
+  echo "  "`dirname $logfile`
+endif
+
+echo ' ' >> $logfile
+date >> $logfile
+echo `basename $0` $* >> $logfile
+echo ' ' >> $logfile
+echo "Datset directory: "$p12 >> $logfile
+echo "Problem file: "$problems >> $logfile
+echo " Clipped list: "$clipped >> $logfile
+echo '' >> $logfile
+echo 'Using clipping check: '$checkclipprog >> $logfile
+echo '' >> $logfile
+
+if ($use_infile == 0) then
+# run the script based on a data directory and a number of year folders...
+# designed for the first run through a set of folders.
+	#-- move to data directory
+	cd $p12
+	
+	#-- lock file?
+	set lockcount = 0
+	set lockedyears = ""
+	foreach year ($years)
+		if ( -e .clipped.$year.lock) then
+			set lockcount = 1
+			set lockedyears = `echo $lockedyears" "$year`
+		endif
+	end
+	if ($lockcount > 0) then
+		echo "CLIPPED ALREADY RUN for Year(s): "$lockedyears
+		echo "  REMOVE LOCK FILES .clipped.[year].lock"
+		exit
+	endif
+
+	foreach year ($years)
+		if ( ! -e $year ) then
+			printf 'Missing Year: %4i\n' $year >> $logfile
+			continue
+		endif
+		#-- move to the year directory
+		cd $year
+		printf 'Year: %4i\n' $year >> $logfile
+		
+		#-- now list the available months
+		set months = `ls -F | grep '[01][0-9]/' | cut -c 1-2`
+		##set months = `cat $dirlistfile | grep '[01][0-9]'`  # if dirlist files present
+		
+		#-- loop through the months
+		foreach month ($months)
+			#-- move to month directory
+			cd $month
+			printf ' Month: %2s\n' $month >> $logfile
+			
+			#-- now list the available events
+			set events = `ls -F | grep '^[0-9]*_[0-9]*/' | cut -c 1-13`
+			##set events = `cat $dirlistfile | grep '^[0-9]*_[0-9]*/' | cut -c 1-13`
+			
+			#-- loop through the available events
+			foreach event ($events)
+				#-- move to event directory
+				cd $event
+				printf '   Event: %13s\n' $event >> $logfile
+				
+				#-- get the alphabetically listed station folders
+				set an_folders = `ls -F | grep '^[0-9A-Za-z]/$' | cut -c 1-1`
+				##set an_folders = `cat $dirlistfile | grep '^[0-9A-Z]/$' | cut -c 1-1`
+				
+				#-- loop through the alphabetical folders
+				foreach AN_folder ($an_folders)
+					#-- move to the alphanumeric folder
+					cd $AN_folder
+					printf '     Folder %1s\n' $AN_folder >> $logfile
+						
+					#-- get the stations present in this folder
+					set stations = `ls | grep '^[0-9A-Za-z]*\.[0-9A-Za-z]*$'`
+					##set stations = `cat $dirlistfile | grep '^[0-9A-Z]*.[0-9A-Z]*$'`
+					
+					#-- loop through each station
+					foreach station ($stations)
+						#-- move to the station directory
+						cd $station
+						printf '       %s\n' $station >> $logfile
+						set stn = `echo $station | awk -F . '{print $2}' | tr "[A-Z]" "[a-z]"`
+						
+						
+						#-- check to see if there are any files from a previous run
+						if ( -e CLIPPED) rm -f CLIPPED
+						if ( -e SHORT) rm -f SHORT
+						
+						#-- list the sac files present for this station
+						set sfs = `ls | grep ^$event"."$stn".[bhl]h[zne12]"$`
+						##set sfs = `cat $filelistfile | grep ^$event"."$stn".[bl]h[zne12]"$`
+						
+						#-- are there any sac files at all in the directory
+						if (`echo $sfs | wc -w` == 0) then
+							printf '       NoSAC:%s , No Sac Files\n' `pwd` >> $logfile
+							printf '0, %s, no sac files\n' `pwd` >>! $problems
+							cd ..
+							continue
+						endif
+						
+						#-- remove old outputs
+						rm -f checkclipout
+						
+						#-- loop over each sac channel
+						set cl = ''
+						foreach sf ($sfs)
+							printf '        %s\n' $sf >> $logfile
+							#-- run the channel sac file through check clip and look at output for
+							#   evidence of clipping
+							#-- run check clip
+							echo $sf | $checkclipprog >& checkclipout
+							
+							#-- first check if there was a dist error
+							set derr = `cat checkclipout | grep -c "DIST ERROR:"`
+							set cl = `cat checkclipout | grep "clipped" | wc -l`
+							
+							if ($derr > 0) then
+								#-- there was a header read error for the dist header field
+								printf '         HDRERR:%s , %s , SAC HEADER ERROR: DIST\n' `pwd` $sf >> $logfile
+								printf '1 , %s , %s , SAC DIST HEADER ERROR\n' `pwd` $sf >>! $problems
+								#-- stop processing this sac file
+								continue
+							endif
+							
+							if ($cl > 0) then
+								#-- fortran code detected clipping. Ouput to the screen,
+								#   and also there was an output file
+								#-- output to screen
+								printf '         CLIP:%s , %s , NORM\n' `pwd` $sf >> $logfile
+								
+								#-- output to problems file
+								printf '2 , %s , %s , Clipping Detected\n' `pwd` $sf >>! $problems
+								
+								#-- output to clipped file
+								printf '%s: %s ; Clipped\n' $sf `pwd` >>! $clipped
+								
+								#-- is there a Clipped Directory
+								if ( ! -d Clipped) mkdir Clipped
+								#-- move the sac data to the clipped directory.
+								mv $sf Clipped
+								mv CLIPPED Clipped/cl_{$sf}
+								
+							else if ( -e CLIPPED) then
+								#-- check whether there is a CLIPPED file in the directory
+								#   there shouldn't be one, because there was no clipped 
+								#   message output by the fortran code
+								
+								#-- output to problems file
+								printf '3 , %s , %s Clipping File but No Clip Error' `pwd` $sf >>! $problems
+								
+								#-- output to clipped file
+								printf '%s: %s ; ERROR: CLIPPED should not exist\n' $sf `pwd` >>! $clipped
+								
+								#-- output to the screen
+								printf '         CLIP:%s , %s , CLIPPED File Present?\n' `pwd` $sf >> $logfile
+								
+								#-- is there a clipped directory?
+								if ( ! -d Clipped) mkdir Clipped
+								#-- move the sac data to the clipped directory
+								mv $sf Clipped
+								mv CLIPPED Clipped/cl{$sf}_error
+								
+							endif
+							  
+							#-- now check if there are another other problems
+							if ( -e CLIP_OUT) then
+								#-- there was clipping outside the range
+								printf '         CLIPOUT:%s , %s , OUTSIDE Clipping\n' `pwd` $sf >> $logfile
+								printf '%s: %s ; OUTSIDE Clipping\n' $sf `pwd` >>! $clipped
+								printf '4 , %s , %s , OUTSIDE Clipping\n' `pwd` $sf >>! $problems
+							endif
+							if ( -e SHORT) then
+								#-- there was a short event
+								if ( ! -e Short) mkdir Short
+								#-- move the files to the short directory
+								mv $sf Short
+								mv SHORT Short/sh_{$sf}
+								#-- outputs to screen and logs
+								printf '         SHORT:%s , %s , SHORT SAC\n' `pwd` $sf >> $logfile
+								printf '%s: %s ; SHORT SAC\n' $sf `pwd` >>! $clipped
+								printf '5 , %s , %s , SHORT SAC\n' `pwd` $sf >>! $problems
+							endif
+							
+							#-- move the output file
+							mv checkclipout responses/checkclipout_{$sf}
+						end
+						
+						rm -f CLIP_OUT CLIPPED SHORT timewindowdefaults
+						
+						# set nsfs = `ls | grep ^"[890]" | grep "[zen12]"$ | wc -l`
+						# if ($nsfs == 0) then 
+						
+						#-- move back to alphanumeric folder
+						cd ..
+						
+						#-- if there was clipping or a shortening file, then move the data out of the regular
+						#   storage area to special folders
+						if ( -e $station/Clipped ) then
+							if (! -e $p12/clipped/$year/$month/$event/$AN_folder) mkdir -p $p12/clipped/$year/$month/$event/$AN_folder
+							if (! -e $p12/clipped/$year/$month/$event/cmt$event) cp ../cmt* $p12/clipped/$year/$month/$event/
+							#-- move data to the to the clipped directory 
+							mv  $station $p12/clipped/$year/$month/$event/$AN_folder/
+							printf '         Move to Clipped dir\n' >> $logfile
+						else if ( -e $station/Short) then
+							if (! -e $p12/clipped/$year/$month/$event/$AN_folder) mkdir -p $p12/clipped/$year/$month/$event/$AN_folder
+							if (! -e $p12/clipped/$year/$month/$event/cmt$event) cp ../cmt* $p12/clipped/$year/$month/$event/
+							#-- move the data to the clipped directory
+							mv  $station $p12/clipped/$year/$month/$event/$AN_folder/
+							printf '         Move to Clipped dir\n' >> $logfile
+						endif
+					
+					end  # foreach station ($stations)
+					##-- move back to event folder
+					cd .. 
+					#-- are there any stations left in the AN_folder
+					if ( `ls $AN_folder | wc -w` == 0 ) then
+						rmdir $AN_folder
+						printf '     Removed Folder %s\n' $AN_folder >> $logfile
+					endif
+				end # foreach AN_FOLDER ()
+				#-- move back to month folder
+				cd ..
+				#-- are there any AN folders in the event folder
+				if ( `ls $event | grep -v "cmt*" | wc -w` == 0 ) then
+					rm -rf $event
+					printf '    Removed Event %s\n' $event >> $logfile
+				endif
+			end #foreach event ($events)
+			#-- move back to year folder
+			cd ..
+			#-- are there any events in the year folder
+			if (`ls $month | wc -w` == 0 ) then
+				rmdir $month
+				printf '  Removed Month %s\n' $month >> $logfile
+			endif
+		end #foreach month ($months)
+		#-- move back to data folder
+		cd ..
+		if ( `ls $year | wc -w` == 0 ) then
+			rmdir $year
+			printf ' Removed Year %s\n' $year >> $logfile
+		endif
+
+		#-- create year lock file
+		echo `date` !> $p12/.clipped.$year.lock
+	end #foreach year ($years)
+						
+
+
+else if ($use_infile == 1) then
+# run through a set of directories (path to the station folder) relative to the
+# specified data directory. This is designed as a method for re-doing a specific
+# subset of folders or to add a specific set of data to the existing dataset without
+# having to redo all stations completed already.
+	#-- check the input file exists
+	if ( ! -f $infile ) then
+		echo "Input file does not exist"
+		exit
+	endif
+	
+	#-- list file needs full path
+	if ( `echo $infile | awk -F '/' '{print NF}'` == 1 ) then
+		set currdir = `pwd`
+		set infile = `echo $currdir'/'$infile`
+	endif
+	
+	#-- check again the input file exists
+	if ( ! -f $infile ) then
+		echo "Input file does not exist"
+		exit
+	endif
+
+	
+	#-- move to the data directory
+	cd $p12
+
+	#-- loop through each entry in the input file
+	foreach line  (`cat $infile`)
+		#-- Decompose the line
+		set year = `echo $line | awk -F '/' '{print $1}'`
+		set month = `echo $line | awk -F '/' '{print $2}'`
+		set event = `echo $line | awk -F '/' '{print $3}'`
+		set AN_folder = `echo $line | awk -F '/' '{print $4}'`
+		set station = `echo $line | awk -F '/' '{print $5}'`
+		set stn = `echo $station | awk -F . '{print $2}' | tr "[A-Z]" "[a-z]"`
+		
+		#-- lock file?
+		if (-e $p12/.clipped.$year.lock) then
+			echo "CLIPPED ALREADY RUN"
+			echo "  REMOVE LOCK FILES .clipped.$year.lock"
+			continue
+		endif
+		
+		#-- output:
+		printf '%4s %2s %13s %1s %s\n' $year $month $event $AN_folder $station >> $logfile
+		
+		#-- does the folder exist?
+		if ( ! -d $year/$month/$event/$AN_folder/$station ) then
+			printf '      Path does not exist! %s\n' `echo $year/$month/$event/$AN_folder/$station` >> $logfile
+			continue
+		endif
+		
+		#-- move to the station folder
+		cd $YYYY/$month/$event/$AN_folder/$station
+		printf '       %s\n' $station >> $logfile
+		
+		
+		#-- check to see if there are any files from a previous run
+		if ( -e CLIPPED) rm -f CLIPPED
+		if ( -e SHORT) rm -f SHORT
+		
+		#-- list the sac files present for this station
+		set sfs = `ls | grep ^$event"."$stn".[blh]h[zne12]"$`
+		##set sfs = `cat $filelistfile | grep ^$event"."$stn".[bl]h[zne12]"$`
+		
+		#-- are there any sac files at all in the directory
+		if (`echo $sfs | wc -w` == 0) then
+			printf '       No Sac Files\n'  >> $logfile
+			print '0, %s, no sac files\n' `pwd` >>! $problems
+			cd ..
+			continue
+		endif						
+		#-- loop over each sac channel
+		set cl = ''
+		foreach sf ($sfs)
+			printf '        %s\n' $sf >> $logfile
+			#-- run the channel sac file through check clip and look at output for
+			#   evidence of clipping
+			#-- run check clip
+			echo $sf | $checkclipprog >& checkclipout
+			
+			
+			#-- first check if there was a dist error
+			set derr = `cat checkclipout | grep -c "DIST ERROR:"`
+			set cl = `cat checkclipout | grep "clipped" | wc -l`
+		
+			if ($derr > 0) then
+				#-- there was a header read error for the dist header field
+				printf '         HDRERR:%s , %s , SAC HEADER ERROR: DIST\n' `pwd` $sf >> $logfile
+				printf '1 , %s , %s , SAC DIST HEADER ERROR\n' `pwd` $sf >>! $problems
+				#-- stop processing this sac file
+				continue
+			endif
+		
+			if ($cl > 0) then
+				#-- fortran code detected clipping. Ouput to the screen,
+				#   and also there was an output file
+				#-- output to screen
+				printf '         CLIP:%s , %s , NORM\n' `pwd` $sf >> $logfile
+			
+				#-- output to problems file
+				printf '2 , %s , %s , Clipping Detected\n' `pwd` $sf >>! $problems
+			
+				#-- output to clipped file
+				printf '%s: %s ; Clipped\n' $sf `pwd` >>! $clipped
+			
+				#-- is there a Clipped Directory
+				if ( ! -d Clipped) mkdir Clipped
+				#-- move the sac data to the clipped directory.
+				mv $sf Clipped
+				mv CLIPPED Clipped/cl_{$sf}
+			
+			else if ( -e CLIPPED) then
+				#-- check whether there is a CLIPPED file in the directory
+				#   there shouldn't be one, because there was no clipped 
+				#   message output by the fortran code
+			
+				#-- output to problems file
+				printf '3 , %s , %s Clipping File but No Clip Error' `pwd` $sf >>! $problems
+			
+				#-- output to clipped file
+				printf '%s: %s ; ERROR: CLIPPED should not exist\n' $sf `pwd` >>! $clipped
+			
+				#-- output to the screen
+				printf '         CLIP:%s , %s , CLIPPED PRESENT?\n' `pwd` $sf >> $logfile
+			
+				#-- is there a clipped directory?
+				if ( ! -d Clipped) mkdir Clipped
+				#-- move the sac data to the clipped directory
+				mv $sf Clipped
+				mv CLIPPED Clipped/cl{$sf}_error
+			
+			endif
+			  
+			#-- now check if there are another other problems
+			if ( -e CLIP_OUT) then
+				#-- there was clipping outside the range
+				printf '         CLIPOUT:%s , %s , OUTSIDE Clipping\n' `pwd` $sf >> $logfile
+				printf '%s: %s ; OUTSIDE Clipping\n' $sf `pwd` >>! $clipped
+				printf '4 , %s , %s , OUTSIDE Clipping\n' `pwd` $sf >>! $problems
+			endif
+			if ( -e SHORT) then
+				#-- there was a short event
+				if ( ! -e Short) mkdir Short
+				#-- move the files to the short directory
+				mv $sf Short
+				mv SHORT Short/sh_{$sf}
+				#-- outputs to screen and logs
+				printf '         SHORT:%s , %s , SHORT SAC\n' `pwd` $sf >> $logfile
+				printf '%s: %s ; SHORT SAC\n' $sf `pwd` >>! $clipped
+				printf '5 , %s , %s , SHORT SAC\n' `pwd` $sf >>! $problems
+			endif
+			
+			#-- move the output file
+			mv checkclipout responses/checkclipout_{$sf}
+		end
+
+		# set nsfs = `ls | grep ^"[890]" | grep "[zen12]"$ | wc -l`
+		# if ($nsfs == 0) then 
+		
+		#-- move back to alphanumeric folder
+		cd ..
+		
+		#-- if there was clipping or a shortening file, then move the data out of the regular
+		#   storage area to special folders
+		if ( -e $station/Clipped ) then
+			if (! -e $p12/clipped/$year/$month/$event/$AN_folder) mkdir -p $p12/clipped/$year/$month/$event/$AN_folder
+			#-- move data to the to the clipped directory 
+			mv  $station $p12/clipped/$year/$month/$event/$AN_folder/.
+		else if ( -e $station/Short) then
+			if (! -e $p12/clipped/$year/$month/$event/$AN_folder) mkdir -p $p12/clipped/$year/$month/$event/$AN_folder
+			#-- move the data to the clipped directory
+			mv  $station $p12/clipped/$year/$month/$event/$AN_folder/.
+		endif
+		
+		##-- move back to event folder
+		cd .. 
+		#-- are there any stations left in the AN_folder
+		if ( `ls $AN_folder | wc -w` == 0 ) then
+			rmdir $AN_folder
+			printf '     Removed Folder %s\n' $AN_folder >> $logfile
+		endif
+		
+		#-- back to data directory
+		cd $p12
+		
+		#-- lock file
+			echo `date` >! $p12/.clipped.$year.lock
+	end #-- foreach line (`cat $infile`)
+	cd ..
+endif
+
+echo "Done" >> $logfile
+
+#-- mail finished
+#if (! -z $email ) then
+#  echo `basename $0` $* >! mail.comp.$fnmend.$dotones
+#  echo "Start: "$datenow" "$timenow >> mail.comp.$fnmend.$dotones
+#  echo "End: "`date "+%d-%b-%Y %H:%M:%S"` >> mail.comp.$fnmend.$dotones
+#  echo " " >> mail.comp.$fnmend.$dotones
+#  echo "Working Directory: "
+#  echo $p12 >> mail.comp.$fnmend.$dotones
+#	if ( -f /usr/bin/mail ) then
+#		mail -s "clipped_1s complete" $emailproc < mail.comp.$fnmend.$dotones
+#	else if ( -f /usr/bin/mutt ) then
+#	  mutt -s "clipped_1s complete" $emailproc < mail.comp.$fnmend.$dotones
+#	endif
+#	rm -f mail.comp.$fnmend.$dotones
+#endif

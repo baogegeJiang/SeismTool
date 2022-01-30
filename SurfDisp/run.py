@@ -119,7 +119,7 @@ class runConfig:
 		self.para['surPara'].update({\
 				'kmaxRc':len(self.para['tSur']),'rcPerid': self.para['tSur'].tolist()})
 
-disRandA=1/12.0
+disRandA=1/15.0
 disMaxR =4
 delta   =1
 up=2
@@ -173,7 +173,7 @@ class run:
 		mt.plotLaLoLine(m,dLa,dLo,dashes=[3,3],color='dimgrey',linewidth=0.75)
 		mt.fs.setColorbar(pc,'elevation(m)')
 		plt.savefig(resDir+'staDisWithTopo.pdf')
-	def loadCorr(self,isLoad=True,isLoadFromMat=False,isGetAverage=True,isDisQC=False,isAll=True,isSave=False,isAllTrain=False):
+	def loadCorr(self,isLoad=True,isLoadFromMat=False,isGetAverage=True,isDisQC=False,isAll=True,isSave=False,isAllTrain=True):
 		trainSetDir = self.config.para['trainMatDir']
 		config     = self.config
 		corrL      = []
@@ -195,6 +195,9 @@ class run:
 			q       = seism.QuakeL(para['quakeFileL'][i])
 			quakes  += q
 			fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][i],quakeD=quakes)
+			fvdCopy={}
+			for key in fvd:
+			 	fvdCopy[key]=fvd[key].copy()
 			d.replaceF(fvd,f)
 			#q0.write('fv.quakes')
 			self.q0 =q0
@@ -221,11 +224,12 @@ class run:
 			for key in notL:
 				fvDA.pop(key)
 			fvDAverage.update(fvDA)
-			d.replaceByAv(fvd,fvDA,delta=1,stations= sta,threshold=para['thresholdTrain'])
+			d.replaceByAv(fvd,fvDA,delta=delta,stations= sta,threshold=para['thresholdTrain'])
 			d.qcFvD(fvd)
 			fvD.update(fvd)
 
-			fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][i],quakeD=quakes)
+			#fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][i],quakeD=quakes)
+			fvd = fvdCopy
 			d.replaceF(fvd,f)
 			d.replaceByAv(fvd,fvDA,isReplace=False,threshold=para['thresholdTrain'],delta=delta,stations= sta)
 			d.qcFvD(fvd)
@@ -287,7 +291,7 @@ class run:
 								if modelName not in fvDAverageNewCount:
 									fvDAverageNewCount[modelName] = 0
 								fvDAverageNewCount[modelName]+=1
-								if modelName not in fvDAverageNew and fvDAverageNewCount[modelName]>=para['minSta'] and fvDAverageNewAllCount[modelName]>=6 :
+								if modelName not in fvDAverageNew and fvDAverageNewCount[modelName]>=para['minSta'] and fvDAverageNewAllCount[modelName]>=8:# and (isAllTrain or fvDAverageNewCount[modelName]>=8):
 									fvDAverageNew[modelName] = fvDAverage[modelName]
 			for corr in corrL:
 				key = corr.modelFile
@@ -444,9 +448,9 @@ class run:
 				for i in range(len(fvL)):
 					index = indexL[i]
 					print(i,index,disL[index],fvL[index])
-					if i%10==8:
+					if i%10==0:
 						fvValid.append(fvL[index])
-					elif i%10==9:
+					elif i%10==1:
 						fvTest.append(fvL[index])
 					else:
 						fvTrain.append(fvL[index])
@@ -478,15 +482,20 @@ class run:
 		else:
 			fvD =self.fvD0
 		move2Int=True
+		isGuassianMove = True
+		randR=0.
 		self.corrLTrain.setTimeDis(fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=False,move2Int=move2Int,randMove=True,randA=para['randA'],midV=para['midV'],mul=para['mul'])
+		set2One=False,move2Int=move2Int,randMove=True,isGuassianMove=isGuassianMove,\
+			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'])
 		self.corrLTest.setTimeDis(fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=False,move2Int=move2Int,randMove=True,randA=para['randA'],midV=para['midV'],mul=para['mul'])
+		set2One=False,move2Int=move2Int,randMove=True,isGuassianMove=isGuassianMove,\
+			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'])
 		self.corrLValid.setTimeDis(fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=False,move2Int=move2Int,randMove=True,randA=para['randA'],midV=para['midV'],mul=para['mul'])
+		set2One=False,move2Int=move2Int,randMove=True,isGuassianMove=isGuassianMove,\
+			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'])
 		#self.loadModel()
 		self.corrDTrain = d.corrD(self.corrLTrain)
 		self.corrDTest = d.corrD(self.corrLTest)
@@ -494,11 +503,16 @@ class run:
 		sigma = np.ones(len(self.config.para['T']))
 		N =len(self.config.para['T'])
 		N_5=int(N/5)
-		sigma[:N_5]        = 1.5
+		'''sigma[:N_5]        = 1.5
 		sigma[N_5:2*N_5]   = 1.75
 		sigma[2*N_5:3*N_5] = 2.0
 		sigma[3*N_5:4*N_5] = 2.25
-		sigma[4*N_5:5*N_5] = 2.5
+		sigma[4*N_5:5*N_5] = 2.5'''
+		sigma[:N_5]        = 1.5
+		sigma[N_5:2*N_5]   = 1.75
+		sigma[2*N_5:3*N_5] = 2.0
+		sigma[3*N_5:4*N_5] = 2.5
+		sigma[4*N_5:5*N_5] = 3.5
 		self.config.sigma=sigma
 		self.config.para['modelFile']=fcn.trainAndTestMul(self.model,self.corrDTrain,self.corrDValid,self.corrDTest,\
                         outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=3e-3,mul=para['mul'])#w0=3#4
@@ -1210,10 +1224,10 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'matH5'	  :'/media/jiangyr/1TSSD/allClip20220125V1DISP.h5',\
 	'randA'       : 0.05,\
 	'midV'        : 4,\
-	'mul'		  : 1,\
+	'mul'		  : 8,\
 	'up'          :  1,\
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220125V8_up1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220130V3_0.2_up1_mul8/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 400,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           :[0,5,10,15,20,25,30,40,50,60,70,80,100,120,140,160,200,240,300,400,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\

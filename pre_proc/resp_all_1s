@@ -1,0 +1,1186 @@
+#!/bin/tcsh -f
+#
+# Program: resp_all_1s
+#
+# Description: 
+# Step 4 of pre-processing routines after extraction of data.
+# Preceeding: clipped_1s
+# Following: rotate2gcp_1s
+#
+# This program carries out the response function removal for each sac file. It requires
+# the sac formatted response files in each directory. It uses the rdseed fortran libraries
+# to carry out the removal of the response information. Please note that the function call
+# to the response evaluation routines can vary with versions. Make sure the complied version
+# evresp being used is correct in the fortran codes dealing with the correction. The fortran
+# code being called is seedcor_1s, which provides a functional wrapper for the response
+# function evaluation.
+#
+# After response function evaluation, the sac files are also downsampled to a time interval
+# of 1s. These are hardcoded using the sac decimate command. Therefore, if a time interval
+# is present that has not been added into this code, it will not be able to decimate this 
+# and will prompt an error. All of the most common sampling intervals are contained within
+# this code. Search the problem log file for the error code 9. This indicates an unknown
+# sampling interval.
+#
+# Although this program can be run safely again on the same year of data without overwriting
+# any of the log files, the data is detrended, and repeating this too many times may potentially
+# effect the charcter of the time series.
+#If the output files already exist (with the same date!), then it will append a .1 to the end
+# until it has a unique filename. One can overwrite the old data by adding the flag
+# -over on the command line (caution be exercised though!). The log files must be given a
+# new name, unless the redirection is set to append rather than overwrite (ie &>> rather
+# than &>).
+#
+# Error Codes:
+# 
+# Andrew Schaeffer, January 2010. Modified from Sergei Lebedev's resp_all_2s
+#	Modified: August 2010, AJS
+#			-> Minor changes to add more detail to email output.
+#
+# Required compiled binaries in user path:
+# - sac
+# - g2j
+# - j2g
+# - seedcor_1s
+# - eq
+#
+#
+#
+
+
+if ($#argv < 1) then
+  echo 'Usage: resp_all_1s [-over] <-data datadir [-years yearlist> || < -file filepath>]'
+  exit
+endif
+
+#-- source config file
+#source ~/bin/parse_config_csh
+
+unalias mv
+unalias rm
+
+#-- set default response directory
+setenv SEEDRESP responses
+
+#-- optional value...
+set dirlistfile = `echo 'ls-d'`
+set filelistfile = `echo 'ls-f'`
+
+#-- runtime options
+set use_infile = `echo 0`
+set years = `echo ''`
+set idetrend = `echo 0`
+
+#--set date
+set datenow = `date +%d-%b-%Y`
+set timenow = `date +%H:%M:%S`
+
+#-- set overwrite default
+set ovrdisp = `echo 0`
+
+#-- parse input line
+if ( $#argv >= 1 ) then
+      set ival = `echo 1`
+      while ( $ival < $#argv ) 
+            #-- if running using an input file
+            if ( `eval echo '$'$ival` == "-file" ) then
+                  set ii = `expr $ival + 1`
+                  set temp = `eval echo '$'$ii`
+                  if ( `echo $temp | wc -w` > 0 ) then
+                        if ( `echo $temp | awk '{print substr($1,1,1)}'` != "-" ) then
+                              set infile = `echo $temp`
+                              set use_infile = `echo 1`
+                              set ival = `expr $ival + 2`
+                        else
+                              echo 'Usage: resp_all_1s [-over] <-data datadir [-years yearlist> || < -file filepath>]'
+                              exit
+                        endif
+                  else
+                        echo 'Usage: resp_all_1s [-over] <-data datadir [-years yearlist> || < -file filepath>]'
+                        exit
+                  endif
+            
+            #-- set data directory
+            else if ( `eval echo '$'$ival` == "-data" ) then
+                  set ii = `expr $ival + 1`
+                  set temp = `eval echo '$'$ii`
+                  if ( `echo $temp | wc -w` > 0 ) then
+                        if ( `echo $temp | awk '{print substr($1,1,1)}'` != "-" ) then
+                              set p12 = `echo $temp`
+                              set ival = `expr $ival + 2`
+                        else
+                              echo 'Usage: resp_all_1s [-over] <-data datadir [-years yearlist> || < -file filepath>]'
+                              exit
+                        endif
+                  else
+                        echo 'Usage: resp_all_1s [-over] <-data datadir [-years yearlist> || < -file filepath>]'
+                        exit
+                  endif
+            
+            #-- set input years
+            else if ( `eval echo '$'$ival` == "-years" ) then
+                  set ii = `expr $ival + 1`
+                  set temp = `eval echo '$'$ii`
+                  while (`echo $temp | awk '{print substr($1,1,1)}'` != "-" )
+                        if ( `echo $temp | wc -w` > 0 ) then
+                              set years = `echo $years' '$temp`
+                              set ii = `expr $ii + 1`
+                              set temp = `eval echo '$'$ii`
+                        else
+                              break
+                        endif
+                  end
+                  set ival = `expr $ii - 1`      
+            
+            #-- look for overwriting
+            else if ( `eval echo '$'$ival` == "-over" ) then
+                  set ival = `expr $ival + 1`
+                  set ovrdisp = `echo 1`
+                  
+            #-- flag to force detrending of data
+            #-- this is focussed only for the list read. By default, it assumes you've already run some form of code on this
+            # data, so you don't want to detrend the data a third and fourth time. this also saves time. If this is the 
+            # first time running, then specify -detrend in in the command line.
+            else if ( `eval echo '$'$ival` == "-detrend" ) then
+                  set ival = `expr $ival + 1`
+                  set idetrend = `echo 1`
+            endif
+      end
+endif
+
+#-- set the data directory
+if ( ! -e $p12 ) then
+      echo " Dataset directory "$p12" doesn't exist"
+      exit
+endif
+
+##- data directory needs a full path
+if ( `echo $p12 | awk -F '/' '{print $1}' | wc -w` != 0 ) then
+      set currdir = `pwd`
+      set p12 = `echo $currdir'/'$p12`
+endif
+
+#-- make list dir
+mkdir -p $p12/lists/respeval
+
+#-- generate the list of year directories to work on
+if ($use_infile != 1) then
+      if (`echo $years | wc -w` == 0 ) then
+            set years = `ls $p12 | grep '^[12][09][0189][0-9]$'`
+            ##set years = `cat $dirlistfile | grep '^[12][09][0189][0-9]$'`
+      endif
+      if (${#years} > 1) then
+            set fnmend = `echo _${years[1]}-${years[${#years}]}`
+      else
+            set fnmend = `echo _${years[1]}`
+      endif
+else
+      set fnmend = `echo ''`
+endif
+
+#-- generate the problem directory and lists
+if (! -e $p12/lists) mkdir -p $p12/lists
+set problems = `echo $p12/lists/respeval/problems_resp${fnmend}_$datenow`
+set dotones = `echo ""`
+while (1 == 1)
+      if ( -f $problems ) then
+            set problems = `echo $problems".1"`
+            set dotones = `echo $dotones".1"`
+      else
+            break
+      endif
+end
+touch $problems
+
+#-- generate the success and fail output files
+set compresp = `echo $p12/lists/respeval/resp_complete${fnmend}_$datenow`
+while (1 == 1)
+      if ( -f $compresp ) then
+            set compresp = `echo $compresp".1"`
+      else
+            break
+      endif
+end
+touch $compresp
+
+set failresp = `echo $p12/lists/respeval/resp_fail${fnmend}_$datenow`
+while (1 == 1)
+      if ( -f $failresp ) then
+            set failresp = `echo $failresp".1"`
+      else
+            break
+      endif
+end
+touch $failresp
+
+#-- set the log file 
+set logfile = `echo $p12/lists/respeval/respeval_${fnmend}.log`
+if ( -f $logfile ) then
+  echo "Warning: logfile "`basename $logfile`" already exists in: "
+  echo "  "`dirname $logfile`
+endif
+
+echo ' ' >> $logfile
+date >> $logfile
+echo `basename $0` $* >> $logfile
+echo ' ' >> $logfile
+echo "Datset directory: "$p12 >> $logfile
+echo "Problem file: "$problems >> $logfile
+echo " Fail file: "$failresp >> $logfile
+echo " Complete file: "$compresp >> $logfile
+echo '' >> $logfile
+
+#-- set default
+#set scdefaults = `echo $AMIINVHOME'/reference/seedcordefaults'`
+set scdefaults = `echo 'seedcordefaults'`
+if ($use_infile == 0) then
+# run the script based on a data directory and a number of year folders...
+# designed for the first run through a set of folders.
+      #-- move to data directory
+      cd $p12
+      
+      #-- lock file?
+      set lockcount = 0
+      set lockedyears = ""
+      foreach year ($years)
+          if ( -e .respeval.$year.lock) then
+              set lockcount = 1
+              set lockedyears = `echo $lockedyears" "$year`
+          endif
+      end
+      if ($lockcount > 0) then
+          echo "RESPALL ALREADY RUN for Year(s): "$lockedyears
+          echo "  REMOVE LOCK FILES .respeval.[year].lock"
+          exit
+      endif
+
+      foreach year ($years)
+            if ( ! -e $year ) then
+                printf 'Missing Year: %4i\n' $year >> $logfile
+                continue
+            endif
+            #-- move to the year directory
+            cd $year
+            printf 'Year: %4i\n' $year >> $logfile
+
+            #-- now list the available months
+            set months = `ls -F | grep '[01][0-9]/' | cut -c 1-2`
+#            set months = `echo "02 03 04"`
+            ##set months = `cat $dirlistfile | grep '[01][0-9]'`  # if dirlist files present
+            
+            #-- loop through the months
+            foreach month ($months)
+                  #-- move to month directory
+                  cd $month
+                  printf ' Month: %2s\n' $month >> $logfile
+                  
+                  #-- now list the available events
+                  set events = `ls -F | grep '^[0-9]*_[0-9]*/' | cut -c 1-13`
+                  ##set events = `ls -F | grep '^090105_[0-9]*/' | cut -c 1-13`
+                  ##set events = `cat $dirlistfile | grep '^[0-9]*_[0-9]*/' | cut -c 1-13`
+                    
+                  #-- loop through the available events
+                  foreach event ($events)
+                        #-- move to event directory
+                        cd $event
+                        printf '   Event: %13s\n' $event >> $logfile
+
+                        #-- get the alphabetically listed station folders
+                        set an_folders = `ls -F | grep '^[0-9A-Za-z]/$' | cut -c 1-1`
+                        ##set an_folders = `cat $dirlistfile | grep '^[0-9A-Za-z]/$' | cut -c 1-1`
+                        
+                        #-- loop through the alphabetical folders
+                        foreach AN_folder ($an_folders)
+                              #-- move to the alphanumeric folder
+                              cd $AN_folder
+                              printf '     Folder %1s\n' $AN_folder >> $logfile
+                                    
+                              #-- get the stations present in this folder
+                              set stations = `ls | grep '^[0-9A-Za-z]*\.[0-9A-Za-z]*$'`
+                              ##set stations = `cat $dirlistfile | grep '^[0-9A-Z]*.[0-9A-Z]*$'`
+                              
+                              #-- loop through each station
+                              foreach station ($stations)
+                                    #-- move to the station directory
+                                    cd $station
+                                    printf '       Station: %s\n' $station >> $logfile
+                                    set stn = `echo $station | awk -F . '{print $2}' | tr "[A-Z]" "[a-z]"`
+
+                                    #-- generate a list of all components in the folder to fix header values
+                                    set sfs = `ls | grep "\."$stn"\." | grep "[blh]h[zen12]"`
+                                    
+                                    #-- are there any sac files at all in the directory
+                                    if (`echo $sfs | wc -w` == 0) then
+                                          printf '        No Sac Files\n'  >> $logfile
+                                          printf '0, %s, no sac files\n' `pwd` >>! $problems
+                                          cd ..
+                                          continue
+                                    endif
+                                    
+                                    #-- check weather there is the responses folder
+                                    if ( ! -d responses ) then
+                                          if ( -e response.tar.gz ) then 
+                                                gunzip response.tar.gz
+                                                tar xf response.tar
+                                          else if ( -e responses.tar.gz ) then
+                                                gunzip responses.tar.gz
+                                                tar xf responses.tar
+                                          else
+                                                printf '        ERROR: NO RESPONSE DIR\n' >> $logfile
+                                                printf '1 , %s , no response dir\n' `pwd` >>! $problems
+                                                continue
+                                          endif
+                                    endif
+                                    
+                                    ##-- copy defaults file to local directory
+                                    #cp $scdefaults .
+                                    
+                                    #-- loop through sacfiles
+                                    foreach sf ($sfs)
+                                          set pf = `echo 1`
+                                          #-- set the component id
+                                          set compid = `echo $sf | awk -F. '{print $3}' | cut -c 3-3`
+                                          set compid = `echo d{$compid}`
+                                          
+                                          #-- print the file
+                                          printf '        %s\n' $sf >> $logfile
+
+                                          # station and channel names
+                                          set sta = `echo $sf | awk -F. '{print $2}'`
+                                          set chan = `echo $sf | awk -F. '{print $3}'`
+                                          
+                                          # now changel to upper case
+                                          set sta1 = `echo $sta | tr "[a-z]" "[A-Z]"`
+                                          set chan1 = `echo $chan | tr "[a-z]" "[A-Z]"`
+
+                                          #-- check if already present
+                                          if ( -f ${sta}.$compid && $ovrdisp < 1 ) then
+                                                #-- this means that the files exist, but we don't want to overwrite them
+                                                printf '         %s - %s.%s Exists...skip\n' $event $sta $compid >> $logfile
+                                                continue
+                                          endif
+                                          
+                                          #-- remove previous iterations work
+                                          rm -f sacin sacout
+                                          
+                                          if ( `ls | grep -c ".out.ev"` > 0) rm -f *.out.ev*
+                                          rm -f dis.$sf
+                                          
+#                                          #-- remove the trend
+#                                          echo r $sf >! sacin
+#                                          echo rtrend >> sacin
+#                                          echo rtrend >> sacin
+#                                          echo w over >> sacin
+#                                          echo q >> sacin
+#                                          sac < sacin >& sacout
+                                          
+                                          # get the response file
+                                          set rf = `ls responses | grep ^RESP | grep "\."$sta1"\." | grep $chan1`
+                                                                  
+                                          if (`echo $rf | wc -w` == 0) then
+                                                printf '         ERROR: %s.%s , NO RESP\n' $sta1 $chan1 >> $logfile
+                                                printf '2, NO RESPONSE: %s , %s\n' `pwd` $sf >>! $problems
+                                                set pf = `echo 0`
+                                                printf '%s/%s\n' `pwd` $sf >>! $failresp
+                                                continue
+                                          else if (`echo $rf | wc -w` > 1) then
+                                                printf '         CAUTION: %s.%s , MULT RESP\n' $sta1 $chan1 >> $logfile
+                                                printf '3, MULT RESP: %s , %s , %i\n' `pwd` $sf `echo $rf | wc -w` >>! $problems
+                                                set khole = `(echo r $sf; echo lh KHOLE; echo q) | sac | grep KHOLE | wc -w`
+                                                printf '          Khole: %s' $khole >> $logfile
+                                                if ($khole == 2) then            # khole = ' '
+                                                      printf '...Fixing\n' >> $logfile
+                                                      foreach rfl ($rf)
+                                                            if (`echo $rfl | grep "\."$sta1"\.\." | wc -l` == 0) then
+                                                                  mv responses/$rfl responses/"Hide"{$rfl}
+                                                                  printf '           mv responses/%s to responses/Hide%s\n' $rfl $rfl >> $logfile
+                                                                  printf '3a, MV RESP: %s , %s\n' `pwd` $rfl >> $logfile
+                                                            else
+                                                                  printf '           Keep %s' $rfl >> $logfile
+                                                            endif
+                                                      end
+                                                else
+                                                      printf '...Keeping\n' >> $logfile
+                                                endif
+                                          endif
+                                          
+                                          #-- now run the seedcor fortran code
+                                          seedcor_1s $sf >& $sta1.$chan1.out.ev
+                                          
+                                          
+                                          #-- examine results of the seedcor operation
+                                          if ( -e dis.{$sf} ) then
+                                                #-- the displacement section was created ok
+                                                mv dis.{$sf} {$sta}.$compid 
+                                                #-- remove the trend
+                                                echo r {$sta}.$compid >! sacin
+                                                echo rtrend >> sacin
+                                                echo rtrend >> sacin
+                                                echo w over >> sacin
+                                                echo q >> sacin
+                                                sac < sacin >& sacout
+                                                printf '          Disp created: %s.%s\n' $sta $compid >> $logfile
+                                                set pf = `echo 1`
+                                          else
+                                                #-- displacement file wasn't created ok'
+                                                if (`echo $rf | wc -w` != 1) then
+                                                      printf '          ERROR: %s.%s , MULT RESP\n' $sta1 $chan1 >> $logfile
+                                                      printf '4, MULT RESP: %s , %s , %i , FAIL\n' `pwd` $sf `echo $rf | wc -w` >>! $problems
+                                                      set pf = `echo 0`
+                                                      printf '%s/%s\n' `pwd` $sf >>! $failresp
+                                                      continue
+                                                endif
+                                                
+                                                printf '          Fail. Fix Resp...\n' >> $logfile
+                                                
+                                                #-- try to correct the problems
+                                                set sdate = `grep " Start date: " responses/$rf`
+                                                set sdate = `echo $sdate[4]`
+                                                set edate = `grep " End date: " responses/$rf`
+                                                set edate = `echo $edate[4]`
+                                                set y1 = `echo $sdate | awk -F, '{print $1}'`
+                                                set d1 = `echo $sdate | awk -F, '{print $2}'`
+                                                set t1 = `echo $sdate | awk -F, '{print $3}'`
+                                                set h1 = `echo $t1 | awk -F: '{print $1}'`
+                                                set m1 = `echo $t1 | awk -F: '{print $2}'`
+                                                set t1 = `echo $h1 $m1 | awk '{print $1*60+$2}'`
+                                                set da1 = `echo $d1 | awk '{print $1*24*60}'`
+                                                set t1 = `echo $da1 $t1 | awk '{print $1+$2}'`
+                                                # AJS AUG 2010 -> edit this line as it was causing a strange error for @
+                                                if ( $edate == 'No' ) then      # No ending date
+                                                      set y2 = 3000
+                                                      set d2 = 1
+                                                      set t2 = 1
+                                                else 
+                                                      set y2 = `echo $edate | awk -F, '{print $1}'`
+                                                      set d2 = `echo $edate | awk -F, '{print $2}'`
+                                                      set t2 = `echo $edate | awk -F, '{print $3}'`
+                                                      set h2 = `echo $t2 | awk -F: '{print $1}'`
+                                                      set m2 = `echo $t2 | awk -F: '{print $2}'`
+                                                      set t2 = `echo $h2 $m2 | awk '{print $1*60+$2}'`
+                                                      set da2 = `echo $d2 | awk '{print $1*24*60}'`
+                                                      set t2 = `echo $da2 $t2 | awk '{print $1+$2}'`
+                                                      # AJS AUG 2010 -> edit this line as it was causing a strange error for @
+                                                endif
+
+                                                #set ye = `echo $sf | cut -c 1-2`
+#                                                @ ye = $ye + 1900
+                                                # AJS MAY 2010 -> had to edit this line as it was causing a strange error after 
+                                                # Ubuntu upgrade to 10.04 on May 13th, 2010
+                                                set ye = `echo $sf | cut -c 1-2 | awk '{print $1 +1900}'`
+                                                
+                                                set mo = `echo $sf | cut -c 3-4`
+                                                set da = `echo $sf | cut -c 5-6`
+                                                      #set da = `julday $mo $da $ye`
+                                                      #set da = `echo $da[8]`
+                                                set da = `g2j $ye $mo $da | awk '{print $2}'`
+                                                      # AJS APR 2010 -> I don't use julday, but instead use fortran routine g2j to switch from gregorian to julian dates...
+                                                set ho = `echo $sf | cut -c 8-9`
+                                                set mi = `echo $sf | cut -c 10-11`
+#                                               Comment out due to strange bug AJS MAY2010 Use below instead...
+                                                set dat = `echo $da | awk '{print $1*24*60}'`
+                                                set ti = `echo $ho $mi $dat | awk '{print $1*60 + $2 + $3}'`
+                                                
+                                                printf '           New Timings:\n' >> $logfile
+                                                printf '             year: %s %s %s\n' $y1 $ye $y2 >> $logfile
+                                                printf '             time: %s %s %s\n' $t1 $ti $t2 >> $logfile
+                                                printf '                %s %s  %s  %s %s  %s\n' $ye $y1  $da  $d1 $ti  $t1 >> $logfile
+                                                
+
+                                                set tc1 = `echo $ye $y1 | awk '{if ($1==$2) {print "1"} else {print "0"}}'`
+                                                set tc2 = `echo $da $d1 | awk '{if ($1==$2) {print "1"} else {print "0"}}'`
+                                                set tc3 = `echo $ti $t1 | awk '{if ($1>$2) {print "1"} else {print "0"}}'`
+                                                
+                                                if ($tc1 > 0 && $tc2 > 0 && $tc3 > 0 ) then
+
+                                                      mv responses/$rf responses/Old_$rf
+                                                      set sdate1 = `echo $sdate | cut -c 5-17`
+                                                      #@ nye = $y1 - 1
+                                                      # AJS AUG 2010 -> edit this line as it was causing a strange error for @
+                                                      set nye = `echo $ny1 | awk '{print $1-1}'`
+                                                      set sdate1 = `echo {nye}$sdate1`
+                                                      sed s/" Start date:  "$ye/" Start date:  "$nye/g responses/Old_$rf > responses/$rf
+                                                      
+                                                      #re-run seed cor
+                                                      seedcor_1s $sf >& $sta1.$chan1.out.evr
+                                                      
+                                                      if ( -e dis.{$sf} ) then
+                                                            mv dis.{$sf} {$sta}.$compid 
+                                                            #-- remove the trend
+                                                            echo r {$sta}.$compid >! sacin
+                                                            echo rtrend >> sacin
+                                                            echo rtrend >> sacin
+                                                            echo w over >> sacin
+                                                            echo q >> sacin
+                                                            sac < sacin >& sacout
+                                                            printf '5, FIXED RESP: %s , %s\n' `pwd` $sf >>! $problems
+                                                            printf '          Disp created: %s.%s\n' $sta $compid >> $logfile
+                                                            set pf = `echo 1`
+                                                      else
+                                                            printf '6, FIX RESP: %s , %s , FAIL\n' `pwd` $sf >>! $problems
+                                                            printf '          FIX Fail...\n' >> $logfile
+                                                            set pf = `echo 0`
+                                                            printf '%s/%s\n' `pwd` $sf >>! $failresp
+                                                            continue
+                                                      endif
+                                                else
+                                                      printf '7, FIX RESP: %s , %s , FAIL\n' `pwd` $sf >>! $problems
+                                                      printf '          FIX Fail...\n' >> $logfile
+                                                      set pf = `echo 0`
+                                                      printf '%s/%s\n' `pwd` $sf >>! $failresp
+                                                      continue
+                                                endif
+                                          endif
+                                          
+                                          #-- now look at resampling the delta values.
+                                          echo r ${sta}.$compid >! sacin
+                                          echo lh delta >> sacin
+                                          echo q >> sacin
+
+                                          set delta = `sac < sacin | grep delta`
+                                          if (`echo $delta | wc -w` != 3) then
+                                                printf '          Delta Error...\n' >> $logfile
+                                                printf '8, DELTA ERROR: %s , %s\n' `pwd` $sf >>! $problems
+                                                set pf = `echo 0`
+                                                printf '%s/%s\n' `pwd` $sf >>! $failresp
+                                                continue
+                                          endif
+
+                                          set delt = `printf "%f" $delta[3] | sed 's/[0]*$//'`
+                                          if ($delta[3] != '1.000000e+00') then
+                                                if ( `eq $delt 0.025` == 1 ) then
+                                                      echo r {$sta}.$compid >! sacin
+                                                      echo dec 2 >> sacin
+                                                      echo dec 4 >> sacin
+                                                      echo dec 5 >> sacin
+                                                      echo w over >> sacin
+                                                      echo q >> sacin
+                                                      sac < sacin >& sacout
+
+                                                else if (`eq $delt 0.2` == 1) then
+                                                      echo r {$sta}.$compid >! sacin
+                                                      echo dec 5 >> sacin
+                                                      echo w over >> sacin
+                                                      echo q >> sacin
+                                                      sac < sacin >& sacout
+
+                                                else if (`eq $delt 0.1` == 1) then
+                                                      echo r {$sta}.$compid >! sacin
+                                                      echo dec 5 >> sacin
+                                                      echo dec 2 >> sacin
+                                                      echo w over >> sacin
+                                                      echo q >> sacin
+                                                      sac < sacin >& sacout
+
+                                                else if (`eq $delt 0.01` == 1) then
+                                                      echo r {$sta}.$compid >! sacin
+                                                      echo dec 5 >> sacin
+                                                      echo dec 5 >> sacin
+                                                      echo dec 4 >> sacin
+                                                      echo w over >> sacin
+                                                      echo q >> sacin
+                                                      sac < sacin >& sacout
+
+                                                else if (`eq $delt 0.05` == 1) then
+                                                      echo r {$sta}.$compid >! sacin
+                                                      echo dec 4 >> sacin
+                                                      echo dec 5 >> sacin
+                                                      echo w over >> sacin
+                                                      echo q >> sacin
+                                                      sac < sacin >& sacout
+
+                                                else if (`eq $delt 0.04` == 1) then
+                                                      echo r {$sta}.$compid >! sacin
+                                                      echo dec 5 >> sacin
+                                                      echo dec 5 >> sacin
+                                                      echo w over >> sacin
+                                                      echo q >> sacin
+                                                      sac < sacin >& sacout
+
+                                                else if (`eq $delt 0.02` == 1) then
+                                                      echo r {$sta}.$compid >! sacin
+                                                      echo dec 5 >> sacin
+                                                      echo dec 5 >> sacin
+                                                      echo dec 2 >> sacin
+                                                      echo w over >> sacin
+                                                      echo q >> sacin
+                                                      sac < sacin >& sacout
+
+                                                else if (`eq $delt 0.0125` == 1) then
+                                                      echo r {$sta}.$compid >! sacin
+                                                      echo dec 4 >> sacin
+                                                      echo dec 5 >> sacin
+                                                      echo dec 4 >> sacin
+                                                      echo w over >> sacin
+                                                      echo q >> sacin
+                                                      sac < sacin >& sacout
+
+                                                else if (`eq $delt 0.005` == 1) then
+                                                      echo r {$sta}.$compid >! sacin
+                                                      echo dec 2 >> sacin
+                                                      echo dec 5 >> sacin
+                                                      echo dec 5 >> sacin
+                                                      echo dec 4 >> sacin
+                                                      echo w over >> sacin
+                                                      echo q >> sacin
+                                                      sac < sacin >& sacout
+
+                                                else
+                                                      set d1 = `echo $delta[3] | cut -c 1-5`
+                                                      set d11 = `echo $delta[3] | cut -c 1-6`
+                                                      set d2 = `echo $delta[3] | cut -c 9-12`
+                                                      if ($d1 == '9.999' && $d2 == 'e-01') then
+                                                            echo r {$sta}.$compid >! sacin
+                                                            echo ch delta 1 >> sacin
+                                                            echo wh >> sacin
+                                                            echo q >> sacin
+                                                            sac < sacin >& sacout
+                                                      else if ($d11 == '1.0000' && $d2 == 'e+00') then
+                                                            echo r {$sta}.$compid >! sacin
+                                                            echo ch delta 1 >> sacin
+                                                            echo wh >> sacin
+                                                            echo q >> sacin
+                                                            sac < sacin >& sacout
+                                                      else 
+                                                            printf '          DELTA: Unknown Interval %f -> %f\n' $delta[3] $delt >> $logfile
+                                                            printf '9, DELTA UNKNOWN: %s , %s , %g\n' `pwd` $sf $delta[3]  >> $problems
+                                                            set pf = `echo 0`
+                                                            printf '%s/%s\n' `pwd` $sf >>! $failresp
+                                                            continue
+                                                      endif
+                                                endif
+                                          endif
+                                          
+                                          #-- now check if this file passed or failed all the tests.
+                                          if ($pf == 1) then
+                                                printf '%s/%s.%s\n' `pwd` $sta $compid >>! $compresp
+                                                @ nfix++
+                                          else
+                                                printf '%s/%s\n' `pwd` $sf >>! $failresp
+                                          endif
+                                          
+                                          
+                                          if ( -f seedcor.log ) mv seedcor.log responses/${compid}.seedcor.log
+                                          if ( -f $sta1.$chan1.out.ev ) mv $sta1.$chan1.out.ev responses/.
+                                          if ( -f $sta1.$chan1.out.evr ) mv $sta1.$chan1.out.evr responses/.
+                                          #mv $sf
+                                    end # foreach sf ($sfs)
+                                    
+                                    #-- deal with files
+                                    if ( `ls | grep -c "fort."` > 0 ) rm -f fort.*
+                                    rm -f sacin sacout seedcor.log
+                                    
+                                    
+                                    #-- move back to alphanumeric folder
+                                    cd ..
+                                    
+                              end  # foreach station ($stations)
+                              ##-- move back to event folder
+                              cd .. 
+                              #-- are there any stations left in the AN_folder
+                              if ( `ls $AN_folder | wc -w` == 0 ) then
+                                    rmdir $AN_folder
+                                    printf '     Removed Folder %s\n' $AN_folder >> $logfile
+                              endif
+                        end # foreach AN_FOLDER ()
+                        #-- move back to month folder
+                        cd ..
+                        #-- are there any AN folders in the event folder
+                        if ( `ls $event | grep -v "cmt*" | wc -w` == 0 ) then
+                              rm -rf $event
+                              printf '    Removed Event %s\n' $event >> $logfile
+                        endif
+                  end #foreach event ($events)
+                  #-- move back to year folder
+                  cd ..
+                  #-- are there any events in the year folder
+                  if (`ls $month | wc -w` == 0 ) then
+                        rmdir $month
+                        printf '  Removed Month %s\n' $month >> $logfile
+                  endif
+            end #foreach month ($months)
+            #-- move back to data folder
+            cd ..
+            if ( `ls $year | wc -w` == 0 ) then
+                  rmdir $year
+                  printf ' Removed Year %s\n' $year >> $logfile
+            endif
+
+            #-- create year lock file
+            echo `date` !> $p12/.respeval.$year.lock
+      end #foreach year ($years)
+
+
+
+
+else if ($use_infile == 1) then
+# run through a set of directories (path to the station folder) relative to the
+# specified data directory. This is designed as a method for re-doing a specific
+# subset of folders or to add a specific set of data to the existing dataset without
+# having to redo all stations completed already.
+#
+# Example to create the input file for this section
+# cat data/lists/problems_resp_1995_22-Apr-2010 | awk '{print $4}' | awk -F '/data/' '{print $2}' | sort | uniq > dirlist.txt
+# this formatted style file is the correct input format for the running of the following script. Note that usually if those above events failed, re-running them here
+# will not magically cause them to work. This is mostly correcting a bug from the original version, where there was an incorrect call to the program julsub, meaning
+# that any waveform with that problem never was attempted to be fixed. I'm add this to try to allow that fix to occur, though it still may not actually work.
+      #-- check the input file exists
+      if ( ! -f $infile ) then
+            echo "Input file does not exist"
+            exit
+      endif
+      
+      #-- list file needs full path
+      if ( `echo $infile | awk -F '/' '{print $1}' | wc -w` != 0 ) then
+            set currdir = `pwd`
+            set infile = `echo $currdir'/'$infile`
+      endif
+      
+      #-- check again the input file exists
+      if ( ! -f $infile ) then
+            echo "Input file does not exist"
+            exit
+      endif
+
+      
+      #-- move to the data directory
+      cd $p12
+
+      #-- loop through each entry in the input file
+      foreach line  (`cat $infile`)
+            #-- Decompose the line
+            set year = `echo $line | awk -F '/' '{print $1}'`
+            set month = `echo $line | awk -F '/' '{print $2}'`
+            set event = `echo $line | awk -F '/' '{print $3}'`
+            set AN_folder = `echo $line | awk -F '/' '{print $4}'`
+            set station = `echo $line | awk -F '/' '{print $5}'`
+            set stn = `echo $station | awk -F . '{print $2}' | tr "[A-Z]" "[a-z]"`
+            
+            #-- lock file?
+            if (-e $p12/.respeval.$year.lock) then
+                echo "RESPALL ALREADY RUN"
+                echo "  REMOVE LOCK FILES .respeval.$year.lock"
+                continue
+            endif
+            
+            #-- output:
+            printf '%4s %2s %13s %1s %s\n' $year $month $event $AN_folder $station >> $logfile
+            
+            #-- does the folder exist?
+            if ( ! -d $year/$month/$event/$AN_folder/$station ) then
+                  printf '      Path does not exist! %s\n' `echo $year/$month/$event/$AN_folder/$station` >> $logfile
+                  continue
+            endif
+            
+            #-- move to the station folder
+            cd $year/$month/$event/$AN_folder/$station
+            printf '       %s\n' $station >> $logfile
+            
+            #-- generate a list of all components in the folder to fix header values
+            set sfs = `ls | grep "\."$stn"\." | grep "[bhl]h[zen12]"`
+            
+            #-- are there any sac files at all in the directory
+            if (`echo $sfs | wc -w` == 0) then
+                  printf '        No Sac Files\n'  >> $logfile
+                  printf '0, %s, no sac files\n' `pwd` >>! $problems
+                  cd ..
+                  continue
+            endif
+            
+            #-- check weather there is the responses folder
+            if ( ! -d responses ) then
+                  if ( -e response.tar.gz ) then 
+                        gunzip response.tar.gz
+                        tar xf response.tar
+                  else if ( -e responses.tar.gz ) then
+                        gunzip responses.tar.gz
+                        tar xf responses.tar
+                  else
+                        printf '        ERROR: NO RESPONSE DIR\n' >> $logfile
+                        printf '1 , %s , no response dir\n' `pwd` >>! $problems
+                        continue
+                  endif
+            endif
+            
+            #-- loop through sacfiles
+            foreach sf ($sfs)
+                  set pf = `echo 1`
+                  #-- set the component id
+                  set compid = `echo $sf | awk -F. '{print $3}' | cut -c 3-3`
+                  set compid = `echo d{$compid}`
+                  
+                  #-- print the file
+                  printf '        %s\n' $sf >> $logfile
+                  
+                  # station and channel names
+                  set sta = `echo $sf | awk -F. '{print $2}'`
+                  set chan = `echo $sf | awk -F. '{print $3}'`
+                  
+                  # now changel to upper case
+                  set sta1 = `echo $sta | tr "[a-z]" "[A-Z]"`
+                  set chan1 = `echo $chan | tr "[a-z]" "[A-Z]"`
+                  
+                  #-- check if already present
+                  if ( -f ${sta}.$compid && $ovrdisp < 1 ) then
+                        #-- this means that the files exist, but we don't want to overwrite them
+                        printf '         %s-%s.%s Exists...skip\n' $event $sta $compid >> $logfile
+                        continue
+                  endif
+                  
+                  #-- remove previous iterations work
+                  rm -f sacin sacout
+                  
+                  if ( `ls | grep -c ".out.ev"` > 0) rm -f *.out.ev*
+                  rm -f dis.$sf
+                  
+                  # get the response file
+                  set rf = `ls responses | grep ^RESP | grep "\."$sta1"\." | grep $chan1`
+                                          
+                  if (`echo $rf | wc -w` == 0) then
+                        printf '         ERROR: %s.%s , NO RESP\n' $sta1 $chan1 >> $logfile
+                        printf '2, NO RESPONSE: %s , %s\n' `pwd` $sf >>! $problems
+                        set pf = `echo 0`
+                        printf '%s/%s\n' `pwd` $sf >>! $failresp
+                        continue
+                  else if (`echo $rf | wc -w` > 1) then
+                        printf '         CAUTION: %s.%s , MULT RESP\n' $sta1 $chan1 >> $logfile
+                        printf '3, MULT RESP: %s , %s , %i\n' `pwd` $sf `echo $rf | wc -w` >>! $problems
+                        set khole = `(echo r $sf; echo lh KHOLE; echo q) | sac | grep KHOLE | wc -w`
+                        printf '          Khole: %s' $khole >> $logfile
+                        if ($khole == 2) then            # khole = ' '
+                              printf '...Fixing\n' >> $logfile
+                              foreach rfl ($rf)
+                                    if (`echo $rfl | grep "\."$sta1"\.\." | wc -l` == 0) then
+                                          mv responses/$rfl responses/"Hide"{$rfl}
+                                          printf '           mv responses/%s to responses/Hide%s\n' $rfl $rfl >> $logfile
+                                          printf '3a, MV RESP: %s , %s\n' `pwd` $rfl >> $logfile
+                                    else
+                                          printf '           Keep %s' $rfl >> $logfile
+                                    endif
+                              end
+                        else
+                              printf '...Keeping\n' >> $logfile
+                        endif
+                  endif
+                  
+                  #-- now run the seedcor fortran code
+                  seedcor_1s $sf >& $sta1.$chan1.out.ev
+                  
+                  #-- examine results of the seedcor operation
+                  if ( -e dis.{$sf} ) then
+                        #-- the displacement section was created ok
+                        mv dis.{$sf} {$sta}.$compid 
+                        #-- remove the trend
+                        echo r {$sta}.$compid >! sacin
+                        echo rtrend >> sacin
+                        echo rtrend >> sacin
+                        echo w over >> sacin
+                        echo q >> sacin
+                        sac < sacin >& sacout
+                        printf '          Disp created: %s.%s\n' $sta $compid >> $logfile
+                        set pf = `echo 1`
+                  else
+                        #-- displacement file wasn't created ok'
+                        if (`echo $rf | wc -w` != 1) then
+                              printf '          ERROR: %s.%s , MULT RESP\n' $sta1 $chan1 >> $logfile
+                              printf '4, MULT RESP: %s , %s , %i , FAIL\n' `pwd` $sf `echo $rf | wc -w` >>! $problems
+                              set pf = `echo 0`
+                              printf '%s/%s\n' `pwd` $sf >>! $failresp
+                              continue
+                        endif
+                        
+                        printf '          Fail. Fix Resp...\n' >> $logfile
+                        
+                        #-- try to correct the problems
+                        set sdate = `grep " Start date: " responses/$rf`
+                        set sdate = `echo $sdate[4]`
+                        set edate = `grep " End date: " responses/$rf`
+                        set edate = `echo $edate[4]`
+                        set y1 = `echo $sdate | awk -F, '{print $1}'`
+                        set d1 = `echo $sdate | awk -F, '{print $2}'`
+                        set t1 = `echo $sdate | awk -F, '{print $3}'`
+                        set h1 = `echo $t1 | awk -F: '{print $1}'`
+                        set m1 = `echo $t1 | awk -F: '{print $2}'`
+
+#                        @ t1 = $h1 * 60 + $m1
+#                        @ da1 = $d1 * 24
+#                        @ da1 = $da1 * 60
+#                        @ t1 = $da1 + $t1
+                        # AJS AUG 2010 -> edit this line as it was causing a strange error for @
+                        set t1 = `echo $h1 $m1 | awk '{print $1*60+$2}'`
+                        set da1 = `echo $d1 | awk '{print $1*24*60}'`
+                        set t1 = `echo $da1 $t1 | awk '{print $1+$2}'`
+                        
+                        if ( $edate == 'No' ) then      # No ending date
+                              set y2 = 3000
+                              set d2 = 1
+                              set t2 = 1
+                        else 
+                              set y2 = `echo $edate | awk -F, '{print $1}'`
+                              set d2 = `echo $edate | awk -F, '{print $2}'`
+                              set t2 = `echo $edate | awk -F, '{print $3}'`
+                              set h2 = `echo $t2 | awk -F: '{print $1}'`
+                              set m2 = `echo $t2 | awk -F: '{print $2}'`
+#                              @ t2 = $h2 * 60 + $m2
+#                              @ da2 = $d2 * 24
+#                              @ da2 = $da2 * 60
+#                              @ t2 = $da2 + $t2
+                              # AJS AUG 2010 -> edit this line as it was causing a strange error for @
+                              set t2 = `echo $h2 $m2 | awk '{print $1*60+$2}'`
+                              set da2 = `echo $d2 | awk '{print $1*24*60}'`
+                              set t2 = `echo $da2 $t2 | awk '{print $1+$2}'`
+                        endif
+                        
+
+                        #set ye = `echo $sf | cut -c 1-2`
+                        #@ ye = $ye + 1900
+                        # AJS MAY 2010 -> had to edit this line as it was causing a strange error after 
+                        # Ubuntu upgrade to 10.04 on May 13th, 2010
+                        set ye = `echo $sf | cut -c 1-2 | awk '{print $1 +1900}'`
+#                    echo $ye
+                        if($ye < 1950) @ ye = $ye + 100
+#                    echo $ye
+                        set mo = `echo $sf | cut -c 3-4`
+                        set da = `echo $sf | cut -c 5-6`
+                              #set da = `julday $mo $da $ye`
+                              #set da = `echo $da[8]`
+                        set da = `g2j $ye $mo $da | awk '{print $2}'`
+                              # AJS APR 2010 -> I don't use julday, but instead use fortran routine g2j to switch from gregorian to julian dates...
+                        set ho = `echo $sf | cut -c 8-9`
+                        set mi = `echo $sf | cut -c 10-11`
+#                        @ ti = $ho * 60 + $mi
+#                        @ dat = $da * 24
+#                        @ dat = $dat * 60
+#                        @ ti = $dat + $ti
+#                        Comment out due to strange bug AJS MAY2010 Use below instead...
+                        set dat = `echo $da | awk '{print $1*24*60}'`
+                        set ti = `echo $ho $mi $dat | awk '{print $1*60 + $2 + $3}'`
+                        
+                        printf '           New Timings:\n' >> $logfile
+                        printf '             year: %s %s %s\n' $y1 $ye $y2 >> $logfile
+                        printf '             time: %s %s %s\n' $t1 $ti $t2 >> $logfile
+                        printf '                %s %s  %s  %s %s  %s\n' $ye $y1  $da  $d1 $ti  $t1 >> $logfile
+                        
+                        
+                        #echo $ye"--"$y1"-"
+                        #echo $da"--"$d1"-"
+                        #echo $t1"--"$t1"-"
+                        
+                        # alternative test case to prevent errors occuring in the commented If Statement. Reason unknown...AJS Sep 2010
+                        # This fix appears to work. The value for $y1 was missing, this was why the if statment broke...
+                        # It appears this is a result of a badly formatted RESP file.
+                        set tc1 = `echo $ye $y1 | awk '{if ($1==$2) {print "1"} else {print "0"}}'`
+                        set tc2 = `echo $da $d1 | awk '{if ($1==$2) {print "1"} else {print "0"}}'`
+                        set tc3 = `echo $ti $t1 | awk '{if ($1>$2) {print "1"} else {print "0"}}'`
+                        
+                        if ($tc1 > 0 && $tc2 > 0 && $tc3 > 0 ) then
+#                        if ($ye == $y1 && $da == $d1 && $ti > $t1) then
+
+                              mv responses/$rf responses/Old_$rf
+                              set sdate1 = `echo $sdate | cut -c 5-17`
+                              @ nye = $y1 - 1
+                              set sdate1 = `echo {nye}$sdate1`
+                              sed s/" Start date:  "$ye/" Start date:  "$nye/g responses/Old_$rf > responses/$rf
+                              
+                              #re-run seed cor
+                              seedcor_1s $sf >& $sta1.$chan1.out.evr
+                              
+                              if ( -e dis.{$sf} ) then
+                                    mv dis.{$sf} {$sta}.$compid 
+                                    #-- remove the trend
+                                    echo r {$sta}.$compid >! sacin
+                                    echo rtrend >> sacin
+                                    echo rtrend >> sacin
+                                    echo w over >> sacin
+                                    echo q >> sacin
+                                    sac < sacin >& sacout
+                                    printf '5, FIXED RESP: %s , %s\n' `pwd` $sf >>! $problems
+                                    printf '          Disp created: %s.%s\n' $sta $compid >> $logfile
+                                    set pf = `echo 1`
+                              else
+                                    printf '6, FIX RESP: %s , %s , FAIL\n' `pwd` $sf >>! $problems
+                                    printf '          FIX Fail...\n' >> $logfile
+                                    set pf = `echo 0`
+                                    printf '%s/%s\n' `pwd` $sf >>! $failresp
+                                    continue
+                              endif
+                        else
+                              printf '7, FIX RESP: %s , %s , FAIL\n' `pwd` $sf >>! $problems
+                              printf '          FIX Fail...\n' >> $logfile
+                              set pf = `echo 0`
+                              printf '%s/%s\n' `pwd` $sf >>! $failresp
+                              continue
+                        endif
+                  endif
+                  
+                  #-- now look at resampling the delta values.
+                  echo r ${sta}.$compid >! sacin
+                  echo lh delta >> sacin
+                  echo q >> sacin
+                  
+                  set delta = `sac < sacin | grep delta`
+                  if (`echo $delta | wc -w` != 3) then
+                        printf '          Delta Error...\n' >> $logfile
+                        printf '8, DELTA ERROR: %s , %s\n' `pwd` $sf >>! $problems
+                        set pf = `echo 0`
+                        printf '%s/%s\n' `pwd` $sf >>! $failresp
+                        continue
+                  endif
+                  
+                  delt=`echo $delta[3] | awk '{printf "%f"}' | sed 's/[0]*$//'`
+                  if ($delta[3] != '1.000000e+00') then
+                        if ( `eq $delt 0.025` == 1 ) then
+                              echo r {$sta}.$compid >! sacin
+                              echo dec 2 >> sacin
+                              echo dec 4 >> sacin
+                              echo dec 5 >> sacin
+                              echo w over >> sacin
+                              echo q >> sacin
+                              sac < sacin >& sacout
+
+                        else if (`eq $delt 0.2` == 1) then
+                              echo r {$sta}.$compid >! sacin
+                              echo dec 5 >> sacin
+                              echo w over >> sacin
+                              echo q >> sacin
+                              sac < sacin >& sacout
+
+                        else if (`eq $delt 0.1` == 1) then
+                              echo r {$sta}.$compid >! sacin
+                              echo dec 5 >> sacin
+                              echo dec 2 >> sacin
+                              echo w over >> sacin
+                              echo q >> sacin
+                              sac < sacin >& sacout
+
+                        else if (`eq $delt 0.01` == 1) then
+                              echo r {$sta}.$compid >! sacin
+                              echo dec 5 >> sacin
+                              echo dec 5 >> sacin
+                              echo dec 4 >> sacin
+                              echo w over >> sacin
+                              echo q >> sacin
+                              sac < sacin >& sacout
+
+                        else if (`eq $delt 0.05` == 1) then
+                              echo r {$sta}.$compid >! sacin
+                              echo dec 4 >> sacin
+                              echo dec 5 >> sacin
+                              echo w over >> sacin
+                              echo q >> sacin
+                              sac < sacin >& sacout
+
+                        else if (`eq $delt 0.04` == 1) then
+                              echo r {$sta}.$compid >! sacin
+                              echo dec 5 >> sacin
+                              echo dec 5 >> sacin
+                              echo w over >> sacin
+                              echo q >> sacin
+                              sac < sacin >& sacout
+
+                        else if (`eq $delt 0.02` == 1) then
+                              echo r {$sta}.$compid >! sacin
+                              echo dec 5 >> sacin
+                              echo dec 5 >> sacin
+                              echo dec 2 >> sacin
+                              echo w over >> sacin
+                              echo q >> sacin
+                              sac < sacin >& sacout
+
+                        else if (`eq $delt 0.0125` == 1) then
+                              echo r {$sta}.$compid >! sacin
+                              echo dec 4 >> sacin
+                              echo dec 5 >> sacin
+                              echo dec 4 >> sacin
+                              echo w over >> sacin
+                              echo q >> sacin
+                              sac < sacin >& sacout
+
+                        else if (`eq $delt 0.005` == 1) then
+                              echo r {$sta}.$compid >! sacin
+                              echo dec 2 >> sacin
+                              echo dec 5 >> sacin
+                              echo dec 5 >> sacin
+                              echo dec 4 >> sacin
+                              echo w over >> sacin
+                              echo q >> sacin
+                              sac < sacin >& sacout
+
+                        else
+                              set d1 = `echo $delta[3] | cut -c 1-5`
+                              set d11 = `echo $delta[3] | cut -c 1-6`
+                              set d2 = `echo $delta[3] | cut -c 9-12`
+                              if ($d1 == '9.999' && $d2 == 'e-01') then
+                                    echo r {$sta}.$compid >! sacin
+                                    echo ch delta 1 >> sacin
+                                    echo wh >> sacin
+                                    echo q >> sacin
+                                    sac < sacin >& sacout
+                              else if ($d11 == '1.0000' && $d2 == 'e+00') then
+                                    echo r {$sta}.$compid >! sacin
+                                    echo ch delta 1 >> sacin
+                                    echo wh >> sacin
+                                    echo q >> sacin
+                                    sac < sacin >& sacout
+                              else 
+                                    printf '          DELTA: Unknown Interval %f -> %f\n' $delta[3] $delt >> $logfile
+                                    printf '9, DELTA UNKNOWN: %s , %s , %g\n' `pwd` $sf $delta[3] >>! $problems
+                                    set pf = `echo 0`
+                                    printf '%s/%s\n' `pwd` $sf >>! $failresp
+                                    continue
+                              endif
+                        endif
+                  endif
+                  
+                  #-- now check if this file passed or failed all the tests.
+                  if ($pf == 1) then
+                        printf '%s/%s.%s\n' `pwd` $sta $compid >>! $compresp
+                        @ nfix++
+                  else
+                        printf '%s/%s\n' `pwd` $sf >>! $failresp
+                  endif
+                  
+                  
+                  if ( -f seedcor.log ) mv seedcor.log responses/${compid}.seedcor.log
+                  if ( -f $sta1.$chan1.out.ev ) mv $sta1.$chan1.out.ev responses/.
+                  if ( -f $sta1.$chan1.out.evr ) mv $sta1.$chan1.out.evr responses/.
+                  #mv $sf
+            end # foreach sf ($sfs)
+            
+            #-- deal with files
+            if ( `ls | grep -c "fort."` > 0 ) rm -f fort.*
+            rm -f sacin sacout seedcor.log
+            
+            
+            #-- move back to alphanumeric folder
+            cd ..
+            
+            #-- back to data directory
+            cd $p12
+            
+            #--lock file
+            echo `date` >! $p12/.respeval.$year.lock
+      end #-- foreach line (`cat $infile`)
+      cd ..
+endif
+                              
+                              
+                              
+echo "Done" >> $logfile
+
+
+#-- mail finished
+if (! -z $email ) then
+  echo `basename $0` $* >! mail.comp.$fnmend.$dotones
+  echo "Start: "$datenow" "$timenow >> mail.comp.$fnmend.$dotones
+  echo "End: "`date "+%d-%b-%Y %H:%M:%S"` >> mail.comp.$fnmend.$dotones
+  echo " " >> mail.comp.$fnmend.$dotones
+  echo "Working Directory: " >> mail.comp.$fnmend.$dotones
+  echo $p12 >> mail.comp.$fnmend.$dotones
+	if ( -f /usr/bin/mail ) then
+		mail -s "resp_all_1s complete" $emailproc < mail.comp.$fnmend.$dotones
+	else if ( -f /usr/bin/mutt ) then
+	  mutt -s "resp_all_1s complete" $emailproc < mail.comp.$fnmend.$dotones
+	endif
+	rm -f mail.comp.$fnmend.$dotones
+endif

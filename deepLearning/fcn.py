@@ -143,11 +143,13 @@ class lossFuncSoft:
         yout1 = 1-yout0
         yout0 = K.clip(yout0,1e-7,1)
         yout1 = K.clip(yout1,1e-7,1)
+        maxChannel  = K.max(y0,axis=1, keepdims=True)
+        maxSample   = K.max(maxChannel,axis=3, keepdims=True)
         return -K.mean(\
                          (\
                              y0*K.log(yout0)+y1*K.log(yout1)\
                                                                      )*\
-                         K.max(y0,axis=1, keepdims=True),\
+                         (maxChannel*0.95+0.05)*maxSample,\
                                                                          )
 class lossFuncSoftNP:
     # 当有标注的时候才计算权重
@@ -160,12 +162,15 @@ class lossFuncSoftNP:
         yout1 = 1-yout0
         yout0 = K.clip(yout0,1e-7,1)
         yout1 = K.clip(yout1,1e-7,1)
-        mean = (y0.max(axis=1)>0.5).mean()
+        maxChannel  = K.max(y0,axis=1, keepdims=True)
+        mean = maxChannel.mean()
+        #print(mean)
+        maxSample   = K.max(maxChannel,axis=3, keepdims=True)
         return -1/mean*K.mean(\
                          (\
                              y0*K.log(yout0)+y1*K.log(yout1)\
                                                                      )*\
-                         K.max(y0,axis=1, keepdims=True),\
+                         (maxChannel*0.95+0.05)*maxSample,\
                                                                          )
 class lossFuncSoftSq:
     # 当有标注的时候才计算权重
@@ -547,7 +552,7 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
 
         last = DenseNew(1,name='DenseNew'+layerStr+'1')(last)
         if config.isBNL[i]:
-            last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
+            last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1',)(last)
         last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
         
         
@@ -1518,6 +1523,7 @@ class fcnConfig:
             self.featureL      = [50,50,75,75,100,100,150]
             self.featureL      = [50,75,100,125,150,200,150]
             self.featureL      = [50,50,75,100,125,150,150]
+            self.featureL      = [60,60,80,80,120,160,320]
             #self.featureL      = [50,50,75,75,100,100,125]
             #self.featureL      = [50,75,75,100,125,150,200]
             #self.featureL      = [75,75,75,75,75,75,75]
@@ -1548,7 +1554,7 @@ class fcnConfig:
             self.poolL        = [MaxPooling2D,MaxPooling2D,MaxPooling2D,\
             MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,\
             MaxPooling2D,MaxPooling2D,MaxPooling2D]
-            self.poolL        = [MaxPooling2D,AveragePooling2D]*20
+            self.poolL        = [MaxPooling2D]*20
             self.lossFunc     = lossFuncSoft(w=10)#10
             self.inAndOutFunc = inAndOutFuncNewNetDenseUp#inAndOutFuncNewUp
             self.lossFuncNP     = lossFuncSoftNP()
@@ -2018,7 +2024,7 @@ class model(Model):
         self.compile(loss=self.config.lossFunc, optimizer='Nadam')
         K.set_value(self.optimizer.lr,  lr0)
 
-batchMax=8*12
+batchMax=8*24
 class modelUp(Model):
     def __init__(self,weightsFile='',metrics=rateNp,\
         channelList=[0],onlyLevel=-1000,up=1,mul=1):
@@ -2042,17 +2048,20 @@ class modelUp(Model):
         super().__init__(inputs=inputs,outputs=outputs)
         self.compile(loss=config.lossFunc, optimizer='Nadam')
         return model
-    def predict(self,x,batch_size=batchMax,**kwargs):
+    def predict(self,x,batch_size=-1,**kwargs):
         #print('inx')
         maxN = 512
         NX = len(x)
+        if batch_size==-1:
+            batch_size = int(batchMax/self.mul)
         #print('inx done')
         if self.config.mode=='surf' or self.config.mode=='surfUp':
             Y = []
+            #print('inx',batch_size)
             for i in range(0,NX,maxN):
                 X = self.inx(x[i:min(i+maxN,NX)])
                 if len(X)>0:
-                    Y.append(super().predict(X,batch_size=int(batch_size/self.mul),**kwargs))
+                    Y.append(super().predict(X,batch_size=batch_size,**kwargs))
             Y=np.concatenate(Y,axis=0)
             return Y
         else:
@@ -2062,6 +2071,7 @@ class modelUp(Model):
         if np.isnan(x).sum()>0 or np.isinf(x).sum()>0:
             print('bad record')
             return None
+        #print('train',batchSize)
         return super().fit(x ,y,batch_size=batchSize,**kwargs)
     def plot(self,filename='model.png'):
         plot_model(self, to_file=filename)
@@ -2070,10 +2080,10 @@ class modelUp(Model):
         if self.config.mode=='surf' or self.config.mode=='surfUp' or self.config.mode=='surfUpMul':
             if x.shape[-1] > len(self.channelList):
                 x = x[:,:,:,self.channelList]
-            timeN0 = np.float32(x.shape[1])
-            timeN  = (x[:,:,:,0]!=0).sum(axis=1,keepdims=True).astype(np.float32)
-            timeN *= 1+0.2*(np.random.rand(*timeN.shape).astype(np.float32)-0.5)
-            x[:,:,:,0]/=(x[:,:,:,0].std(axis=(1,2),keepdims=True))*(timeN0/timeN)**0.5
+            #timeN0 = np.float32(x.shape[1])
+            #timeN  = (x[:,:,:,0]!=0).sum(axis=1,keepdims=True).astype(np.float32)
+            #timeN *= 1+0.2*(np.random.rand(*timeN.shape).astype(np.float32)-0.5)
+            x[:,:,:,0]/=(x[:,:,:,0].std(axis=(1,),keepdims=True))#*(timeN0/timeN)**0.5
         else:
             x/=x.std(axis=(1,2,3),keepdims=True)+np.finfo(x.dtype).eps
         return x
@@ -2248,26 +2258,37 @@ class modelUp(Model):
         iL = random.sample(indexL,testN)
         xTrain, yTrain , t0LTrain = XYT(iL,mul=mul)
         print('training',xTrain.shape,len(iL))
-        sampleTime=0
+        sampleTime=-1
         r = len(XYT)/len(XYT.corrL)
         batchSize = int(batchMax/self.mul)
+        perM=int(perN/mul)
+        perM= int(perM/batchSize)*batchSize
         for i in range(N):
             gc.collect()
-            iL = random.sample(indexLMul,int(perN/mul))
+            iL = random.sample(indexLMul,perM)
             for ii in iL:
                 sampleDone[ii]+=r*mul
             x, y , t0L = XYT(iL,mul=mul,N=mul)
             print('loop:',sampleDone.mean())
             self.fit(x ,y,batchSize=batchSize)
+            #print(self.layers[47].variables[-2][-10:],self.layers[47].variables[-1][-10:])
             if int(sampleDone.mean())>sampleTime:
                 sampleTime = int(sampleDone.mean())
                 if len(xTest)>0:
                     youtTrain = 0
                     youtTest  = 0
+                    #xTrain=x
+                    #yTrain=y
                     youtTrain = self.predict(xTrain,batch_size=batchSize)
+                    #youtTrain = self.predict(x,batch_size=batchSize)
                     youtTest  = self.predict(xTest,batch_size=batchSize)
+                    #print(youtTest.mean())
                     lossTrain = self.lossFunc(yTrain,youtTrain)
+                    #lossTrain = self.lossFunc(y,youtTrain)
                     lossTest    = self.lossFunc(yTest,youtTest)
+                    #lossTrain = self.evaluate(self.inx(xTrain),yTrain)
+                    #lossTest    = self.evaluate(self.inx(xTest),yTest)
+                    #print(xTrain.shape,yTrain.shape)
                     print('train loss',lossTrain,'test loss: ',lossTest,\
                         'sigma: ',XYT.corrL.timeDisKwarg['sigma'],\
                         'w: ',self.config.lossFunc.w, \

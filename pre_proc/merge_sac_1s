@@ -1,0 +1,752 @@
+#!/bin/tcsh -f
+#
+# Program: merge_sac_1s
+#
+# Description: 
+# Step 2 of pre-processing routines after extraction of data.
+# Preceeding: corsac_1s
+# Following: clipped_1s
+# 
+# This script modifies the sac files to merge together station-channel data
+# for events with multiple sac files. Multiple files are noted with a number
+# of 7's appended to the filename. Note that if the files are too fragmented,
+# i.e., 10s to 100s of fragments, this can cause errors in sac. To fix, delete
+# the .sac_history file in your home directory. This script uses the fortran
+# binary file sacmerge_1s.f This code is run from the main dataset directory
+# containing the "data" folder where the sac data has been extracted to.
+#
+# Error Codes:
+# 
+# Andrew Schaeffer, January 2010. Modified from Sergei Lebedev's merge_sac_2s
+#	Modified: August 2010, AJS
+#			-> Minor changes to add more detail to email output.
+#
+# Required compiled binaries in user path:
+# - sacmerge_1s
+# - sac
+#
+#
+#
+
+if ($#argv < 1) then
+  echo 'Usage: merge_sac_1s <-data datadir -years yearlist> || < -file filepath>'
+  exit
+endif
+
+#-- source config file
+#source ~/bin/parse_config_csh
+
+unalias mv
+unalias rm
+
+#-- optional value...
+set dirlistfile = `echo 'ls-d'`
+set filelistfile = `echo 'ls-f'`
+
+#-- runtime options
+set use_infile = `echo 0`
+set years = `echo ''`
+
+#--set date
+set datenow = `date +%d-%b-%Y`
+set timenow = `date +%H:%M:%S`
+
+#-- parse input line
+if ( $#argv >= 1 ) then
+	set ival = `echo 1`
+	while ( $ival < $#argv ) 
+		#-- if running using an input file
+		if ( `eval echo '$'$ival` == "-file" ) then
+			set ii = `expr $ival + 1`
+			set temp = `eval echo '$'$ii`
+			if ( `echo $temp | wc -w` > 0 ) then
+				if ( `echo $temp | awk '{print substr($1,1,1)}'` != "-" ) then
+					set infile = `echo $temp`
+					set use_infile = `echo 1`
+					set ival = `expr $ival + 2`
+				else
+					echo 'Usage: merge_sac_1s <-data datadir -years yearlist> || < -file filepath>'
+					exit
+				endif
+			else
+				echo 'Usage: merge_sac_1s <-data datadir -years yearlist> || < -file filepath>'
+				exit
+			endif
+		
+		#-- set data directory
+		else if ( `eval echo '$'$ival` == "-data" ) then
+			set ii = `expr $ival + 1`
+			set temp = `eval echo '$'$ii`
+			if ( `echo $temp | wc -w` > 0 ) then
+				if ( `echo $temp | awk '{print substr($1,1,1)}'` != "-" ) then
+					set p12 = `echo $temp`
+					set ival = `expr $ival + 2`
+				else
+					echo 'Usage: merge_sac_1s <-data datadir -years yearlist> || < -file filepath>'
+					exit
+				endif
+			else
+				echo 'Usage: merge_sac_1s <-data datadir -years yearlist> || < -file filepath>'
+				exit
+			endif
+		
+		#-- set input years
+		else if ( `eval echo '$'$ival` == "-years" ) then
+			set ii = `expr $ival + 1`
+			set temp = `eval echo '$'$ii`
+			while (`echo $temp | awk '{print substr($1,1,1)}'` != "-" )
+				if ( `echo $temp | wc -w` > 0 ) then
+					set years = `echo $years' '$temp`
+					set ii = `expr $ii + 1`
+					set temp = `eval echo '$'$ii`
+				else
+					break
+				endif
+			end
+			set ival = `expr $ii - 1`	
+		endif
+	end
+endif
+
+#-- set the data directory
+if ( ! -e $p12 ) then
+	echo " Dataset directory "$p12" doesn't exist"
+	exit
+endif
+
+##- data directory needs a full path
+if ( `echo $p12 | awk -F '/' '{print NF}'` == 1 ) then
+	set currdir = `pwd`
+	set p12 = `echo $currdir'/'$p12`
+endif
+
+#-- make lists and mergesac directory
+mkdir -p $p12/lists/mergesac
+
+#-- generate the list of year directories to work on
+if ($use_infile != 1) then
+      if (`echo $years | wc -w` == 0 ) then
+            set years = `ls $p12 | grep '^[12][09][0189][0-9]$'`
+            ##set years = `cat $dirlistfile | grep '^[12][09][0189][0-9]$'`
+      endif
+      if (${#years} > 1) then
+            set fnmend = `echo _${years[1]}-${years[${#years}]}`
+      else
+            set fnmend = `echo _${years[1]}`
+      endif
+else
+      set fnmend = `echo ''`
+endif
+
+#-- generate the problem directory and lists
+set dotones = `echo ""`
+set problems = `echo $p12/lists/mergesac/problems_ms${fnmend}_$datenow`
+while (1 == 1)
+      if ( -f $problems ) then
+            set problems = `echo $problems".1"`
+            set dotones = `echo $dotones".1"`
+      else
+            break
+      endif
+end
+touch $problems
+
+#-- set the log file 
+set logfile = `echo $p12/lists/mergesac/mergesac_${fnmend}.log`
+if ( -f $logfile ) then
+  echo "Warning: logfile "`basename $logfile`" already exists in: "
+  echo "  "`dirname $logfile`
+endif
+
+echo ' ' >> $logfile
+date >> $logfile
+echo `basename $0` $* >> $logfile
+echo ' ' >> $logfile
+echo "Datset directory: "$p12 >> $logfile
+echo "Problem file: "$problems >> $logfile
+
+
+
+#-- generate the list of year directories to work on
+if ($use_infile != 1) then
+	if (`echo $years | wc -w` == 0 ) then
+		set years = `ls $p12 | grep '^[12][09][0189][0-9]$'`
+		##set years = `cat $dirlistfile | grep '^[12][09][0189][0-9]$'`
+	endif
+endif
+
+if ($use_infile == 0) then
+# run the script based on a data directory and a number of year folders...
+# designed for the first run through a set of folders.
+	#-- move to data directory
+	cd $p12
+	
+	#-- lock file?
+	set lockcount = 0
+	set lockedyears = ""
+	foreach year ($years)
+		if ( -e .mergesac.$year.lock) then
+			set lockcount = 1
+			set lockedyears = `echo $lockedyears" "$year`
+		endif
+	end
+	if ($lockcount > 0) then
+		echo "MERGESAC ALREADY RUN for Year(s): "$lockedyears
+		echo "  REMOVE LOCK FILES .mergesac.[year].lock"
+		exit
+	endif
+	
+	foreach year ($years)
+		if ( ! -e $year ) then
+			printf 'Missing Year: %4i\n' $year >> $logfile
+			continue
+		endif
+		#-- move to the year directory
+		cd $year
+		printf 'Year: %4i\n' $year >> $logfile
+		
+		#-- now list the available months
+		##set months = `echo "05 06 07 08 09 10 11 12"`
+		set months = `ls -F | grep '[01][0-9]/' | cut -c 1-2`
+		##set months = `cat $dirlistfile | grep '[01][0-9]'`  # if dirlist files present
+		
+		#-- loop through the months
+		foreach month ($months)
+			#-- move to month directory
+			cd $month
+			printf ' Month: %2s\n' $month >> $logfile
+			
+			#-- now list the available events
+			set events = `ls -F | grep '^[0-9]*_[0-9]*/' | cut -c 1-13`
+			##set events = `cat $dirlistfile | grep '^[0-9]*_[0-9]*/' | cut -c 1-13`
+			
+			#-- loop through the available events
+			foreach event ($events)
+				#-- clear sac_history file incase of trouble
+				rm -f ~/.sac_history
+				
+				#-- move to event directory
+				cd $event
+                echo $event
+				printf '   Event: %13s\n' $event >> $logfile
+				
+				#-- get the alphabetically listed station folders
+				set an_folders = `ls -F | grep '^[0-9A-Za-z]/$' | cut -c 1-1`
+				##set an_folders = `cat $dirlistfile | grep '^[0-9A-Z]/$' | cut -c 1-1`
+				
+				#-- loop through the alphabetical folders
+				foreach AN_folder ($an_folders)
+					#-- move to the alphanumeric folder
+					cd $AN_folder
+					printf '     Folder %1s\n' $AN_folder >> $logfile
+						
+					#-- get the stations present in this folder
+					set stations = `ls | grep '^[0-9A-Za-z]*\.[0-9A-Za-z]*$'`
+					##set stations = `cat $dirlistfile | grep '^[0-9A-Za-z]*.[0-9A-Za-z]*$'`
+					
+					#-- loop through each station
+					foreach station ($stations)
+						#-- move to the station directory
+						cd $station
+						printf '       Station: %s\n' $station >> $logfile
+						set stn = `echo $station | awk -F . '{print $2}' | tr "[A-Z]" "[a-z]"`
+						
+						#-- remove old sacin files
+						rm -f sacin sacout
+						
+						#-- set an upper limit on the number of files...check this before running sac
+						set sfs = `ls | grep "\."$stn"\." | grep ".[bhl]hz7*"`
+						if (`echo $sfs | wc -w` > 20) then
+							printf '1.5 , %s , %3s , too many z files to sac load\n' `pwd` >> $problems
+							printf '           ...%3s...too many Z files\n' `echo $sfs | wc -w` >> $logfile
+							
+							cd ..
+							
+							#-- it didn't correct all of the files, so we need to move them
+							if ( ! -e $p12/multiples/$year/$month/$event/$AN_folder/$station ) mkdir -p $p12/multiples/$year/$month/$event/$AN_folder
+							mv $station $p12/multiples/$year/$month/$event/$AN_folder/.
+							continue
+						endif
+						
+						#-- write the dynamically allocate header values to the header
+						printf '         Fix DIST and DELTA...' >> $logfile
+						
+						#-- generate a list of all components in the folder to fix header values
+						set badsac = 0
+						set sfs = `ls | grep "\."$stn"\." | grep "[zen12]"` 
+						foreach sf ($sfs)
+							echo r $sf >! sacin 
+							echo write over  >> sacin
+							echo lh delta >> sacin
+							echo q >> sacin 
+							
+							sac < sacin >& sacout
+							
+							set errval = `grep -c "ERROR " sacout`
+							if ( $errval > 0 ) then
+								set badsac = 4
+								continue
+							endif
+							
+							set delta = `grep delta sacout`
+							#-- write the delta value back depending on certain criteria. Why?
+							if ($delta[3] != '1.000000e+00') then
+								set d1 = `echo $delta[3] | cut -c 1-5`
+								set d11 = `echo $delta[3] | cut -c 1-6`
+								set d2 = `echo $delta[3] | cut -c 9-12`
+								if ($d1 == '9.999' && $d2 == 'e-01') then
+									echo r $sf >! sacin
+									echo ch delta 1 >> sacin
+									echo wh >> sacin
+									echo q >> sacin
+									sac < sacin > sacout
+									printf '\n            DELTA:  %s  changed from  %f  to 1' $sf $delta[3] >> $logfile
+								else if ($d11 == '1.0000' && $d2 == 'e+00') then
+									echo r $sf >! sacin
+									echo ch delta 1 >> sacin
+									echo wh >> sacin
+									echo q >> sacin
+									sac < sacin > sacout
+									printf '\n            DELTA:  %s  changed from  %f  to 1' $sf $delta[3] >> $logfile
+								endif
+							endif
+						end
+						set sfs = `echo ""`
+						
+						#-- check if there were any bad sac files
+						if ( $badsac > 0 ) then
+							#-- we need to break from this station and move its data
+							cd ..
+							if ( ! -e $p12/badsac/$year/$month/$event/$AN_folder ) mkdir -p $p12/badsac/$year/$month/$event/$AN_folder
+							mv $station $p12/badsac/$year/$month/$event/$AN_folder/.
+							printf '\n        BadSAC: %s/%s\n' `pwd` $station >> $logfile
+							printf '4 , %s/%s , BadSAC\n' `pwd` $station >> $problems
+							printf '\n            DONE\n' >> $logfile
+							continue
+						else
+						        printf '\n            DONE\n' >> $logfile
+						endif
+						
+						rm -f sacout sacin
+							
+						#-- are there any files with 7's (ie repeats)
+						set mults = `ls | grep "[zne12]"7$`
+				
+						if (`echo $mults | wc -w` == 0) then
+							printf '        No Multiples...\n' >> $logfile
+							#-- move back to alphabetical directory
+							cd ..
+							continue
+						endif
+						
+						#-- if there is no doubles directory, then make the directory
+						if ( ! -d responses/Doubles) mkdir -p responses/Doubles
+												
+						#-- generate a list of the available channels that have at least one double
+						set chans = `ls | grep "\."$stn"\." | grep "[zen12]"7$ | awk -F. '{print $3}' | cut -c 1-3`
+						set ones = ''
+						foreach chan ($chans)
+							set one = `ls | grep ^"[8901]" | grep "\."$stn"\."{$chan}$`
+							set ones = `echo $ones $one`
+						end
+						
+						##Debug
+						##echo mults $mults
+						##echo chans $chans
+						##echo ones $ones `echo $ones | wc -w` `echo $ones | wc -l`
+						
+						#-- loop through channels that have a double
+						@ nbest=0
+						foreach one ($ones)
+							#-- print the channel with multiples
+							printf '          Channel: %3s\n' `echo $one | awk -F. '{print $3}'` >> $logfile
+							
+							#-- set the sacfiles
+							set sfs = `ls | grep ^"[8901]" | grep $one`
+							
+							##Debug
+							##echo sfs $sfs
+							
+							#-- set an upper limit on the number of files
+							if (`echo $sfs | wc -w` > 20) then
+								printf '1 , %s , %3s , too many files\n' `pwd` $one >> $problems
+								printf '           ...%3s...too many files\n' `echo $sfs | wc -w` >> $logfile
+								mv {$one}* respones/Doubles
+								continue
+							endif
+				
+							#-- prepare the input file for sacmerge
+							ls | grep ^"[8901]" | grep $one >! inmerge
+							
+							#-- run sacmerge
+							set soutfile = `echo $one | awk -F. '{print "sacout_"$3}'`
+							sacmerge_1s >! $soutfile
+							
+							#-- mv input file to responses
+							mv inmerge responses/.
+							mv $soutfile responses/.
+							
+							#-- what is happening here?
+							set file1 = `echo $one`
+							#set file1 = `ls | grep ^"[8901]" | grep $one
+							
+							#-- remove the sac input files
+							rm -f sacin sacout
+							
+							#-- check for best file!
+							set best = `ls | grep ^"[8901]" | grep $one | grep best$`
+							##echo best `echo $best | wc -w` $best
+							
+							if (`echo $best | wc -w` > 0 ) then
+								mv $file1 responses/Doubles/{$file1}_7
+								set tomove = `ls | grep ^"[8901]" | grep $one | grep -v best$`
+								mv $tomove responses/Doubles
+							
+								if (`echo $best | wc -w` == 1) mv $best $file1
+								printf '            Made Best...\n' >> $logfile
+								@ nbest++
+							else
+								printf '            No Best...\n' >> $logfile
+							endif
+							
+							if ( -e Mergeproblem) then
+								printf '2 , %s ,%s , Mergeproblem \n' `pwd` $one >> $problems
+							endif
+							
+							set ofs = `ls | grep ^Mer`
+							foreach of ($ofs)
+								mv $of responses/Doubles/{$of}_$one
+							end
+						end #-- foreach one ($ones)
+					
+						#-- move back to alphanumeric folder
+						cd ..
+						
+						#-- check if the number of best files was what was required
+						if ( `echo $ones | wc -w` != $nbest ) then
+							#-- it didn't correct all of the files, so we need to move them
+							if ( ! -e $p12/multiples/$year/$month/$event/$AN_folder/$station ) mkdir -p $p12/multiples/$year/$month/$event/$AN_folder
+							mv $station $p12/multiples/$year/$month/$event/$AN_folder/.
+							cp ../cmt* $p12/multiples/$year/$month/$event/.
+							
+							#-- output to screen
+							printf '         MULT:%s/%s , Not Enough Best (%i %i)\n' `pwd` $station `echo $ones | wc -w` $nbest >> $logfile
+							printf '3, %s/%s , not enough best\n' `pwd` $station >> $problems
+						else
+							#-- it did correct all those required, as the number of best files was the same as the number of input channels
+							printf '         MULT:%s/%s , All best Corrected\n' `pwd` $station >> $logfile
+						endif
+					end #-- foreach station ($stations)
+					#-- move back to event folder
+					cd .. 
+					#-- are there any stations left in the AN_folder
+					if ( `ls $AN_folder | wc -w` == 0 ) then
+						rmdir $AN_folder
+						printf '     Removed Folder %s\n' $AN_folder >> $logfile
+					endif
+				end # foreach AN_FOLDER ()
+				#-- move back to month folder
+				cd ..
+				#-- are there any AN folders in the event folder
+				if ( `ls $event | grep -v "cmt*" | wc -w` == 0 ) then
+					rm -rf $event
+					printf '    Removed Event %s\n' $event >> $logfile
+				endif
+			end #foreach event ($events)
+			#-- move back to year folder
+			cd ..
+			#-- are there any events in the year folder
+			if (`ls $month | wc -w` == 0 ) then
+				rmdir $month
+				printf '  Removed Month %s\n' $month >> $logfile
+			endif
+		end #foreach month ($months)
+		#-- move back to data folder
+		cd ..
+		if ( `ls $year | wc -w` == 0 ) then
+			rmdir $year
+			printf ' Removed Year %s\n' $year >> $logfile
+		endif
+
+		#-- create year lock file
+		echo `date` !> $p12/.mergesac.$year.lock
+	end #foreach year ($years)
+	
+	
+else if ($use_infile == 1) then
+# run through a set of directories (path to the station folder) relative to the
+# specified data directory. This is designed as a method for re-doing a specific
+# subset of folders or to add a specific set of data to the existing dataset without
+# having to redo all stations completed already.
+	#-- check the input file exists
+	if ( ! -f $infile ) then
+		echo "Input file does not exist"
+		exit
+	endif
+	
+	#-- list file needs full path
+	if ( `echo $infile | awk -F '/' '{print NF}'` == 1 ) then
+		set currdir = `pwd`
+		set infile = `echo $currdir'/'$infile`
+	endif
+	
+	#-- check again the input file exists
+	if ( ! -f $infile ) then
+		echo "Input file does not exist"
+		exit
+	endif
+
+	
+	#-- move to the data directory
+	cd $p12
+	
+	#-- loop through each entry in the input file
+	foreach line  (`cat $infile`)
+		#-- Decompose the line
+		set year = `echo $line | awk -F '/' '{print $1}'`
+		set month = `echo $line | awk -F '/' '{print $2}'`
+		set event = `echo $line | awk -F '/' '{print $3}'`
+		set AN_folder = `echo $line | awk -F '/' '{print $4}'`
+		set station = `echo $line | awk -F '/' '{print $5}'`
+		set stn = `echo $station | awk -F . '{print $2}' | tr "[A-Z]" "[a-z]"`
+		
+		#-- lock file?
+		if (-e $p12/.mergesac.$year.lock) then
+			echo "MERGESAC ALREADY RUN"
+			echo "  REMOVE LOCK FILES .mergesac.$year.lock"
+			continue
+		endif
+
+		#-- output:
+		printf '%4s %2s %13s %1s %s\n' $year $month $event $AN_folder $station >> $logfile
+		
+		#-- does the folder exist?
+		if ( ! -d $year/$month/$event/$AN_folder/$station ) then
+			printf '      Path does not exist! %s\n' `echo $year/$month/$event/$AN_folder/$station` >> $logfile
+			continue
+		endif
+		
+		#-- move to the station folder
+		cd $year/$month/$event/$AN_folder/$station
+		
+		#-- remove old sacin files
+		rm -f sacin sacout
+			echo "" >! $p12/.corsac.lock
+		#-- set an upper limit on the number of files...check this before running sac
+		set sfs = `ls | grep "\."$stn"\." | grep ".[bl]hz7*"`
+		if (`echo $sfs | wc -w` > 20) then
+			printf '1.5 , %s , %3s , too many z files to sac load\n' `pwd` >> $problems
+			printf '           ...%3s...too many Z files\n' `echo $sfs | wc -w` >> $logfile
+			
+			cd ..
+			
+			#-- it didn't correct all of the files, so we need to move them
+			if ( ! -e $p12/multiples/$year/$month/$event/$AN_folder/$station ) mkdir -p $p12/multiples/$year/$month/$event/$AN_folder
+			mv $station $p12/multiples/$year/$month/$event/$AN_folder/.
+			continue
+		endif
+		
+		
+		#-- write the dynamically allocate header values to the header
+		printf '         Fix DIST and DELTA...' >> $logfile
+		
+		#-- generate a list of all components in the folder to fix header values
+		set badsac = 0
+		set sfs = `ls | grep "\."$stn"\." | grep "[zen12]"`
+		foreach sf ($sfs)
+			echo r $sf >! sacin 
+			echo write over  >> sacin
+			echo lh delta >> sacin
+			echo q >> sacin
+			sac < sacin >& sacout
+			
+			set errval = `grep -c "ERROR " sacout`
+			if ( $errval > 0 ) then
+				set badsac = 1
+				continue
+			endif
+			
+			set delta = `grep delta sacout`
+			#-- write the delta value back depending on certain criteria. Why?
+			if ($delta[3] != '1.000000e+00') then
+				set d1 = `echo $delta[3] | cut -c 1-5`
+				set d11 = `echo $delta[3] | cut -c 1-6`
+				set d2 = `echo $delta[3] | cut -c 9-12`
+				if ($d1 == '9.999' && $d2 == 'e-01') then
+					echo r $sf >! sacin
+					echo ch delta 1 >> sacin
+					echo wh >> sacin
+					echo q >> sacin
+					sac < sacin > sacout
+					printf '\n            DELTA:  %s  changed from  %f  to 1' $sf $delta[3] >> $logfile
+				else if ($d11 == '1.0000' && $d2 == 'e+00') then
+					echo r $sf >! sacin
+					echo ch delta 1 >> sacin
+					echo wh >> sacin
+					echo q >> sacin
+					sac < sacin > sacout
+					printf '\n            DELTA:  %s  changed from  %f  to 1' $sf $delta[3] >> $logfile
+				endif
+			endif
+		end
+		set sfs = `echo ""`
+		
+		#-- check if there were any bad sac files
+		if ( $badsac > 0 ) then
+			#-- we need to break from this station and move its data
+			cd ..
+			if ( ! -e $p12/badsac/$year/$month/$event/$AN_folder ) mkdir -p $p12/badsac/$year/$month/$event/$AN_folder
+			mv $station $p12/badsac/$year/$month/$event/$AN_folder/.
+			printf '\n        BadSAC: %s/%s\n' `pwd` $station >> $logfile
+			printf '4 , %s/%s , BadSAC\n' `pwd` $station >> $problems
+			printf '\n            DONE\n' >> $logfile
+			continue
+		else
+		        printf 'DONE\n' >> $logfile
+		endif
+		
+		rm -f sacout sacin
+		
+		#-- are there any files with 7's (ie repeats)
+		set mults = `ls | grep "[zne12]"7$`
+
+		if (`echo $mults | wc -w` == 0) then
+			printf '        No Multiples...\n' >> $logfile
+			#-- move back to alphabetical directory
+			cd $p12
+			continue
+		endif
+		
+		#-- if there is no doubles directory, then make the directory
+		if ( ! -d responses/Doubles) mkdir -p responses/Doubles
+								
+		#-- generate a list of the available channels that have at least one double
+		set chans = `ls | grep "\."$stn"\." | grep "[zen12]"7$ | awk -F. '{print $3}' | cut -c 1-3`
+		set ones = ''
+		foreach chan ($chans)
+			set one = `ls | grep ^"[8901]" | grep "\."$stn"\."{$chan}$`
+			set ones = `echo $ones $one`
+		end
+		
+		##Debug
+		##echo mults $mults
+		##echo chans $chans
+		##echo ones $ones `echo $ones | wc -w` `echo $ones | wc -l`
+		
+		#-- loop through channels that have a double
+		@ nbest=0
+		foreach one ($ones)
+			#-- print the channel with multiples
+			printf '         Channel: %3s\n' `echo $one | awk -F. '{print $3}'` >> $logfile
+			
+			#-- set the sacfiles
+			set sfs = `ls | grep ^"[8901]" | grep $one`
+			
+			##Debug
+			##echo sfs $sfs
+			
+			#-- set an upper limit on the number of files
+			if (`echo $sfs | wc -w` > 20) then
+				printf '1 , %s , %3s , too many files\n' `pwd` $one >> $problems
+				printf '           ...%3s...too many files\n' `echo $sfs | wc -w` >> $logfile
+				mv {$one}* respones/Doubles
+				continue
+			endif
+			
+			#-- prepare the input file for sacmerge
+			ls | grep ^"[8901]" | grep $one >! inmerge
+			
+			#-- run sacmerge
+			set soutfile = `echo $one | awk -F. '{print "sacout_"$3}'`
+			sacmerge_1s >! $soutfile
+			
+			#-- mv input file to responses
+			mv inmerge responses/.
+			mv $soutfile responses/.
+			
+			#-- what is happening here?
+			set file1 = `echo $one`
+			#set file1 = `ls | grep ^"[8901]" | grep $one
+			
+			#-- remove the sac input files
+			rm -f sacin sacout
+			
+			#-- check for best file!
+			set best = `ls | grep ^"[8901]" | grep $one | grep best$`
+			##echo best `echo $best | wc -w` $best
+			
+			if (`echo $best | wc -w` > 0 ) then
+				mv $file1 responses/Doubles/{$file1}_7
+				set tomove = `ls | grep ^"[8901]" | grep $one | grep -v best$`
+				mv $tomove responses/Doubles
+				
+				if (`echo $best | wc -w` == 1) mv $best $file1
+				printf '            Made Best...\n' >> $logfile
+				@ nbest++
+			else
+				printf '            No Best...\n' >> $logfile
+			endif
+				
+			if ( -e Mergeproblem) then
+				printf '2 , %s ,%s , Mergeproblem \n' `pwd` $one >> $problems
+			endif
+			
+			set ofs = `ls | grep ^Mer`
+			foreach of ($ofs)
+				mv $of responses/Doubles/{$of}_$one
+			end
+		end #-- foreach one ($ones)
+		
+		#-- move back to alpha_numeric folder
+		cd ..
+		
+		#-- check if the number of best files was what was required
+		if ( `echo $ones | wc -w` != $nbest ) then
+			#-- it didn't correct all of the files, so we need to move them
+			if ( ! -e $p12/multiples/$year/$month/$event/$AN_folder/$station ) mkdir -p $p12/multiples/$year/$month/$event/$AN_folder
+			mv $station $p12/multiples/$year/$month/$event/$AN_folder/.
+			
+			#-- output to screen
+			printf '         MULT:%s/%s , Not Enough Best\n' `pwd` $station >> $logfile
+			printf '3, %s/%s , not enough best\n' `pwd` $station >> $problems
+		else
+			#-- it did correct all those required, as the number of best files was the same as the number of input channels
+			printf '         MULT:%s/%s , All best Corrected\n' `pwd` $station >> $logfile
+		endif
+		
+		#-- move to AN_folder
+		cd ..
+		#-- are there any stations left in the AN_folder
+		if ( `ls $AN_folder | wc -w` == 0 ) then
+			rmdir $AN_folder
+			printf '     Removed Folder %s\n' $AN_folder >> $logfile
+		endif
+		
+		
+		#-- back to data directory
+		cd $p12
+		
+		#-- make lock file
+		echo `date` >! $p12/.mergesac.$year.lock
+	end #-- foreach line (`cat $infile`)
+	cd ..
+endif
+		
+		
+echo "Done"
+
+#-- mail finished
+if (! -z $email ) then
+  echo `basename $0` $* >! mail.comp.$fnmend.$dotones
+  echo "Start: "$datenow" "$timenow >> mail.comp.$fnmend.$dotones
+  echo "End: "`date "+%d-%b-%Y %H:%M:%S"` >> mail.comp.$fnmend.$dotones
+  echo " " >> mail.comp.$fnmend.$dotones
+  echo "Working Directory: " >> mail.comp.$fnmend.$dotones
+  echo $p12 >> mail.comp.$fnmend.$dotones
+	if ( -f /usr/bin/mail ) then
+		mail -s "merge_sac_1s complete" $emailproc < mail.comp.$fnmend.$dotones
+	else if ( -f /usr/bin/mutt ) then
+	  mutt -s "merge_sac_1s complete" $emailproc < mail.comp.$fnmend.$dotones
+	endif
+	rm -f mail.comp.$fnmend.$dotones
+endif

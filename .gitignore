@@ -1,0 +1,17 @@
+/data/
+*jpg
+*pdf
+*svg
+*eps
+*.log
+/predict/
+/stations/
+/models/
+/Noise_Package/
+/resp/
+/phase_bak/
+/resFig/
+/phase/
+/matlab/
+/bak/
+*.pyc

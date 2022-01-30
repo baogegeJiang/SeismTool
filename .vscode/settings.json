@@ -1,0 +1,8 @@
+{
+    "editor.fontSize": 20,
+    "python.pythonPath": "/home/jiangyr/conda/envs/seismToolNew/bin/python",
+    "python.analysis.extraPaths": [
+        "/home/jiangyr/conda/envs/seismTool/lib/python3.6/site-packages/"
+    ],
+    "git.ignoreLimitWarning": true
+}

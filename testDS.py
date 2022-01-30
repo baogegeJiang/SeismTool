@@ -8,7 +8,7 @@ R = run.run(run.runConfig(run.paraTrainTest))
 run.d.Vav=-1
 isDisQC =True
 isCoverQC = True
-R.calCorrOneByOne()
+#R.calCorrOneByOne()
 R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=True,isDisQC=isDisQC,isAll=True,isSave=True,isAllTrain=False)#True
 R.getDisCover()
 R.model=None

@@ -1,0 +1,49 @@
+2021-03-17 09:18:28.209347: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcuda.so.1
+2021-03-17 09:18:28.247373: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1561] Found device 0 with properties: 
+pciBusID: 0000:41:00.0 name: GeForce GTX 1080 Ti computeCapability: 6.1
+coreClock: 1.582GHz coreCount: 28 deviceMemorySize: 10.90GiB deviceMemoryBandwidth: 451.17GiB/s
+2021-03-17 09:18:28.316753: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudart.so.10.1
+2021-03-17 09:18:31.407146: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcublas.so.10
+2021-03-17 09:18:31.754993: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcufft.so.10
+2021-03-17 09:18:32.501276: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcurand.so.10
+2021-03-17 09:18:36.754491: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusolver.so.10
+2021-03-17 09:18:36.794173: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusparse.so.10
+2021-03-17 09:18:40.248516: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudnn.so.7
+2021-03-17 09:18:40.254362: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1703] Adding visible gpu devices: 0
+2021-03-17 09:18:40.254802: I tensorflow/core/platform/cpu_feature_guard.cc:143] Your CPU supports instructions that this TensorFlow binary was not compiled to use: SSE4.1 SSE4.2 AVX AVX2 FMA
+2021-03-17 09:18:40.362580: I tensorflow/core/platform/profile_utils/cpu_utils.cc:102] CPU Frequency: 2994000000 Hz
+2021-03-17 09:18:40.367367: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x55654ea3ac00 initialized for platform Host (this does not guarantee that XLA will be used). Devices:
+2021-03-17 09:18:40.367461: I tensorflow/compiler/xla/service/service.cc:176]   StreamExecutor device (0): Host, Default Version
+2021-03-17 09:18:40.532489: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1561] Found device 0 with properties: 
+pciBusID: 0000:41:00.0 name: GeForce GTX 1080 Ti computeCapability: 6.1
+coreClock: 1.582GHz coreCount: 28 deviceMemorySize: 10.90GiB deviceMemoryBandwidth: 451.17GiB/s
+2021-03-17 09:18:40.532575: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudart.so.10.1
+2021-03-17 09:18:40.532602: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcublas.so.10
+2021-03-17 09:18:40.532635: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcufft.so.10
+2021-03-17 09:18:40.532658: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcurand.so.10
+2021-03-17 09:18:40.532682: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusolver.so.10
+2021-03-17 09:18:40.532719: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusparse.so.10
+2021-03-17 09:18:40.532747: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudnn.so.7
+2021-03-17 09:18:40.538071: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1703] Adding visible gpu devices: 0
+2021-03-17 09:18:40.538183: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudart.so.10.1
+2021-03-17 09:18:40.903324: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1102] Device interconnect StreamExecutor with strength 1 edge matrix:
+2021-03-17 09:18:40.903382: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1108]      0 
+2021-03-17 09:18:40.903391: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1121] 0:   N 
+2021-03-17 09:18:40.918319: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1247] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 10007 MB memory) -> physical GPU (device: 0, name: GeForce GTX 1080 Ti, pci bus id: 0000:41:00.0, compute capability: 6.1)
+2021-03-17 09:18:40.921302: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x55654fa1cbe0 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+2021-03-17 09:18:40.921338: I tensorflow/compiler/xla/service/service.cc:176]   StreamExecutor device (0): GeForce GTX 1080 Ti, Compute Capability 6.1
+2021-03-17 09:18:47,338 - __main__ - INFO -            doing train
+2021-03-17 09:18:47,338 - __main__ - INFO -            model type:norm
+2021-03-17 09:18:47,338 - __main__ - INFO -            phase:p_new
+2021-03-17 09:18:47,338 - __main__ - INFO -            Phase num:1000000 Noise num:200000
+2021-03-17 09:18:47,338 - __main__ - INFO -            modelFile: model/norm_p_new_1000000_200000,resFile: resDir/res_norm_p_new_1000000_200000.mat
+Traceback (most recent call last):
+  File "../SeismTool/trainPSV3.py", line 467, in <module>
+    modelType=modelType,setting=args.setting)
+  File "../SeismTool/trainPSV3.py", line 212, in train
+    model,dIndex,channelN= genModel0(modelType,mode)
+  File "/home/jiangyr/conda/envs/seismToolNew/lib/python3.6/site-packages/SeismTool/deepLearning/fcn.py", line 952, in genModel0
+    return model(config=fcnConfig(mode=phase),channelList=[0,1,2]),2000,1
+  File "/home/jiangyr/conda/envs/seismToolNew/lib/python3.6/site-packages/SeismTool/deepLearning/fcn.py", line 965, in __init__
+    config.inputSize[-1]=len(channelList)
+AttributeError: 'fcnConfig' object has no attribute 'inputSize'

@@ -560,6 +560,10 @@ def calNSigma(N,q0=0.95):
 
 
 def Max(data,N=5):
+    return data.argmax( axis=1),data.max(axis=1)
+    youtPos = yout.argmax(axis=1)
+    yinMax = yin.max(axis=1)
+    youtMax = yout.max(axis=1)
     shape = list(data.shape)
     shapeNew= shape[:1]+shape[2:]
     data = data.reshape([shape[0],shape[1],-1])
