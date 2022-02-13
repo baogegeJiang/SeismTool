@@ -213,6 +213,9 @@ class DS:
         self.writeInput()
         self.writeMod()
         self.writeData(fvLL,indexL,stations)
+        self.run()
+    def run(self):
+        os.system('cd %s;DAzimSurfTomo_batch_20220111 ds &'%(self.runPath))
     def testSyn(self,fvLL,indexL,stations,M=1):
         self.writeMod()
         periods = ['' for i in range(self.config.para['kmaxRc'])]
@@ -244,9 +247,10 @@ class DS:
                         periods[i]+=line
                         if np.random.rand()<0.001:
                             print(line)
-            with open('%s/dsin_syn'%self.runPath,'w+') as f:
-                for period in periods:
-                    f.write(period)
+        with open('%s/dsin'%self.runPath,'w+') as f:
+            for period in periods:
+                f.write(period)
+        self.run()
     def plotByZ(self,p2L=[],R=[],self1='',isCompare=False):
         if self.mode == 'syn':
             self.modelTrue.plotByZ(self.runPath,self1=self.fastTrue,head='true',R=R,isVol=False,maxDep=9000,isFault=False)

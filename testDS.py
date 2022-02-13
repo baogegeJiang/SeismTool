@@ -5,59 +5,83 @@ from SeismTool.SurfDisp import run
 from SeismTool.mathTool import mathFunc
 from tensorflow.python.framework.tensor_util import FastAppendBFloat16ArrayToTensorProto
 R = run.run(run.runConfig(run.paraTrainTest))
+resDir0 = R.config.para['resDir']
+resDir = R.config.para['resDir']
+R.config.para['resDir']=resDir
 run.d.Vav=-1
 isDisQC =True
 isCoverQC = True
 #R.calCorrOneByOne()
 R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=True,isDisQC=isDisQC,isAll=True,isSave=True,isAllTrain=False)#True
 R.getDisCover()
-R.model=None
-R.loadModelUp()
-run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
 
-R.calFromCorrL()
-run.run.loadRes(R)
-run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
-run.run.getAV(R)
-run.run.limit(R)
-run.run.analyRes(R,format='eps')
-run.run.plotGetAvDis(R)
-R.plotTrainDis()
-R.plotStaDis()
-R.showTest()
-R.preDS()
-R.preDSTrain()
-R.preDSSyn()
+for i in range(5):
+    resDir=resDir0[:-1]+('_%d/'%i)
+    R.config.para['resDir']=resDir
+    R.model=None
+    R.loadModelUp()
+    run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
+    R.calFromCorrL()
+    run.run.loadRes(R)
+    run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+    run.run.getAV(R)
+    run.run.limit(R)
+    run.run.analyRes(R,format='eps')
+    run.run.plotGetAvDis(R)
+    run.run.plotGetDis(R)
+    R.plotStaDis()
+    R.showTest()
+    if i==0:
+        R.plotTrainDis()
+        R.preDS(isByTrain=True)
+        R.preDSTrain()
+        R.preDSSyn(isByTrain=True)
+    R.config.para['resDir']=resDir[:-1]+'_rand2/'
+    R.calFromCorrL(isRand=True)
+    run.run.loadRes(R)
+    run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+    run.run.getAV(R)
+    run.run.limit(R)
+    run.run.analyRes(R,format='eps')
+    run.run.plotGetAvDis(R)
+    run.run.plotGetDis(R)
 
-resDir = R.config.para['resDir']
 
-R.config.para['resDir']=resDir[:-1]+'_rand/'
-R.calFromCorrL(isRand=True)
-run.run.loadRes(R)
-run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
-run.run.getAV(R)
-run.run.limit(R)
-run.run.analyRes(R,format='eps')
-run.run.plotGetAvDis(R)
-
+resDir = resDir0[:-1]+('_%d/'%0)
 R.config.para['resDir']=resDir
+R.loadAndPlot(R.DS,isPlot=False)
+R.loadAndPlot(R.DSTrain,isPlot=False)
+R.compare(R.DS,R.DSTrain,isCompare=True)
+R.loadAndPlot(R.DSSyn,isPlot=True)
+'''
 R.plotDVK(R.fvD0)
-fvDAll = R.calByDKV(R.corrL1,fvD0=R.fvD0,isControl=False)
+fvDAll = R.calByDKV(R.corrL1,fvD0=R.fvD0,isControl=False,isByLoop=False)
 run.run.plotDVK(R,fvDAll,fvD0=R.fvD0,isRight=True,format='eps')
 run.run.plotDVK(R,fvDAll,fvD0=R.fvD0,isRight=False,format='eps')
-fvD = run.run.calByDKV(R,R.corrL,isControl=True)
+fvD = run.run.calByDKV(R,R.corrL,isControl=True,isByLoop=False)
 R.fvDGet = fvD
 run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
 run.run.getAV(R)
 run.run.limit(R)
-resDirSave = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fv/'
-resDirAvSave = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fvAv/'
+resDirSave = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fvTra/'
+resDirAvSave = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fvAvTra/'
 run.d.saveFVD(fvD,R.stations,R.quakes,resDirSave,'pair',)
 run.d.saveFVD(R.fvAvGet,R.stations,R.quakes,resDirAvSave,'NEFile')
 R.config.para['resDir']=resDir[:-1]+'_tra/'
 run.run.analyRes(R,format='eps')
 run.run.plotGetAvDis(R)
+'''
 
+from glob import glob
+saveDir='predict/'+resDir0.split('/')[-2]
+M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?/resOnTrainTestValid')] )
+run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet',method='Surf-Net',isStd=True,isRand='F')
+
+M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_rand2/resOnTrainTestValid')] )
+run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_rand',method='Surf-Net',isStd=True,isRand='T')
+
+M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_tra/resOnTrainTestValid')] )
+run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_tra',method='conventional',isStd=False,isRand='F')
 
 run.run.plotGetAvDis(R)
 
@@ -161,10 +185,7 @@ R.getDisCover()
 R.loadRes()
 run.run.getAv(R,isCoverQC=True)
 run.run.preDS(R,isByTrain=True)
-R.loadAndPlot(R.DS,isPlot=False)
-R.loadAndPlot(R.DSTrain,isPlot=False)
-R.compare(R.DS,R.DSTrain,isCompare=True)
-R.loadAndPlot(R.DSSyn,isPlot=True)
+
 R1.calFromCorr()
 run.d.qcFvD(R.fvAvGet)
 run.d.qcFvD(R.fvDGet)

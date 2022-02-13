@@ -3003,9 +3003,9 @@ class corr:
 
     def save(self, fileName):
         sio.savemat(fileName, {'corr': self.toMat()})
-    def getFV(self,f,fvRef,minDV,maxDV,maxK,minPer,maxPer,N=20,v0=1.5,v1=5.,k=0,isControl=True):
+    def getFV(self,f,fvRef,minDV,maxDV,maxK,minPer,maxPer,N=20,v0=1.5,v1=5.,k=0,isControl=True,isByLoop=False):
         data = self.xx.real.copy()
-        Loop = np.arange(-1,N)
+        Loop = np.arange(-2,N)
         d    = np.abs(self.dis[0]-self.dis[1])
         #print(d)
         #i0 = np.abs(d/v1-120-self.timeL).argmin()
@@ -3025,22 +3025,29 @@ class corr:
         tRef = d/vRef
         
         Phi = calPhi(data,timeL,f,tRef)
-
+        Phi = np.unwrap(Phi)
         t = (-Phi/np.pi/2/(f)).reshape([-1,1])+Loop.reshape([1,-1])/f.reshape([-1,1])
-        dt = t- tRef.reshape([-1,1])
-        v = f*0
-        T=-10000
-        for i in range(len(t)-1,-1,-1):
-            if tRef[i]*f[i]<1/5:
-                continue
-            if T<0 or tRef[i]*f[i]<4:
-                index = np.abs(dt[i]**2).argmin()
-            else:
-                index = np.abs(dt[i]**2+(t[i]-T)**2).argmin()
-            T = t[i,index]
-            v[i]=d/T
+        if isByLoop:
+            V = d/t
+            dVR=V/vRef.reshape([-1,1])-1
+            inCount = (np.abs(dVR)<0.2).sum(axis=0)
+            loopIndex= inCount.argmax()
+            v = V[:,loopIndex]
+        else:
+            dt = t- tRef.reshape([-1,1])
+            v = f*0
+            T=-10000
+            for i in range(len(t)-1,-1,-1):
+                if tRef[i]*f[i]<1/5:
+                    continue
+                if T<0 or tRef[i]*f[i]<4:
+                    index = np.abs(dt[i]**2).argmin()
+                else:
+                    index = np.abs(dt[i]**2+(t[i]-T)**2).argmin()
+                T = t[i,index]
+                v[i]=d/T
 
-            #print(d/t[i],v[i])
+        #print(d/t[i],v[i])
         FV = fv([f.copy(),v,np.array(v)*0-1],mode='num')
         if not isControl:
             return FV
@@ -3502,7 +3509,7 @@ class corrL(list):
             if isGuassianMove and randMove and randN > randR: 
                 AT=(Rand0 - 0.5) * 2 * (self[i].dDis / midV) * randA * Rand1,
                 f0=1/(48**Rand2*5),
-                sigmaG= 20**(Rand3**2)*0.5
+                sigmaG= 40**(Rand3**2)*0.25
                 dtG = AT*np.exp(-((np.abs(fL0/f0)-1)**2/sigmaG**2))
                 dtGFV=AT*np.exp(-((np.abs(fLFV/f0)-1)**2/sigmaG**2))
                 if np.random.rand() < 0.001:
@@ -3542,7 +3549,6 @@ class corrL(list):
             I1 = int(np.round(timeMax / delta0).astype(np.int))
             x[ii, I0:I1, 0, 1] = 1
             t0L[ii] = t0 - iN / self[i].fs - iP / self[i].fs
-            t0FL[ii] = t0L[ii]-dtGFV
             dt = np.random.rand() * 5 - 2.5
             iP, iN = self.ipin(t0 + dt, self[i].fs)
             x[ii, iP:maxCount + iN, 0, 2] = self[i].x0.reshape([
@@ -3572,6 +3578,7 @@ class corrL(list):
                         y[ii, :dN * up, 0, :] = y[ii, -dN * up:, 0, :]
                         y[ii, dN * up:, 0, :] = 0
             dDisL[ii] = self[i].dDis
+            t0FL[ii] = t0L[ii]-dtGFV
             deltaL[ii] = self[i].timeLOut[1] - self[i].timeLOut[0]
         xStd = x.std(axis=1, keepdims=True)
         self.x = x

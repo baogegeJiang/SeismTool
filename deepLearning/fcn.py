@@ -133,10 +133,10 @@ class lossFuncSoft__:
                          K.max(y0,axis=1, keepdims=True)*((self.w-1)*(K.sign(y0-1/20)+1)/2+1)*self.channelW,\
                          axis=-1\
                                                                          )
-class lossFuncSoft:
+class lossFuncSoft__:
     # 当有标注的时候才计算权重
     # 这样可以保持结构的一致性
-    def __init__(self,w=1):
+    def __init__(self,w=1,**kwags):
         self.__name__ = 'lossFuncSoft'
     def __call__(self,y0,yout0):
         y1 = 1-y0
@@ -149,9 +149,45 @@ class lossFuncSoft:
                          (\
                              y0*K.log(yout0)+y1*K.log(yout1)\
                                                                      )*\
-                         (maxChannel*0.95+0.05)*maxSample,\
+                         (maxChannel*0.975+0.025)*maxSample,\
                                                                          )
-class lossFuncSoftNP:
+isUnlabel=2#1
+class lossFuncSoft:
+    # 当有标注的时候才计算权重
+    # 这样可以保持结构的一致性
+    def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=1536):
+        self.__name__ = 'lossFuncSoft'
+        self.w = K.ones([1,maxCount,1,len(TL)])
+        w = np.ones([1,maxCount,1,len(TL)])*0.05
+        for i in range(len(TL)):
+            i0 = int(TL[i]/disMaxR/delta*(1+randA))
+            i1 = min(int(TL[i]/disRandA/delta*(1-randA)),maxCount)
+            if TL[i]<30:
+                w[0,:,0,i]=0.025
+            elif TL[i]<60:
+                w[0,:,0,i]=0.025
+            elif TL[i]<90:
+                w[0,:,0,i]=0.025
+            else:
+                w[0,:,0,i]=0.025
+            #self.w[0,:,0,i]=10/TL[i]
+            w[0,:i0,0,i]=0
+            w[0,i1:,0,i]=0
+        K.set_value(self.w,w)
+    def __call__(self,y0,yout0):
+        y1 = 1-y0
+        yout1 = 1-yout0
+        yout0 = K.clip(yout0,1e-7,1)
+        yout1 = K.clip(yout1,1e-7,1)
+        maxChannel  = K.max(y0,axis=1, keepdims=True)
+        maxSample   = K.max(maxChannel,axis=3, keepdims=True)
+        return -K.mean(\
+                         (\
+                             y0*K.log(yout0)+y1*K.log(yout1)\
+                                                                     )*\
+                         (maxChannel*1+isUnlabel*self.w*(1-maxChannel)),\
+                                                                         )
+class lossFuncSoftNP__:
     # 当有标注的时候才计算权重
     # 这样可以保持结构的一致性
     def __init__(self,w=1):
@@ -170,8 +206,45 @@ class lossFuncSoftNP:
                          (\
                              y0*K.log(yout0)+y1*K.log(yout1)\
                                                                      )*\
-                         (maxChannel*0.95+0.05)*maxSample,\
+                         (maxChannel*0.9+0.1),\
                                                                          )
+class lossFuncSoftNP:
+    # 当有标注的时候才计算权重
+    # 这样可以保持结构的一致性
+    def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=1536):
+        K=np
+        self.__name__ = 'lossFuncSoft'
+        w = np.ones([1,maxCount,1,len(TL)])*0.05
+        for i in range(len(TL)):
+            i0 = int(TL[i]/disMaxR/delta*(1+randA))
+            i1 = min(int(TL[i]/disRandA/delta*(1-randA)),maxCount)
+            if TL[i]<30:
+                w[0,:,0,i]=0.025
+            elif TL[i]<60:
+                w[0,:,0,i]=0.025
+            elif TL[i]<90:
+                w[0,:,0,i]=0.025
+            else:
+                w[0,:,0,i]=0.025
+            #self.w[0,:,0,i]=10/TL[i]
+            w[0,:i0,0,i]=0
+            w[0,i1:,0,i]=0
+        self.w=w
+    def __call__(self,y0,yout0):
+        K=np
+        y1 = 1-y0
+        yout1 = 1-yout0
+        yout0 = K.clip(yout0,1e-7,1)
+        yout1 = K.clip(yout1,1e-7,1)
+        maxChannel  = K.max(y0,axis=1, keepdims=True)
+        mean = maxChannel.mean()
+        maxSample   = K.max(maxChannel,axis=3, keepdims=True)
+        return -K.mean(\
+                         (\
+                             y0*K.log(yout0)+y1*K.log(yout1)\
+                                                                     )*\
+                         (maxChannel*1+isUnlabel*self.w*(1-maxChannel)),\
+                                                                         )                                                                      
 class lossFuncSoftSq:
     # 当有标注的时候才计算权重
     # 这样可以保持结构的一致性
@@ -506,8 +579,11 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
             if config.isBNL[i]:
                 last = BatchNormalization(axis=BNA,name='BN'+layerStr+'1')(last)
             last = Activation(config.activationL[i],name='AC'+layerStr+'1')(last)
-        last = config.poolL[i](pool_size=config.strideL[i],\
-            strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+        if i <depth:
+            last = config.poolL[i](pool_size=config.strideL[i],\
+                strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+        else:
+            last = DenseNew2(1,name='Dense'+layerStr+'1')(last)
     '''
     name = 'Dense'
     i=depth-1
@@ -580,11 +656,17 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
         name = 'DCONV'
         for j in range(i,i+1):
             layerStr='_%d_%d'%(i,j)
-            dConvL[j]= Conv2DTranspose(config.featureL[j],kernel_size=config.kernelL[j],\
-                strides=config.strideL[j],padding='same',name=name+layerStr+'0',\
-                kernel_initializer=config.initializerL[j],\
-                bias_initializer=config.bias_initializerL[j])(dConvL[j+1])
-            
+            if i < depth:
+                dConvL[j]= Conv2DTranspose(config.featureL[j],kernel_size=config.kernelL[j],\
+                    strides=config.strideL[j],padding='same',name=name+layerStr+'0',\
+                    kernel_initializer=config.initializerL[j],\
+                    bias_initializer=config.bias_initializerL[j])(dConvL[j+1])
+            else:
+                dConvL[j]= DenseNew2(config.strideL[i][0],name=name+layerStr+'0')(dConvL[j+1])
+                dConvL[j]  = Conv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                        strides=(1,1),padding='same',name=name+layerStr+'01',\
+                        kernel_initializer=config.initializerL[j],\
+                        bias_initializer=config.bias_initializerL[j])(dConvL[j])
             if config.isBNL[j]:
                 dConvL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'0')(dConvL[j])
             dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
@@ -1142,6 +1224,35 @@ class DenseNew(tf.keras.layers.Layer):
             'initializer': self.initializer,
         })
         return config
+
+class DenseNew2(tf.keras.layers.Layer):
+    def __init__(self, units, **kwargs):
+        self.units = units
+        self.initializer = "glorot_uniform"
+        super(DenseNew2, self).__init__(**kwargs)
+    def build(self, input_shape):
+        self.input_kernel = self.add_weight(\
+            shape=(1,self.units,input_shape[-3],1,input_shape[-1]),\
+            initializer=self.initializer,\
+            name="input_kernel",\
+        )
+        self.bias = self.add_weight(
+            shape=(1,self.units,1,input_shape[-1]),
+            initializer=self.initializer,
+            name="bias",
+        )
+        self.built = True
+    def call(self, inputs):
+        inputs = inputs
+        rInput=K.reshape(inputs,(-1,1,inputs.shape[1],inputs.shape[2],inputs.shape[3]))
+        return K.sum(rInput*self.input_kernel,axis=2)+self.bias
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'units': self.units,
+            'initializer': self.initializer,
+        })
+        return config
 tTrain = (10**np.arange(0,1.000001,1/29))*16
 
 def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTrain=tTrain,\
@@ -1169,7 +1280,7 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
     print(resStr)
     trainTestLossL =[]
     for sigma in sigmaL:
-        model.config.lossFunc.w = w0
+        #model.config.lossFunc.w = w0
         corrLTrain.timeDisKwarg['sigma']=sigma
         corrLTest.timeDisKwarg['sigma']=sigma
         corrLValid.timeDisKwarg['sigma']=sigma
@@ -1253,7 +1364,7 @@ def trainAndTestMul(model,corrDTrain,corrDValid,corrDTest,outputDir='predict/',t
     print(resStr)
     trainTestLossL =[]
     for sigma in sigmaL:
-        model.config.lossFunc.w = w0
+        #model.config.lossFunc.w = w0
         corrDTrain.corrL.timeDisKwarg['sigma']=sigma
         corrDTest.corrL.timeDisKwarg['sigma']=sigma
         corrDValid.corrL.timeDisKwarg['sigma']=sigma
@@ -1320,7 +1431,7 @@ def trainAndTestSq(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tT
     print(resStr)
     trainTestLossL =[]
     for sigma in sigmaL:
-        model.config.lossFunc.w = w0*(1.5/sigma)**0.5
+        #model.config.lossFunc.w = w0*(1.5/sigma)**0.5
         corrLTrain.timeDisKwarg['sigma']=sigma
         corrLTest.timeDisKwarg['sigma']=sigma
         corrLValid.timeDisKwarg['sigma']=sigma
@@ -1379,8 +1490,8 @@ def trainAndTestCross(model0,model1,corrLTrain0,corrLTrain1,corrLTest,outputDir=
     for i in range(len(sigmaL)):
         sigma = sigmaL[i]
         mode = modeL[i]
-        model0.config.lossFunc.w = w0*(4/sigma)**0.5
-        model1.config.lossFunc.w = w0*(4/sigma)**0.5
+        #model0.config.lossFunc.w = w0*(4/sigma)**0.5
+        #model1.config.lossFunc.w = w0*(4/sigma)**0.5
         corrLTrain0.timeDisKwarg['sigma']=sigma
         corrLTrain1.timeDisKwarg['sigma']=sigma
         corrLTest.timeDisKwarg['sigma']=sigma
@@ -1431,7 +1542,7 @@ def trainAndTestCross(model0,model1,corrLTrain0,corrLTrain1,corrLTest,outputDir=
     T=tTrain,outputDir=outputDir+'_1_')
 
 class fcnConfig:
-    def __init__(self,mode='surf',up=1,mul=1):
+    def __init__(self,mode='surf',up=1,mul=1,**kwags):
         self.mode=mode
         if mode=='surf':
             self.inputSize     = [512*3,1,4]
@@ -1523,7 +1634,13 @@ class fcnConfig:
             self.featureL      = [50,50,75,75,100,100,150]
             self.featureL      = [50,75,100,125,150,200,150]
             self.featureL      = [50,50,75,100,125,150,150]
-            self.featureL      = [60,60,80,80,120,160,320]
+            self.featureL      = [60,60,80,80,120,180,320]
+            self.featureL      = [60,60,80,80,100,120,320]
+            self.featureL      = [60,60,120,120,160,240,320]
+            self.featureL      = [60,60,80,80,100,120,320]
+            self.featureL      = [60,60,60,80,80,100,320]
+            self.featureL      = [60,60,60,80,80,80,320]
+            self.featureL      = [60,60,60,60,60,60,320]
             #self.featureL      = [50,50,75,75,100,100,125]
             #self.featureL      = [50,75,75,100,125,150,200]
             #self.featureL      = [75,75,75,75,75,75,75]
@@ -1555,9 +1672,9 @@ class fcnConfig:
             MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,\
             MaxPooling2D,MaxPooling2D,MaxPooling2D]
             self.poolL        = [MaxPooling2D]*20
-            self.lossFunc     = lossFuncSoft(w=10)#10
+            self.lossFunc     = lossFuncSoft(**kwags)#10
             self.inAndOutFunc = inAndOutFuncNewNetDenseUp#inAndOutFuncNewUp
-            self.lossFuncNP     = lossFuncSoftNP()
+            self.lossFuncNP     = lossFuncSoftNP(**kwags)
             self.deepLevel = 1
         elif mode=='surfdt':
             self.inputSize     = [512*3,1,4]
@@ -2027,9 +2144,9 @@ class model(Model):
 batchMax=8*24
 class modelUp(Model):
     def __init__(self,weightsFile='',metrics=rateNp,\
-        channelList=[0],onlyLevel=-1000,up=1,mul=1):
+        channelList=[0],onlyLevel=-1000,up=1,mul=1,**kwags):
         #channelList=[0]
-        config=fcnConfig('surfUp',up=up,mul=mul)
+        config=fcnConfig('surfUp',up=up,mul=mul,**kwags)
         #defProcess()
         self.mul=mul
         config.inputSize[-1]=len(channelList)
