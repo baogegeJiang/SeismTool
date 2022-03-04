@@ -12,12 +12,13 @@ run.d.Vav=-1
 isDisQC =True
 isCoverQC = True
 #R.calCorrOneByOne()
-R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=True,isDisQC=isDisQC,isAll=True,isSave=True,isAllTrain=False)#True
+R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=True,isDisQC=isDisQC,isAll=True,isSave=True,isAllTrain=False,isControl=False)#True
 R.getDisCover()
 
 for i in range(5):
     resDir=resDir0[:-1]+('_%d/'%i)
     R.config.para['resDir']=resDir
+    #R.config.para['randA'] = 0.0
     R.model=None
     R.loadModelUp()
     run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True)
@@ -37,6 +38,7 @@ for i in range(5):
         R.preDSTrain()
         R.preDSSyn(isByTrain=True)
     R.config.para['resDir']=resDir[:-1]+'_rand2/'
+    #R.config.para['randA'] = 0.05
     R.calFromCorrL(isRand=True)
     run.run.loadRes(R)
     run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
@@ -53,7 +55,7 @@ R.loadAndPlot(R.DS,isPlot=False)
 R.loadAndPlot(R.DSTrain,isPlot=False)
 R.compare(R.DS,R.DSTrain,isCompare=True)
 R.loadAndPlot(R.DSSyn,isPlot=True)
-'''
+
 R.plotDVK(R.fvD0)
 fvDAll = R.calByDKV(R.corrL1,fvD0=R.fvD0,isControl=False,isByLoop=False)
 run.run.plotDVK(R,fvDAll,fvD0=R.fvD0,isRight=True,format='eps')
@@ -70,7 +72,7 @@ run.d.saveFVD(R.fvAvGet,R.stations,R.quakes,resDirAvSave,'NEFile')
 R.config.para['resDir']=resDir[:-1]+'_tra/'
 run.run.analyRes(R,format='eps')
 run.run.plotGetAvDis(R)
-'''
+
 
 from glob import glob
 saveDir='predict/'+resDir0.split('/')[-2]

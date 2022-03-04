@@ -27,7 +27,7 @@ sacPara = {  #'pre_filt': (1/500, 1/350, 1/2, 1/1.5)
 para0.update(sacPara)
 
 quakes = seism.QuakeL('CEA_quakesAll')
-stations = seism.StationList('../stations/CEA.sta_labeled_sort')#'../stations/CEA.sta_know_few'#../stations/CEA.sta_labeled_sort
+stations = seism.StationList('../stations/CEA.sta_know_few')#'../stations/CEA.sta_know_few'#../stations/CEA.sta_labeled_sort
 print(len(stations))
 stations.getInventory()
 if kind ==0:

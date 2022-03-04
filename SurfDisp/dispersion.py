@@ -1205,7 +1205,7 @@ class fv:
         vL[df01R > 0.0001] = 1e-08
         return vL.reshape(shape0)
 
-    def save(self, filename, mode='num',quake='',station0='',station1=''):
+    def save(self, filename, mode='num',quake='',station0='',station1='',writeType='a'):
         if not os.path.exists(os.path.dirname(filename)):
             os.makedirs(os.path.dirname(filename))
         if mode == 'num':
@@ -1224,7 +1224,7 @@ class fv:
                         std = self.std[i]
                     f.write('%f %f %f\n' % (T, v, std))
         if mode=='pair':
-            with open(filename, 'a') as (f):
+            with open(filename, writeType) as (f):
                 time = quake['time']
                 la = quake['la']
                 lo = quake['lo']
@@ -1249,15 +1249,17 @@ class fv:
                 for i in range(len(self.v)):
                     f.write('%f %f\n' % (self.v[i],self.std[i]))
 
-    def update(self, self1, isReplace=True, threshold=0.1):
+    def update(self, self1, isReplace=True, threshold=0.1,isControl=True):
         v = self1(self.f).reshape([-1])
         dv = np.abs(v - self.v)
         if (dv <= threshold * v).sum() > 1:
+            if not isControl:
+                dv[v<1]=-1
             self.f = self.f[(dv <= threshold * v)]
+            self.v = self.v[(dv < threshold * v)]
+            vNew   = v[(dv < threshold * v)]
             if isReplace:
-                self.v = v[(dv < threshold * v)]
-            else:
-                self.v = self.v[(dv < threshold * v)]
+                self.v[vNew>1] = vNew[vNew>1]
             self.std = self.std[(dv <= threshold * v)]
         else:
             self.v[:] = 1e-09
@@ -1382,6 +1384,7 @@ def getDVK(fvD,f,fvD0={},isRight=True):
     DV=[]
     K=[]
     V=[]
+    STD=[]
     for key in fvD:
         if isinstance(key,str):
             FV = fvD[key]
@@ -1393,6 +1396,7 @@ def getDVK(fvD,f,fvD0={},isRight=True):
         dv = np.array(dv)
         k  = np.array(k)
         v   = FV(f)
+        std = -FV.STD(f)
         if key in fvD0:
             v0 = fvD0[key](f)
             if isRight:
@@ -1403,6 +1407,7 @@ def getDVK(fvD,f,fvD0={},isRight=True):
                 v[(absDV>0.01)*(v0>1)]=0
                 dv[(absDV>0.01)*(v0>1)]=-999
                 k[(absDV>0.01)*(v0>1)]=-999
+                std[(absDV>0.01)*(v0>1)]=999
             else:
                 v[v0>1]=0
                 dv[v0>1]=-999
@@ -1411,12 +1416,15 @@ def getDVK(fvD,f,fvD0={},isRight=True):
                 v[(absDV<0.01)*(v0>1)]=0
                 dv[(absDV<0.01)*(v0>1)]=-999
                 k[(absDV<0.01)*(v0>1)]=-999
+                std[(absDV<0.01)*(v0>1)]=999
         DV.append(dv)
         K.append(k)
         V.append(v)
-    return np.array(DV),np.array(K),V
+        STD.append(std)
+    return np.array(DV),np.array(K),np.array(V),np.array(STD)
 
-def saveFVD(fvD,stations,quakes='',saveDir='',formatType='pair'):
+def saveFVD(fvD,stations,quakes='',saveDir='',formatType='pair',isOverwrite=False):
+    fileL=[]
     for key in fvD:
         quake=''
         STA0=''
@@ -1435,7 +1443,13 @@ def saveFVD(fvD,stations,quakes='',saveDir='',formatType='pair'):
                 index = quakes.find(quake) 
                 if index>=0:
                     quake = quakes[index]
-        fvD[key].save(file,mode=formatType,quake=quake,station0=STA0,station1=STA1)
+        if (file not in fileL) and isOverwrite:
+            writeType='w+'
+            print('overwrite',file)
+        else:
+            writeType='a'
+        fvD[key].save(file,mode=formatType,quake=quake,station0=STA0,station1=STA1,writeType=writeType)
+        fileL.append(file)
 
 def defineEdge(A,per,minA=-100):
     AL = []
@@ -1554,9 +1568,9 @@ def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minD
         #plt.plot( minDis * (1 - R), fLDis,'-.k',linewidth=0.5,label='control')
         #plt.plot( maxDis * (1 + R), fLDis,'-.k',linewidth=0.5)
         ax.legend()
-    plt.xlabel('$\Delta$(km)')
-    plt.ylabel('f(Hz)')
-    plt.xlim([0,1800])
+    ax.set_xlabel('$\Delta$(km)')
+    ax.set_ylabel('$f$(Hz)')
+    ax.set_xlim([0,1800])
     #plt.title(title)
     #plt.tight_layout()
     plt.savefig(filename, dpi=300)
@@ -1615,9 +1629,9 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
     plt.hist2d(VL, FL, bins=(binV, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
     #plt.colorbar(label='count')
     plt.gca().set_yscale('log')
-    plt.xlabel('v(km/s)')
+    plt.xlabel('$v$(km/s)')
     plt.xlim([3, 5])
-    plt.ylabel('f(Hz)')
+    plt.ylabel('$f$(Hz)')
     plt.gca().set_position([0.15,0.2,0.6,0.7])
     ax =plt.gca()
     ax_divider = make_axes_locatable(plt.gca())
@@ -1641,7 +1655,7 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
     plt.figure(figsize=[2.5, 2])
     plt.hist(FL, bins=binF)
     plt.gca().set_xscale('log')
-    plt.xlabel('f(Hz)')
+    plt.xlabel('$f$(Hz)')
     plt.ylabel('count')
     plt.savefig((filename[:-4] + '_f' + filename[-4:]), dpi=300)
 
@@ -1654,6 +1668,7 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     FL = fL.reshape([1, -1]) + vL * 0
     VLGet = vLGet.copy()
     FLGet = fLGet.reshape([1, -1]) + vLGet * 0
+    DISLGet = disLGet.reshape([-1, 1]) + vLGet * 0
     dv = VLGet - VL
     dvR = dv / VL
     thresholdText = '$d_r \\leq %.1f $%%; ' % (threshold * 100)
@@ -1665,11 +1680,22 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     print((vL > 1).sum())
     print(dvR * 100, FL)
     plt.close()
-    binF = fL[::fStrike].copy()
+    binF = fL[-1::-fStrike].copy()
     binF.sort()
     binF[(-1)] *= 1.00000001
     binF[0] *= 0.99999999
+    maxF = fL.max()
+    minF = fL.min()
+    maxBinF = binF.max()
+    minBinF = binF.min()
+    binF = binF.tolist()
+    if minF <minBinF:
+        binF = [binF[0]**2/binF[1]]+binF
+    if maxF >maxBinF:
+        binF = binF+[binF[-1]**2/binF[-2]]
+    binF =np.array(binF)
     binDVR = np.arange(-0.05, 0.051, 0.001)
+    binDis = np.arange(100,1700,60)
     TL = DISL / Vav
     THRESHOLD = delta / TL
     THRESHOLD[THRESHOLD <= threshold] = threshold
@@ -1695,7 +1721,7 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     label=FL[(VL > 1)]
     pick=FL[((VL > 1) * (VLGet > 1))]
     pickRight = FL[((VL > 1) * (VLGet > 1) * (np.abs(dvR) <= THRESHOLD))]
-    plt.hist((label,pick,pickRight), bins=binF,color=['cornflowerblue','yellowgreen','lightcoral'],label=['$T_P+F_N$','$T_P+F_P$','$T_P$'])
+    plt.hist((label,pick,pickRight), bins=binF,color=['cornflowerblue','yellowgreen','lightcoral'],label=['$T_P+F_N$','$T_P+F_P$','$T_P$'])#['$T_P+F_N$','$T_P+F_P$','$T_P$']
     #plt.hist((pickRight,pick,label,), bins=binF,color=['lightcoral','yellowgreen','cornflowerblue',],label=['$T_P$','$T_P+F_P$','$T_P+F_N$',])
     countAll, a = np.histogram((FL[(VL > 1)]), bins=binF)
     countR, a = np.histogram((FL[((VL > 1) * (VLGet > 1))]), bins=binF)
@@ -1711,21 +1737,66 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     hF1,= ax2.plot(binMid, F1, '.-', markersize=2, linewidth=1,label= 'F1',color='coral')
     #print((countP / countAll)[-2:])
     #plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc='lower left',ncol=3)
-    ax1.legend(loc='lower center',ncol=3)
-    ax2.legend(loc='upper left',ncol=3)
+    #ax1.legend(loc='lower center',ncol=3)
+    #ax2.legend(loc='upper left',ncol=3)bbox_to_anchor=(0.5, 0., 0.5, 0.5)
+    #ax1.legend(loc='lower center',ncol=3,handlelength=1,handletextpad=0.2,columnspacing=0.4,borderaxespad=0.2)
+    ax1.legend(loc='upper right',ncol=3,handlelength=1,handletextpad=0.2,columnspacing=0.4,borderaxespad=0.2)
+    ax2.legend(loc='upper left',ncol=3,handlelength=1,handletextpad=0.2,columnspacing=0.4,borderaxespad=0.2)
     plt.gca().set_xscale('log')
     ax1.set_ylabel('count')
     ax1.set_xlabel('$f$(Hz)')
     ax2.set_ylabel('Rate(%)')
     ax1.set_ylim([0, 1.45 * countR.max()])
     ax2.set_ylim([min(np.min(countP / countAll * 100) - 5, 50), 112])
-    ax2.text((binF[-1]*0.98), 110, thresholdText, va='top', ha='right')
-    plt.xlim([binF.min()*0.99, binF.max()*1.01])
+    #ax2.text((binF[-1]*0.96), 110, thresholdText, va='top', ha='right')
+    plt.xlim([binF.min()*0.95, binF.max()*1.05])
+    plt.xticks([1/100,1/10])
     #plt.title(title)
     #plt.tight_layout()
     ax1.set_position([0.15,0.2,0.7,0.7])
     ax2.set_position([0.15,0.2,0.7,0.7])
     plt.savefig((filename[:-4] + 'FCount' + filename[-4:]), dpi=300)
+    plt.close()
+
+    plt.figure(figsize=[4, 2.25])
+    label=DISL[(VL > 1)]
+    pick=DISL[((VL > 1) * (VLGet > 1))]
+    pickRight = DISL[((VL > 1) * (VLGet > 1) * (np.abs(dvR) <= THRESHOLD))]
+    plt.hist((label,pick,pickRight), bins=binDis,color=['cornflowerblue','yellowgreen','lightcoral'],label=['$T_P+F_N$','$T_P+F_P$','$T_P$'])#['$T_P+F_N$','$T_P+F_P$','$T_P$']
+    #plt.hist((pickRight,pick,label,), bins=binF,color=['lightcoral','yellowgreen','cornflowerblue',],label=['$T_P$','$T_P+F_P$','$T_P+F_N$',])
+    countAll, a = np.histogram((DISL[(VL > 1)]), bins=binDis)
+    countR, a = np.histogram((DISL[((VL > 1) * (VLGet > 1))]), bins=binDis)
+    countP, a = np.histogram((DISL[((VL > 1) * (VLGet > 1) * (np.abs(dvR) <= THRESHOLD))]), bins=binDis)
+    binMid = (binDis[1:] + binDis[:-1]) / 2
+    ax1 = plt.gca()
+    ax2 = ax1.twinx()
+    R =countP / countAll * 100
+    P= countP / countR * 100
+    F1 = 2/(1/R+1/P)
+    hR, = ax2.plot(binMid, R, '-d', markersize=2, linewidth=1,label='R',color='dimgray')
+    hP, = ax2.plot(binMid, P, 'o-', markersize=2, linewidth=1,label= 'P',color='seagreen')
+    hF1,= ax2.plot(binMid, F1, '.-', markersize=2, linewidth=1,label= 'F1',color='coral')
+    #print((countP / countAll)[-2:])
+    #plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc='lower left',ncol=3)
+    #ax1.legend(loc='lower center',ncol=3)
+    #ax2.legend(loc='upper left',ncol=3)bbox_to_anchor=(0.5, 0., 0.5, 0.5)
+    #ax1.legend(loc='lower center',ncol=3,handlelength=1,handletextpad=0.2,columnspacing=0.4,borderaxespad=0.2)
+    ax1.legend(loc='upper right',ncol=3,handlelength=1,handletextpad=0.2,columnspacing=0.4,borderaxespad=0.2)
+    ax2.legend(loc='upper left',ncol=3,handlelength=1,handletextpad=0.2,columnspacing=0.4,borderaxespad=0.2)
+    #plt.gca().set_xscale('log')
+    ax1.set_ylabel('count')
+    ax1.set_xlabel('$\Delta$(km)')
+    ax2.set_ylabel('Rate(%)')
+    ax1.set_ylim([0, 1.45 * countR.max()])
+    ax2.set_ylim([min(np.min(countP[countAll>0] / countAll[countAll>0] * 100) - 5, 50), 112])
+    #ax2.text((binDis[-1]*0.96), 110, thresholdText, va='top', ha='right')
+    plt.xlim([binDis.min()*0.95, binDis.max()*1.05])
+    #plt.xticks([1/100,1/10])
+    #plt.title(title)
+    #plt.tight_layout()
+    ax1.set_position([0.15,0.2,0.7,0.7])
+    ax2.set_position([0.15,0.2,0.7,0.7])
+    plt.savefig((filename[:-4] + 'DisCount' + filename[-4:]), dpi=300)
     plt.close()
     if isCount:
         vMean = fL * 0
@@ -2165,7 +2236,7 @@ def qcFvD(fvD, threshold=-2, minCount=3, delta=-1, stations=''):
                         print(dis, delta / T, threshold)
         if threshold0 > -1:
             fvD[key].qc(threshold)
-        if len(fvD[key].f) < minCount:
+        if (fvD[key].v>0.1).sum() < minCount:
             if key == '1300195681.40000_37.67000_142.13000_JL.CBT_HE.KAB':
                 print('1300195681.40000_37.67000_142.13000_JL.CBT_HE.KAB')
             keyL.append(key)
@@ -2192,8 +2263,29 @@ def wFunc(w, weightType):
             w[w != 0] = np.exp(-w[(w != 0)] * 3)
     return w
 
+def getFVByCluster(VDVK,f,minSta=5):
+    vL =[]
+    fL = []
+    stdL =[]
+    for i in range(VDVK.shape[2]):
+        v  = VDVK[:,0,i]
+        dv = VDVK[:,1,i]
+        k  = VDVK[:,2,i]
+        v  = v[k>=0]
+        dv  = dv[k>=0]
+        k  = k[k>=0]
+        if len(v)<minSta:
+            continue
+        nv = v/v.std()
+        ndv = dv/dv.std()
+        nk = k/k.std()
+        c,l=cluster.mean_shift(np.array([nv,ndv,nk]).transpose())
+        vL.append( v[l==0].mean())
+        stdL.append( v[l==0].std())
+        fL.append(f[i])
+    return fv(np.array([fL,vL,stdL]))
 
-def averageFVL(fvL, minSta=5, threshold=0.82285, minThreshold=0.02, fL=[], isWeight=False, weightType='std',it=1):
+def averageFVL(fvL, minSta=5, threshold=0.82285, minThreshold=0.02, fL=[], isWeight=False, weightType='std',it=1,isCluster=False):
     qcFvL(fvL)
     if len(fvL) < minSta:
         return fv([np.array([-1]), np.array([-1]), np.array([10])])
@@ -2207,6 +2299,9 @@ def averageFVL(fvL, minSta=5, threshold=0.82285, minThreshold=0.02, fL=[], isWei
                         fL.append(F)
             fL.sort()
             fL = np.array(fL)
+        if isCluster:
+            VDVK = np.array([[fv(f)]+list(fv.getDVK(f)) for fv in fvL])
+            return getFVByCluster(VDVK,f,minSta=minSta)
         vM = np.zeros([len(fL), len(fvL)])
         if isWeight:
             wM = np.zeros([len(fL), len(fvL)])
@@ -2346,7 +2441,8 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1], t
     plt.close()
     hL = []
     lL = []
-    plt.figure(figsize=[4, 2])
+    plt.figure(figsize=[4, 2.5])
+    plt.subplots_adjust(left=0.15,bottom=0.21,wspace=0.25)
     plt.subplot(1, 2, 1)
     for fv in fvL:
         if isinstance(fvL, dict):
@@ -2386,8 +2482,8 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1], t
         plt.suptitle('%s %.1f km' % (title, dist))
     else:
         plt.suptitle('%s ' % (title,))
-    plt.xlabel('v(km/s)')
-    plt.ylabel('f(Hz)')
+    plt.xlabel('$v$(km/s)')
+    plt.ylabel('$f$(Hz)')
     plt.ylim([fL.min(), fL.max()])
     plt.xlim([3, 5])
     #plt.tight_layout()
@@ -2409,8 +2505,8 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1], t
             plt.gca().set_yscale('log')
             plt.ylim([f.min(), f.max()])
             plt.xlim([3, 5])
-            plt.xlabel('v(km/s)')
-            #plt.tight_layout()
+            plt.xlabel('$v$(km/s)')
+    #plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close()
 
@@ -2473,15 +2569,18 @@ def getDisCover(fvD, stations, fL):
     return (minDis, maxDis, minI, maxI)
 
 
-def replaceByAv(fvD, fvDAv, threshold=0, delta=-1, stations='', **kwags):
+def replaceByAv(fvD, fvDAv, threshold=0, delta=-1, stations='',isAv=True, **kwags):
     notL = []
     threshold0 = threshold
     for modelName in fvD:
-        if len(modelName.split('_')) >= 2:
+        if len(modelName.split('_')) >= 2 and isAv:
             name0 = modelName.split('_')[(-2)]
             name1 = modelName.split('_')[(-1)]
             modelName0 = '%s_%s' % (name0, name1)
             modelName1 = '%s_%s' % (name1, name0)
+        elif not isAv:
+            modelName0 = modelName
+            modelName1 = modelName
         else:
             notL.append(modelName)
             continue
@@ -2791,8 +2890,8 @@ class corr:
             halfV = np.exp(-(delta * 0.5 / tmpSigma) ** 2)
             if set2One:
                 timeDis[timeDis > halfV] = 1
-                timeDis[timeDis > 1 / np.e] = 1
-                timeDis[timeDis <= 1 / np.e] = 0
+                #timeDis[timeDis > 1 / np.e] = 1
+                #timeDis[timeDis <= 1 / np.e] = 0
             if byA:
                 spec = np.abs(np.fft.fft(self.xx))
                 minf = 1 / (len(self.timeL) * (self.timeL[1] - self.timeL[0]))
@@ -3003,7 +3102,7 @@ class corr:
 
     def save(self, fileName):
         sio.savemat(fileName, {'corr': self.toMat()})
-    def getFV(self,f,fvRef,minDV,maxDV,maxK,minPer,maxPer,N=20,v0=1.5,v1=5.,k=0,isControl=True,isByLoop=False):
+    def getFV(self,f,fvRef,minDV,maxDV,maxK,minPer,maxPer,minSNR,N=20,v0=1.5,v1=5.,k=0,isControl=True,isByLoop=False):
         data = self.xx.real.copy()
         Loop = np.arange(-2,N)
         d    = np.abs(self.dis[0]-self.dis[1])
@@ -3024,7 +3123,7 @@ class corr:
         dvRef,KRef = fvRef.getDVK(f)
         tRef = d/vRef
         
-        Phi = calPhi(data,timeL,f,tRef)
+        Phi,std = calPhi(data,timeL,f,tRef)
         Phi = np.unwrap(Phi)
         t = (-Phi/np.pi/2/(f)).reshape([-1,1])+Loop.reshape([1,-1])/f.reshape([-1,1])
         if isByLoop:
@@ -3048,7 +3147,7 @@ class corr:
                 v[i]=d/T
 
         #print(d/t[i],v[i])
-        FV = fv([f.copy(),v,np.array(v)*0-1],mode='num')
+        FV = fv([f.copy(),v,-std],mode='num')
         if not isControl:
             return FV
         dv,K = FV.getDVK(f)
@@ -3056,13 +3155,15 @@ class corr:
         per = v/vRef-1
         F =[]
         V =[] 
+        STD = []
         for i in range(len(t)):
             #print(dv[i],K[i],per[i])
-            if dv[i]-dvRef[i]>minDV[i]-(maxDV[i]-minDV[i])*k/2*0 and dv[i]-dvRef[i]<maxDV[i]+(maxDV[i]-minDV[i])*k/2*0 and K[i]>=0 and  K[i]<maxK[i]*(1+k*0) and per[i]>minPer[i]-(maxPer[i]-minPer[i])*k*0 and per[i]<maxPer[i]+(maxPer[i]-minPer[i])*k*0:
+            if dv[i]-dvRef[i]>minDV[i]-(maxDV[i]-minDV[i])*k/2*0 and dv[i]-dvRef[i]<maxDV[i]+(maxDV[i]-minDV[i])*k/2*0 and K[i]>=0 and  K[i]<maxK[i]*(1+k*0) and per[i]>minPer[i]-(maxPer[i]-minPer[i])*k*0 and per[i]<maxPer[i]+(maxPer[i]-minPer[i])*k*0 and std[i]>minSNR[i]:
                  #print('yes')
                  F.append(f[i])
                  V.append(v[i])
-        return fv([np.array(F),np.array(V),np.array(V)*0-1],mode='num')
+                 STD.append(std[i])
+        return fv([np.array(F),np.array(V),-np.array(STD)],mode='num')
 
 
 def calPhi_(data,timeL,f,sigmaF=8,deltaF=0/100,sigmaT=4,deltaT=0):
@@ -3094,6 +3195,7 @@ def calPhi(data,timeL,f,tRef,gamma=3,deltaF=0/100,gammaW=15,deltaT=0):
     N = len(timeL)
     fMin = fMax/N
     Phi = f*0
+    std = f*0
     emin=7
     #f= np.round(f/fMin)*fMin
     #f=np.unique(f)
@@ -3101,6 +3203,8 @@ def calPhi(data,timeL,f,tRef,gamma=3,deltaF=0/100,gammaW=15,deltaT=0):
         TRef = tRef[i]
         i0 = np.abs(timeL-TRef*0.7).argmin()
         i1 = np.abs(timeL-TRef*1.3).argmin()
+        iN0 = np.abs(timeL-TRef*1.8).argmin()
+        iN1 = np.abs(timeL-TRef*2.5).argmin()
         F = f[i]
         wn = 2*np.pi*F
         alpha = gamma**2 * wn
@@ -3117,6 +3221,8 @@ def calPhi(data,timeL,f,tRef,gamma=3,deltaF=0/100,gammaW=15,deltaT=0):
         x1x2h = signal.detrend(x1x2h)
         x1x2h -=x1x2h.mean()
         indexMax= np.abs(x1x2h[i0:i1]).argmax()+i0
+        aMax= np.abs(x1x2h[i0:i1]).max()
+        noise=(x1x2h[iN0:iN1]).std()
         alpha = (gammaW)**2 * wn
         h = ((np.arange(len(data))-indexMax)*delta)**2 * wn**2 / (4*alpha);
         h = np.exp(-h);
@@ -3124,8 +3230,9 @@ def calPhi(data,timeL,f,tRef,gamma=3,deltaF=0/100,gammaW=15,deltaT=0):
         x1x2h = signal.detrend(x1x2h)
         x1x2h -=x1x2h.mean()
         Phi[i] =np.angle(calSpec(x1x2h,timeL,np.array([F])))[0]
+        std[i] = aMax/noise
         #print(timeF,Phi)
-    return Phi
+    return Phi,std
 
 def calSpec(data,timeL,f):
         timeLT=timeL.reshape([1,-1])
@@ -3455,7 +3562,7 @@ class corrL(list):
     def __str__(self):
         return '%d %s' % (len(self), str(self.timeDisKwarg))
 
-    def getTimeDis(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=0.1, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, randA=0.03, midV=4, randR=0.5, mul=1,isGuassianMove=False):
+    def getTimeDis(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=0.1, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, randA=0.03, midV=4, randR=0.5, mul=1,isGuassianMove=False,disAmp=1):
         if len(iL) == 0:
             iL = np.arange(len(self))
         if not isinstance(iL, np.ndarray):
@@ -3543,11 +3650,11 @@ class corrL(list):
                         print('mul', mul)
                         print('******* rand1:', rand1)
                     dDis = dDis * rand1
-            timeMin = dDis / 5.5
-            timeMax = dDis / 2.5
+            timeMin = dDis / 5.0
+            timeMax = dDis / 3.0
             I0 = int(np.round(timeMin / delta0).astype(np.int))
             I1 = int(np.round(timeMax / delta0).astype(np.int))
-            x[ii, I0:I1, 0, 1] = 1
+            x[ii, I0:I1, 0, 1] = disAmp
             t0L[ii] = t0 - iN / self[i].fs - iP / self[i].fs
             dt = np.random.rand() * 5 - 2.5
             iP, iN = self.ipin(t0 + dt, self[i].fs)
@@ -4392,10 +4499,10 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             #plt.legend()
             axL[0].set_xlim(xlim)
             #axL[0].set_ylim(ylim)
-            axL[0].set_xlabel('t/s')
-            axL[0].set_ylabel('A')
+            axL[0].set_xlabel('$t$/s')
+            axL[0].set_ylabel('$A$')
             #axL[0].set_yticks(np.arange(mul))
-            axL[0].set_yticks([-2,0,2])
+            #axL[0].set_yticks([-2,0,2])
             caxL[0].axis('off')
             figureSet.setColorbar(None,label='Probability',pos='bottom',isAppend=False)
             #plt.clim(0,1)
@@ -4404,8 +4511,8 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             #figureSet.setColorbar(pc,label='Probility',pos='right')
             ##if number==3:
             #    axL[1].plot(timeLOutL,f,'--k',linewidth=0.5)
-            axL[1].set_ylabel('f/Hz')
-            axL[1].set_xlabel('t/s')
+            axL[1].set_ylabel('$f$/Hz')
+            axL[1].set_xlabel('$t$/s')
             axL[1].set_yscale('log')
             axL[1].set_xlim(xlim)
             #axL[1].set_ylim(ylim)
@@ -4417,8 +4524,8 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
                 #pc=plt.pcolormesh(timeLOut,f,tmpy.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
                 surf=axL[2].pcolormesh(timeLOut[timeLOut<xlim[1]],f,tmpy[timeLOut<xlim[1]].transpose(),vmin=0,vmax=1,cmap='bwr',rasterized=True)
                 axL[2].plot(timeLOutL0,f,'--k',linewidth=0.5)
-                axL[2].set_ylabel('f/Hz')
-                axL[2].set_xlabel('t/s')
+                axL[2].set_ylabel('$f$/Hz')
+                axL[2].set_xlabel('$t$/s')
                 axL[2].set_yscale('log')
                 #axL[2].set_zticks([f.max(),f.min()])
                 axL[2].set_xlim(xlim)

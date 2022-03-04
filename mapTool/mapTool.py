@@ -43,23 +43,30 @@ def scatterOnMap(m, lat,lon,s,alpha=1,c=None):
 
 def readnetcdf(R,file='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd'):
     nc=Dataset(file)
-    la=np.array(nc.variables['lat'][:])
-    lo=np.array(nc.variables['lon'][:])
+    laStr = 'lat'
+    loStr = 'lon'
+    zStr  = 'z'
+    if 'http' in file:
+        laStr = 'ETOPO05_Y'
+        loStr = 'ETOPO05_X'
+        zStr  = 'ROSE'
+    la=np.array(nc.variables[laStr][:])
+    lo=np.array(nc.variables[loStr][:])
     R = R.copy()
     R0 = R[:2]
     R1 = R[2:]
     R0.sort()
     R1.sort()
-    laI0 = np.abs(la-R0[0]).argmin()-2
-    laI1 = np.abs(la-R0[1]).argmin()+2
-    loI0 = np.abs(lo-R1[0]).argmin()-2
-    loI1 = np.abs(lo-R1[1]).argmin()+2
-    z=nc.variables['z'][:]
+    laI0 = max(0,np.abs(la-R0[0]).argmin()-2)
+    laI1 = min(np.abs(la-R0[1]).argmin()+2,len(la))
+    loI0 = max(0,np.abs(lo-R1[0]).argmin()-2)
+    loI1 = min(np.abs(lo-R1[1]).argmin()+2,len(lo))
+    z=nc.variables[zStr][:]
     return np.array(la[laI0:laI1]),np.array(lo[loI0:loI1]),np.array(z[laI0:laI1,loI0:loI1])
 def plotLaLoLine(m,dLa=10,dLo=10,**kwags):
-    parallels = np.arange(0.,90,dLa)
+    parallels = np.arange(-90.,90,dLa)
     m.drawparallels(parallels,labels=[1,0,0,1],**kwags)
-    meridians = np.arange(10.,360.,dLo)
+    meridians = np.arange(0.,360.,dLo)
     plt.gca().yaxis.set_ticks_position('right')
     m.drawmeridians(meridians,labels=[True,False,False,True],**kwags)
 

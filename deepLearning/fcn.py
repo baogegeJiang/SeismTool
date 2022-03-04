@@ -151,7 +151,8 @@ class lossFuncSoft__:
                                                                      )*\
                          (maxChannel*0.975+0.025)*maxSample,\
                                                                          )
-isUnlabel=2#1
+isUnlabel=1#1
+W0=0.06
 class lossFuncSoft:
     # 当有标注的时候才计算权重
     # 这样可以保持结构的一致性
@@ -163,13 +164,13 @@ class lossFuncSoft:
             i0 = int(TL[i]/disMaxR/delta*(1+randA))
             i1 = min(int(TL[i]/disRandA/delta*(1-randA)),maxCount)
             if TL[i]<30:
-                w[0,:,0,i]=0.025
+                w[0,:,0,i]=W0
             elif TL[i]<60:
-                w[0,:,0,i]=0.025
+                w[0,:,0,i]=W0
             elif TL[i]<90:
-                w[0,:,0,i]=0.025
+                w[0,:,0,i]=W0
             else:
-                w[0,:,0,i]=0.025
+                w[0,:,0,i]=W0
             #self.w[0,:,0,i]=10/TL[i]
             w[0,:i0,0,i]=0
             w[0,i1:,0,i]=0
@@ -179,8 +180,8 @@ class lossFuncSoft:
         yout1 = 1-yout0
         yout0 = K.clip(yout0,1e-7,1)
         yout1 = K.clip(yout1,1e-7,1)
-        maxChannel  = K.max(y0,axis=1, keepdims=True)
-        maxSample   = K.max(maxChannel,axis=3, keepdims=True)
+        maxChannel  = (K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2
+        maxSample   = K.max(maxChannel,axis=2, keepdims=True)
         return -K.mean(\
                          (\
                              y0*K.log(yout0)+y1*K.log(yout1)\
@@ -219,13 +220,13 @@ class lossFuncSoftNP:
             i0 = int(TL[i]/disMaxR/delta*(1+randA))
             i1 = min(int(TL[i]/disRandA/delta*(1-randA)),maxCount)
             if TL[i]<30:
-                w[0,:,0,i]=0.025
+                w[0,:,0,i]=W0
             elif TL[i]<60:
-                w[0,:,0,i]=0.025
+                w[0,:,0,i]=W0
             elif TL[i]<90:
-                w[0,:,0,i]=0.025
+                w[0,:,0,i]=W0
             else:
-                w[0,:,0,i]=0.025
+                w[0,:,0,i]=W0
             #self.w[0,:,0,i]=10/TL[i]
             w[0,:i0,0,i]=0
             w[0,i1:,0,i]=0
@@ -236,9 +237,9 @@ class lossFuncSoftNP:
         yout1 = 1-yout0
         yout0 = K.clip(yout0,1e-7,1)
         yout1 = K.clip(yout1,1e-7,1)
-        maxChannel  = K.max(y0,axis=1, keepdims=True)
+        maxChannel  = (K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2
         mean = maxChannel.mean()
-        maxSample   = K.max(maxChannel,axis=3, keepdims=True)
+        maxSample   = K.max(maxChannel,axis=2, keepdims=True)
         return -K.mean(\
                          (\
                              y0*K.log(yout0)+y1*K.log(yout1)\
@@ -1641,6 +1642,10 @@ class fcnConfig:
             self.featureL      = [60,60,60,80,80,100,320]
             self.featureL      = [60,60,60,80,80,80,320]
             self.featureL      = [60,60,60,60,60,60,320]
+            self.featureL      = [60,60,80,80,100,120,320]
+            self.featureL      = [60,60,45,45,30,30,320]
+            self.featureL      = [50,45,40,35,30,25,320]
+            self.featureL      = [50,40,30,25,20,15,320]
             #self.featureL      = [50,50,75,75,100,100,125]
             #self.featureL      = [50,75,75,100,125,150,200]
             #self.featureL      = [75,75,75,75,75,75,75]
