@@ -152,10 +152,8 @@ class lossFuncSoft__:
                          (maxChannel*0.975+0.025)*maxSample,\
                                                                          )
 isUnlabel=1#1
-W0=0.06
+W0=0.05
 class lossFuncSoft:
-    # 当有标注的时候才计算权重
-    # 这样可以保持结构的一致性
     def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=1536):
         self.__name__ = 'lossFuncSoft'
         self.w = K.ones([1,maxCount,1,len(TL)])
@@ -690,7 +688,7 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
                     if config.isBNL[-1]:
                         upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'0'+'_Up')(upL[j])
                     upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
-                    upL[j]  = Conv2D(config.outputSize[-1]*4,kernel_size=config.kernelL[-1],strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(upL[j])
+                    upL[j]  = Conv2D(config.outputSize[-1]*2,kernel_size=config.kernelL[-1],strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(upL[j])
                     if config.isBNL[-1]:
                         upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'1'+'_Up')(upL[j])
                     upL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1'+'_Up')(upL[j])
@@ -1607,8 +1605,8 @@ class fcnConfig:
             self.deepLevel = 1
         if mode=='surfUp':
             self.mul           = mul
-            self.inputSize     = [512*3,mul,4]
-            self.outputSize    = [512*3*up,mul,50]
+            self.inputSize     = [512*2,mul,4]
+            self.outputSize    = [512*2*up,mul,50]
             self.featureL      = [60,80,80,100,100,120,120,150]
             self.featureL      = [30,30,30,45,45,45,60,60]
             self.featureL      = [60,60,60,80,80,80,100,100]
@@ -1646,6 +1644,16 @@ class fcnConfig:
             self.featureL      = [60,60,45,45,30,30,320]
             self.featureL      = [50,45,40,35,30,25,320]
             self.featureL      = [50,40,30,25,20,15,320]
+            self.featureL      = [50,40,30,20,15,10,320]
+            self.featureL      = [50,45,40,35,30,20,320]
+            self.featureL      = [50,40,35,30,20,15,320]
+            self.featureL      = [50,45,40,35,30,25,320]
+            self.featureL      = [50,40,35,30,25,20,320]
+            self.featureL      = [50,40,30,25,20,15,320]
+            self.featureL      = [50,45,40,35,30,30,320]
+            self.featureL      = [50,40,30,25,20,15,320]
+            self.featureL      = [50,50,50,55,50,50,320]
+            self.featureL      = [50,40,32,24,16,8,320]
             #self.featureL      = [50,50,75,75,100,100,125]
             #self.featureL      = [50,75,75,100,125,150,200]
             #self.featureL      = [75,75,75,75,75,75,75]
@@ -1659,6 +1667,14 @@ class fcnConfig:
             self.kernelL       = [(12,1),(12,1),(12,1),(6,1),(6,1),(6,1),(2,1),(1,mul*2),(up*3,1)]
             self.strideL       = [(2,1),(3,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
             self.kernelL       = [(4,1),(6,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
+            self.strideL       = [(2,1),(4,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(4,1),(8,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
+            self.strideL       = [(2,1),(2,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(4,1),(4,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
+            self.strideL       = [(2,1),(4,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(4,1),(8,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
+            self.strideL       = [(2,1),(2,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(4,1),(4,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
             #self.kernelL       = [(6,1),(6,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
             #self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(16,1),(8,1),(1,mul*2),(up*3,1)]
             self.isBNL       = [True]*20
@@ -2146,7 +2162,7 @@ class model(Model):
         self.compile(loss=self.config.lossFunc, optimizer='Nadam')
         K.set_value(self.optimizer.lr,  lr0)
 
-batchMax=8*24
+batchMax=8*24/16
 class modelUp(Model):
     def __init__(self,weightsFile='',metrics=rateNp,\
         channelList=[0],onlyLevel=-1000,up=1,mul=1,**kwags):
@@ -2436,7 +2452,7 @@ class modelUp(Model):
                         break
                     #print(self.metrics)
                     if True:#i%15==0:
-                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.85)
+                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.9)
                         print('learning rate: ',self.optimizer.lr)
                     if True:#i>10 and i%50==0:
                         batchSize = int(batchMax/self.mul)

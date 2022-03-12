@@ -20,6 +20,7 @@ import gc
 from scipy import fftpack,interpolate
 from matplotlib import colors,cm
 import h5py
+import obspy
 #主要还是需要看如何分批次更新
 #提前分配矩阵可能不影响
 #插值之后绘图，避免不对应
@@ -49,8 +50,8 @@ dConfig=d.config(originName='models/prem',srcSacDir=srcSacDir,\
 		isFlat=True,R=6371,flatM=-2,pog='p',calMode='gpdc',\
 		T=T,threshold=0.02,expnt=12,dk=0.05,\
 		fok='/k',order=0,minSNR=10,isCut=False,\
-		minDist=110*10,maxDist=110*170,minDDist=240,\
-		maxDDist=1600,para=para,isFromO=True,removeP=True)
+		minDist=110*10,maxDist=110*170,minDDist=120,\
+		maxDDist=1800,para=para,isFromO=True,removeP=True)
 def saveListStr(file,strL):
 	with open(file,'w+') as f:
 		for STR in strL:
@@ -67,11 +68,12 @@ def loadListStr(file):
 class runConfig:
 	def __init__(self,para={}):
 		sacPara = {#'pre_filt': (1/500, 1/350, 1/2, 1/1.5),\
-				   'output':'DISP','freq':[1/240,1/6],\
+				   'output':'DISP','freq':[1/200,1/6],\
 					#[1/250,1/8*0+1/6]
+					'delta0':1,
 				   'filterName':'bandpass',\
 				   'corners':4,'toDisp':False,\
-				   'zerophase':True,'maxA':1e15,'gaussianTail':600}
+				   'zerophase':True,'maxA':1e15,'gaussianTail':800}
 		self.para={ 'quakeFileL'  : ['phaseLPickCEA'],\
 					'stationFileL': ['stations/CEA.sta_sel'],#**********'stations/CEA.sta_know_few'\
 					'oRemoveL'    : [False],\
@@ -84,6 +86,7 @@ class runConfig:
 					'byRecordL'   : [False],
 					'maxCount'    : 4096*3,\
 					'randA'       : 0.02,\
+					'isIqual'     : False,\
 					'midV'        : 4,\
 					'trainDir'    : 'predict/1015_0.95_0.05_3.2_randMove_W+/',
 					'resDir'      : '/fastDir/results/1015_all_V?',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
@@ -164,7 +167,7 @@ def output(M,S,file,isRand='T',method='SurfNet',isStd=True):
 
 
 disRandA=1/15.0
-disMaxR =4
+disMaxR =2
 delta   =1
 up=2
 defaultTrainSetDir ='/media/jiangyr/1TSSD/trainSet/'
@@ -249,7 +252,7 @@ class run:
 			mt.plotLaLoLine(m,30,60,dashes=[3,3],color='dimgrey',linewidth=0.75)
 			mt.fs.setColorbar(pc,'elevation(m)')
 			plt.savefig(resDir+'staDisWithTopoAll.pdf')
-	def loadCorr(self,isLoad=True,isLoadFromMat=False,isGetAverage=True,isDisQC=False,isAll=True,isSave=False,isAllTrain=True,isControl=False):
+	def loadCorr(self,isLoad=True,isLoadFromMat=False,isGetAverage=True,isDisQC=False,isAll=True,isSave=False,isAllTrain=True,isControl=False,**kwags):
 		trainSetDir = self.config.para['trainMatDir']
 		config     = self.config
 		corrL      = []
@@ -272,8 +275,43 @@ class run:
 			sta.getInventory()
 			stations += sta
 			q       = seism.QuakeL(para['quakeFileL'][i])
+			if 'time0' in self.config.para:
+				q.select({'time0':self.config.para['time0']})
 			quakes  += q
-			fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][i],quakeD=quakes)
+			dRatioD={}
+			if 'time0' in self.config.para:
+				fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][i],quakeD=quakes,time0=self.config.para['time0'],dRatioD=dRatioD,**kwags)
+			else:
+				fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][i],quakeD=quakes,dRatioD=dRatioD,**kwags)
+			if isLoad:
+				if not isLoadFromMat:
+					corrL0  = para['dConfig'].quakeCorr(q,sta,\
+							byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
+							minSNR=para['minSNRL'][i],isLoadFv=para['isLoadFvL'][i],\
+							fvD=fvD,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],resDir=para['eventDir'],maxCount=para['maxCount'],up=para['up'],isIqual=para['isIqual'])
+					corrL   += corrL0
+				else:
+					corrL = d.corrL()
+					if isAll:
+						with h5py.File(para['matH5']) as h5:
+							for j in range(len(sta)):
+								print(j,'of',len(sta))
+								for k in range(j,len(sta)):
+									print(j,'of',len(sta),k)
+									sta0=sta[j]['net']+'.'+sta[j]['sta']
+									sta1=sta[k]['net']+'.'+sta[k]['sta']
+									if sta0>sta1:
+										sta1,sta0=[sta0,sta1]
+									corrL.loadByPairsH5([sta0+'_'+sta1],h5)
+					else:
+						corrL.loadByH5(para['trainH5'])
+					self.loadFvL(trainSetDir)
+					fvdRead = fvd
+					fvd= {}
+					for corr in corrL:
+						key = corr.modelFile
+						if key in fvdRead:
+							fvd[key]=fvdRead[key]
 			fvdCopy={}
 			for key in fvd:
 				fvdCopy[key]=fvd[key].copy()
@@ -333,30 +371,6 @@ class run:
 			d.replaceByAv(fvdO,fvDAO,isReplace=False,delta=delta,stations= sta,threshold=para['thresholdTrainDiff'],isControl=isControl)
 			d.qcFvD(fvdO)
 			fvDO.update(fvdO)
-
-			if isLoad:
-				if not isLoadFromMat:
-					corrL0  = para['dConfig'].quakeCorr(q,sta,\
-							byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
-							minSNR=para['minSNRL'][i],isLoadFv=para['isLoadFvL'][i],\
-							fvD=fvD,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],resDir=para['eventDir'],maxCount=para['maxCount'],up=para['up'])
-					corrL   += corrL0
-				else:
-					corrL = d.corrL()
-					if isAll:
-						with h5py.File(para['matH5']) as h5:
-							for j in range(len(sta)):
-								print(j,'of',len(sta))
-								for k in range(j,len(sta)):
-									print(j,'of',len(sta),k)
-									sta0=sta[j]['net']+'.'+sta[j]['sta']
-									sta1=sta[k]['net']+'.'+sta[k]['sta']
-									if sta0>sta1:
-										sta1,sta0=[sta0,sta1]
-									corrL.loadByPairsH5([sta0+'_'+sta1],h5)
-					else:
-						corrL.loadByH5(para['trainH5'])
-					self.loadFvL(trainSetDir)
 		
 		self.fvDAverage = fvDAverage
 		fvDNew =fvD
@@ -533,16 +547,18 @@ class run:
 		N =len(self.config.para['T'])
 		N_5=int(N/5)
 		N_10=int(N/10)
-		sigma[:N_10]        = 1.5
-		sigma[1*N_10:2*N_10]   = 1.6
+		N_20=int(N/20)
+		sigma[:N_10]        = 1.7
+		sigma[1*N_10:2*N_10]   = 1.8
 		sigma[2*N_10:3*N_10]   = 1.8
-		sigma[3*N_10:4*N_10] = 2.0
-		sigma[4*N_10:5*N_10] = 2.25
-		sigma[5*N_10:6*N_10] = 2.5
-		sigma[6*N_10:7*N_10] = 2.75
-		sigma[7*N_10:8*N_10] = 3.0
-		sigma[8*N_10:9*N_10] = 3.5
-		sigma[9*N_10:10*N_10] = 4.0
+		sigma[3*N_10:4*N_10] = 1.85
+		sigma[4*N_10:5*N_10] = 1.95
+		sigma[5*N_10:6*N_10] = 2.0
+		sigma[6*N_10:7*N_10] = 2.5
+		sigma[7*N_10:8*N_10] = 3.5
+		sigma[8*N_10:9*N_10] = 3.8
+		sigma[9*N_10:10*N_10] = 4.6
+		sigma[9*N_10:10*N_10] = 4.8
 		return sigma
 	def trainMul(self,isRand=True,isShuffle=False,isAverage=False,isRun=True,isAll=False):
 		if isAll:
@@ -634,7 +650,7 @@ class run:
 		
 		if isRun:
 			self.config.para['modelFile']=fcn.trainAndTestMul(self.model,self.corrDTrain,self.corrDValid,self.corrDTest,\
-							outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=3e-3,mul=para['mul'])#w0=3#4
+							outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=1e-2,mul=para['mul'])#w0=3#4
 		#fcn.trainAndTest(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
 	   	#	outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=50,count0=200,w0=1.5)#w0=3
 	def saveTrainSet(self,isMat=False):
@@ -721,6 +737,8 @@ class run:
 	def loadModelUp(self,file=''):
 		if self.model == None:
 			fcn.defProcess()
+			if 'delta0' in self.config.para['sacPara']:
+				delta = self.config.para['sacPara']['delta0']
 			self.model = fcn.modelUp(channelList=[0,1],up=self.config.para['up'],mul=self.config.para['mul'],randA=self.config.para['randA'],TL=self.config.para['T'],disRandA=disRandA,disMaxR=disMaxR,maxCount=self.config.para['maxCount'],delta=delta)
 		if file != '':
 			self.model.load_weights(file, by_name= True)
@@ -755,6 +773,8 @@ class run:
 			#sta.set('oRemove',isORemove)
 			sta.getInventory()
 			q       = seism.QuakeL(para['quakeFileL'][i])
+			if 'time0' in self.config.para:
+				q.select({'time0':self.config.para['time0']})
 			print(para['quakeFileL'][i],len(q))
 			self.stations = sta
 			self.q=q
@@ -765,7 +785,7 @@ class run:
 			fvDAverage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
 			for j in range(self.config.para['gpuIndex'],int(len(q)/perN)+1,self.config.para['gpuN']):#self.config.para['gpuIndex']
 				print('doing for %d %d in %d'%(j*perN,min(len(q)-1,j*perN+perN),len(q)))
-				corrL0  = para['dConfig'].quakeCorr(q[j*perN:min(len(q)-1,j*perN+perN)],sta,byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],minSNR=para['minSNRL'][i],isLoadFv=False,fvD=fvDAverage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],resDir=para['eventDir'],maxCount=para['maxCount'],plotDir=plotDir)
+				corrL0  = para['dConfig'].quakeCorr(q[j*perN:min(len(q)-1,j*perN+perN)],sta,byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],minSNR=para['minSNRL'][i],isLoadFv=False,fvD=fvDAverage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],resDir=para['eventDir'],maxCount=para['maxCount'],plotDir=plotDir,isIqual=para['isIqual'])
 				self.corrL  = d.corrL(corrL0,maxCount=para['maxCount'])
 				if len(self.corrL)==0:
 					continue
@@ -798,6 +818,8 @@ class run:
 				#sta.set('oRemove',isORemove)
 				sta.getInventory()
 				q       = seism.QuakeL(para['quakeFileL'][i])
+				if 'time0' in self.config.para:
+					q.select({'time0':self.config.para['time0']})
 				print(para['quakeFileL'][i],len(q))
 				self.stations = sta
 				self.q=q
@@ -812,7 +834,7 @@ class run:
 							byRecord=para['byRecordL'][i],remove_resp=para['remove_respL'][i],\
 							minSNR=para['minSNRL'][i],isLoadFv=False,\
 							fvD=fvDAverage,isByQuake=para['isByQuakeL'][i],para=para['sacPara'],\
-							resDir=para['eventDir'],maxCount=para['maxCount'],plotDir=plotDir)
+							resDir=para['eventDir'],maxCount=para['maxCount'],plotDir=plotDir,isIqual=para['isIqual'])
 					self.corrL  = d.corrL(corrL0,maxCount=para['maxCount'])
 					if len(self.corrL)==0:
 						continue
@@ -838,6 +860,8 @@ class run:
 				sta.set('oRemove', para['oRemoveL'][i])
 				sta.getInventory()
 				q       = seism.QuakeL(para['quakeFileL'][i])
+				if 'time0' in self.config.para:
+					q.select({'time0':self.config.para['time0']})
 				print(para['quakeFileL'][i],len(q))
 				self.stations = sta
 				self.q=q
@@ -902,6 +926,8 @@ class run:
 		print(len(self.stations))
 		para    = self.config.para
 		q = seism.QuakeL(self.config.para['quakeFileL'][0])
+		if 'time0' in self.config.para:
+			q.select({'time0':self.config.para['time0']})
 		fvDGet,quakesGet = para['dConfig'].loadQuakeNEFV(self.stations,quakeFvDir=para['resDir'],quakeD=q,isGetQuake=isGetQuake,isCheck=isCheck)
 		self.fvDGet  = fvDGet
 		
@@ -1141,6 +1167,7 @@ class run:
 		else:
 			fvD = self.fvD0
 		fvAverage = d.averageFVL([self.fvDAverage[key] for key in self.fvDAverage],fL=1/self.config.para['T'])
+		fvAverageSingle = d.averageFVL([fvD[key] for key in fvD],fL=1/self.config.para['T'])
 		thresL=[0.015]
 		#return fvAverage
 		print(fvAverage.f,fvAverage.f)
@@ -1175,22 +1202,23 @@ class run:
 			d.plotFV(vL,fL,resDir+'FVTestRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
 			disL,vL,fL,fvAverage_ ,keyL= d.outputFvDist(fvD,self.stations,t=self.config.para['T'],keys=self.fvTrain)
-			d.plotFV(vL,fL,resDir+'FVTrainSingle.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
-			d.plotFV(vL,fL,resDir+'FVTrainSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVTrainSingle.eps',isAverage=True,fvAverage=fvAverageSingle,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVTrainSingleRand.eps',isAverage=True,fvAverage=fvAverageSingle,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
 			disL,vL,fL,fvAverage_,keyL = d.outputFvDist(fvD,self.stations,t=self.config.para['T'],keys=self.fvTest)
-			d.plotFV(vL,fL,resDir+'FVTestSingle.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
-			d.plotFV(vL,fL,resDir+'FVTestSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVTestSingle.eps',isAverage=True,fvAverage=fvAverageSingle,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVTestSingleRand.eps',isAverage=True,fvAverage=fvAverageSingle,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
 			disL,vL,fL,fvAverage_,keyL = d.outputFvDist(fvD,self.stations,t=self.config.para['T'],keys=self.fvValid)
-			d.plotFV(vL,fL,resDir+'FVValidSingle.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
-			d.plotFV(vL,fL,resDir+'FVValidSingleRand.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVValidSingle.eps',isAverage=True,fvAverage=fvAverageSingle,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVValidSingleRand.eps',isAverage=True,fvAverage=fvAverageSingle,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 	def plotGetDis(self):
 		para = self.config.para
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
 		if not os.path.exists(resDir):
 			os.makedirs(resDir)
 		fvAverage = d.averageFVL([self.fvDAverage[key] for key in self.fvDAverage],fL=1/self.config.para['T'])
+		fvAverageSingle = d.averageFVL([self.fvDGet[key] for key in self.fvDGet],fL=1/self.config.para['T'])
 		thresL=[0.015]
 		#return fvAverage
 		print(fvAverage.f,fvAverage.f)
@@ -1225,16 +1253,16 @@ class run:
 			d.plotFV(vL,fL,resDir+'FVTestRandGet.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
 			disL,vL,fL,fvAverage_ ,keyL= d.outputFvDist(self.fvDGet,self.stations,t=self.config.para['T'],keys=self.fvTrain)
-			d.plotFV(vL,fL,resDir+'FVTrainSingleGet.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
-			d.plotFV(vL,fL,resDir+'FVTrainSingleRandGet.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVTrainSingleGet.eps',isAverage=True,fvAverage=fvAverageSingle,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVTrainSingleRandGet.eps',isAverage=True,fvAverage=fvAverageSingle,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
 			disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvDGet,self.stations,t=self.config.para['T'],keys=self.fvTest)
-			d.plotFV(vL,fL,resDir+'FVTestSingleGet.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
-			d.plotFV(vL,fL,resDir+'FVTestSingleRandGet.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVTestSingleGet.eps',isAverage=True,fvAverage=fvAverageSingle,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVTestSingleRandGet.eps',isAverage=True,fvAverage=fvAverageSingle,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 
 			disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvDGet,self.stations,t=self.config.para['T'],keys=self.fvValid)
-			d.plotFV(vL,fL,resDir+'FVValidSingleGet.eps',isAverage=True,fvAverage=fvAverage,thresL=thresL)
-			d.plotFV(vL,fL,resDir+'FVValidSingleRandGet.eps',isAverage=True,fvAverage=fvAverage,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVValidSingleGet.eps',isAverage=True,fvAverage=fvAverageSingle,thresL=thresL)
+			d.plotFV(vL,fL,resDir+'FVValidSingleRandGet.eps',isAverage=True,fvAverage=fvAverageSingle,isRand=True,randA=para['randA'],midV=para['midV'],randN=2,randR=0.5,thresL=thresL)
 	def plotGetAvDis(self):
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
 		#fvAverage = self.fvDAverage['models/prem']
@@ -1392,40 +1420,42 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220113-025122_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
-	'maxCount'    : 512*3,\
+	'maxCount'    : 512*2,\
 	'minSNRL'     : [2.5],\
 	'oRemoveL'    : [False],\
 	'trainMatDir'	  :'/media/jiangyr/1TSSD/',\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
 	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
-	'matH5'	  :'/media/jiangyr/1TSSD/allClip20220301V1DISP_all.h5',\
+	'matH5'	  :'/media/jiangyr/1TSSD/trainTest1HzAfter091016iqual5_150_New8.h5',#_noQual
 	'randA'       : 0.05,\
-	'disAmp'      : 0,\
+	'disAmp'      : 1,\
 	'midV'        : 4,\
 	'mul'		  : 1,\
 	'up'          :  1,\
-	'move2Int'    :  False,
+	'isIqual'     : True,\
+	'time0'       : obspy.UTCDateTime(2009,10,16).timestamp,
+	'move2Int'    : False,
 	'set2One'	  : True,
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220304_15_noG_noloop_noControl_mul1_disAmp0_N5_W0.06_3_5_noInt_One_notAll_smallestest_240_V1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
-	'perN'        : 400,\
+	'resDir'      : '/media/jiangyr/MSSD/20220309_15_disAmp1_w0.05_150_1Hz_after_iqual_0.02_adadadadSigma_min4_2Int_New_V1000/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'perN'        : 100,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
-	'z'           :[0,5,10,15,20,25,30,40,50,60,70,80,100,120,140,160,200,240,300,400,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
-	'T'           : (16**np.arange(0,1.000001,1/N1))*10,\
-	'Tav'         : (16**np.arange(0-1/N1,1.000001+1/N1,1/N1))*10,\
-	'tSur'        : (16**np.arange(0,1.000001,1/N2))*10,\
-	'surPara'     : { 'nxyz':[19,28,15], 'lalo':[55,110],#[40,60,0][55,108]\
+	'z'           :[0,5,10,15,20,25,30,40,50,60,70,80,100,120,140,160,200,240,360,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+	'T'           : (15**np.arange(0,1.000001,1/N1))*10,\
+	'Tav'         : (15**np.arange(0-1/N1,1.000001+1/N1,1/N1))*10,\
+	'tSur'        : (15**np.arange(0,1.000001,1/N2))*10,\
+	'surPara'     : { 'nxyz':[19,28,14], 'lalo':[55,110],#[40,60,0][55,108]\
 					'dlalo':[1,1], 'maxN':60,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.3,\
-					'maxIT':10,'nBatch':1,'smoothDV':20,'smoothG':40,'vR':np.array([[53.5,122.1],[48,134.1],[42.1,131.1],[39.1,125],[39.9,115.1],[42,111.9],[45,111.9],[53.5,122.1]]),'perAGs':0.025,'perAGc':0.025,'perN':[4,4,5],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.04,'iso':'F',},\
+					'maxIT':15,'nBatch':1,'smoothDV':15,'smoothG':15,'vR':np.array([[53.5,122.1],[48,134.1],[42.1,131.1],[39.1,125],[39.9,115.1],[42,111.9],[45,111.9],[53.5,122.1]]),'perAGs':0.025,'perAGc':0.025,'perN':[3,3,5],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.03,'iso':'F',},\
 	'runDir'      : '../DS/20220111_CEA160_TrainTest/',#_man/',\
 	'gpuIndex'    : 0,\
 	'gpuN'        : 1,\
 	'lalo'        :[37.5,55,110,136.5],#[-90,90,0,180],#[38,54,110,134],#[20,34,96,108][]*******,\
 	'minThreshold':0.01,\
-	'thresholdTrain'   :0.015,\
+	'thresholdTrain'   :0.02,\
 	'thresholdTrainDiff'   :0.02,\
-	'threshold'   :0.015,\
+	'threshold'   :0.02,\
 	'qcThreshold': 0.82285,\
 	'minProb'     :0.5,\
 	'minP'        :0.5,\
@@ -1472,7 +1502,7 @@ paraAll={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'surPara'     : { 'nxyz':[27,38,16], 'lalo':[55,103],#[40,60,0][55,108]\
 					'dlalo':[1,1], 'maxN':350,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.1,\
-					'maxIT':30,'nBatch':30,'smoothG':20,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[32,122.5],[32,103],[40,103],[43.9,110.9]]),'perAGs':0.0,'perAGc':0.0,'perN':[3,3,4],'perNG':[6,6,4],'noiselevel':0.00,'perA':0.04,'iso':'T'},\
+					'maxIT':30,'nBatch':30,'smoothDV':10,'smoothG':20,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[32,122.5],[32,103],[40,103],[43.9,110.9]]),'perAGs':0.0,'perAGc':0.0,'perN':[3,3,4],'perNG':[6,6,4],'noiselevel':0.00,'perA':0.04,'iso':'T'},\
 	'runDir'      : '../DS/20220111_CEA160_TrainTest/',#_man/',\
 	'gpuIndex'    : 0,\
 	'gpuN'        : 1,\
@@ -1530,7 +1560,7 @@ paraNorth={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'surPara'     : { 'nxyz':[27,38,16], 'lalo':[55,103],#[40,60,0][55,108]\
 					'dlalo':[1,1], 'maxN':350,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.1,\
-					'maxIT':30,'nBatch':30,'smoothG':20,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[32,122.5],[32,103],[40,103],[43.9,110.9]]),'perAGs':0.0,'perAGc':0.0,'perN':[3,3,4],'perNG':[6,6,4],'noiselevel':0.00,'perA':0.04,'iso':'T'},\
+					'maxIT':30,'nBatch':30,'smoothDV':10,'smoothG':20,'vR':np.array([[43.9,110.9],[54.5,122],[48.5,134],[41.5,131.1],[40,125.1],[32,122.5],[32,103],[40,103],[43.9,110.9]]),'perAGs':0.0,'perAGc':0.0,'perN':[3,3,4],'perNG':[6,6,4],'noiselevel':0.00,'perA':0.04,'iso':'T'},\
 	'runDir'      : '../DS/20220111_CEA160_TrainTest/',#_man/',\
 	'gpuIndex'    : 0,\
 	'gpuN'        : 1,\

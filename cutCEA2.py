@@ -38,5 +38,5 @@ if kind ==1:
         print(quake)
         quake.getSacFiles(stations[n::N],isRead = True,strL='Z',\
         byRecord=False,minDist=0,maxDist=1e10,\
-        remove_resp=True,para=para0,isSave=True,isSkip=False,isDoneSkip=False,\
+        remove_resp=True,para=para0,isSave=True,isSkip=False,isDoneSkip=True,\
         resDir = '/media/jiangyr/1TSSD/eventSac/',doSave=True)

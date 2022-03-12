@@ -361,18 +361,13 @@ def QC(data,threshold=0.82285,it=3,minThreshold=0.02,minSta=5,resultL=None,mid=[
     if len(wL)==0:
         wL = data*0+1
     if not isSorted:
-        #print(wL)
-        #print(data)
         iL = data.argsort()
         data = data[iL]
         wL   = wL[iL]
     mul = calNSigma(1,threshold)/calNSigma(1,(mid[1]-mid[0])/100)
-    #print(mul)
-    if it==0:
-        pass#print('***********************************reach depest*******************')
-    if len(data)<=minSta and it==0:
+    if len(data)<minSta:
         return wMean(data,wL),999,len(data)
-    if len(data)<=2*minSta or it==0:
+    if  it==0:
         return wMean(data,wL),data.std(),len(data)
     #if len(data)<10:
     #    return data.mean(),data.std(),len(data)
@@ -384,7 +379,7 @@ def QC(data,threshold=0.82285,it=3,minThreshold=0.02,minSta=5,resultL=None,mid=[
     d = np.abs(data - mData)
     if isinstance(resultL,list):
         resultL.append([mData,Threshold,data])
-    if (d>Threshold).sum() ==0 and (d<=Threshold).sum()>=minSta:
+    if (d>Threshold).sum() ==0:
         return wMean(data[d<Threshold],wL[d<Threshold]),wStd(data[d<Threshold],wL[d<Threshold]),len(data)
     else:
         return QC(data[d<Threshold],threshold,it-1,minThreshold=minThreshold,resultL=resultL,minSta=minSta,mid=mid,wL=wL[d<Threshold],isSorted=True)

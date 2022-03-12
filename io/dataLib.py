@@ -49,6 +49,8 @@ class filePath:
         if nameMode == '':
             nameMode = net
         time1 = max(time0+1 ,time1)
+        if nameMode=='CEA' and net=='HB' and time1>UTCDateTime(2010,12,26)+3600*8:
+            net='HE'
         staDirL = self.getStaDirL(net,sta,nameMode)
         timeL = np.arange(time0,time1,3600).tolist()
         timeL.append(time1)
@@ -86,8 +88,15 @@ class filePath:
             pattern0 = '%s/%s.*.%s.m'%(staDir,time.strftime('R%j.01/%H/%y.%j')\
                 ,filePath.hima2Comp[comp[-1]])
             pattern1 = '%s/%s???????.%s.SAC'%(staDir,time.strftime('%Y%j/%H')\
-                ,filePath.hima3Comp[comp[-1]])
-            return glob(pattern0)+glob(pattern1)
+                    ,filePath.hima3Comp[comp[-1]])
+            pattern2 = '%s/%s/X?.%s.*.%s'%(staDir,time.strftime('%Y%m%d.*.000000.000'),sta,comp)
+            if 'hima3_sac' in staDir:
+                return glob(pattern1)
+            elif 'hima31' in staDir:
+                #print(pattern2)
+                return glob(pattern2)
+            else:
+                return glob(pattern0)
         if nameMode in ['GS','NM']:
             pattern = '%s/%s/%s.%s.%s.%s.SAC'%(staDir,time.strftime('%Y%m/'),\
                 net,sta,time.strftime('%Y%m%d'),comp)
@@ -167,9 +176,9 @@ class filePath:
                 return ['/HOME/jiangyr/hima3_sac/%s/'%sta]
         if nameMode=='hima23' :
             if staName in self.himaDir:
-                return self.himaDir[staName]+['/HOME/jiangyr/hima3_sac/%s/'%sta]
+                return self.himaDir[staName]+['/HOME/jiangyr/hima3_sac/%s/'%sta,'/media/jiangyr/hima31/']
             else:
-                return ['/HOME/jiangyr/hima3_sac/%s/'%sta]
+                return ['/HOME/jiangyr/hima3_sac/%s/'%sta,'/media/jiangyr/hima31/']
         if nameMode =='YNSC':
             if net =='YN':
                 return ['/net/CEA/CEA0/net_yn/']

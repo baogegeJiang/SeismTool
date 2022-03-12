@@ -211,6 +211,7 @@ class Dist:
 		return True
 
 defaultStats = {'network':'00','station':'00000','channel':'000'}
+listLoc = ['la','lo','dep']
 class Station(Dist):
 	def __init__(self,*argv,**kwargs):
 		super().__init__(*argv,**kwargs)
@@ -220,15 +221,39 @@ class Station(Dist):
 		if isinstance( self['index'],NoneType)==False and isinstance( self['nickName'],NoneType):
 			self['nickName'] = self.getNickName(self['index'])
 		self.defaultStats = defaultStats
+		self.date={}
+		self.time=0
+		self['dateFile']=''# '../stations/CE/%s.%s'%(self['net'],self['sta'])
+		self.loadDateFile(isPrint=True)
 	def defaultSet(self):
 		super().defaultSet()
 		self.keysIn   = 'net sta compBase lo la erroLo erroLa dep erroDep '.split()
 		self.keys     = 'net sta compBase lo la erroLo erroLa dep erroDep nickName \
-		comp index nameFunc sensorName dasName sensorNum nameMode netSta doFilt oRemove baseSacName starttime endtime sensitivity sort'.split()
-		self.keysType ='S S S f f f f f f S l f F S S S S S b b S u u f S'.split()
+		comp index nameFunc sensorName dasName sensorNum nameMode netSta doFilt oRemove baseSacName starttime endtime sensitivity sort dateFile'.split()
+		self.keysType ='S S S f f f f f f S l f F S S S S S b b S u u f S S'.split()
 		self.keys0 =    [None,None,'BH',None,None,0    ,   0, 0   ,0,  None,     \
-		None,None, fileP,'','','','','',True,False,'net.sta.info.compBase',UTCDateTime(1970,1,1),UTCDateTime(2099,1,1),1.239000e+09,'sta']
+		None,None, fileP,'','','','','',True,False,'net.sta.info.compBase',UTCDateTime(1970,1,1),UTCDateTime(2099,1,1),1.239000e+09,'sta','']
 		self.keysName = ['net','sta']
+	def loadDateFile(self,isPrint=False):
+		if len(self['dateFile'])>0:
+			if os.path.exists(self['dateFile']):
+				laloelO=''
+				LALOELO=[]
+				count=0
+				with open(self['dateFile'],'r') as f:
+					for line in f.readlines():
+						date,la,lo,el=line.split()
+						laloel=la+lo+el
+						if laloel == laloelO:
+							self.date[date]= LALOELO
+						else:
+							count+=1
+							laloelO = laloel
+							LALOELO=[float(la),float(lo),float(el)]
+						self.date[date]=LALOELO
+				if isPrint:
+					if count>1:
+						print('different loc type',count,self['net'],self['sta'])
 	def getNickName(self, index):
 		nickName = ''
 		N      = len(nickStrL)
@@ -244,6 +269,12 @@ class Station(Dist):
 			return [[],[],[]]
 		return [self['nameFunc'](self['net'],self['sta'], \
 			comp, time0,time1,self['nameMode']) for comp in self['comp']]
+	def __getitem__(self,key):
+		if key in listLoc  and self.time>0:
+			KEY = obspy.UTCDateTime(self.time).strftime('%Y%m%d')
+			if KEY in self.date:
+				return self.date[KEY][listLoc.index(key)]
+		return super().__getitem__(key)
 	def __setitem__(self,key,value):
 		super().__setitem__(key,value)
 		if not key in self.keys:
@@ -918,7 +949,7 @@ class Quake(Dist):
 		return len(self.records)
 	def getSacFiles(self,stations,isRead=False,resDir = 'eventSac/',strL='ENZ',\
 		byRecord=True,maxDist=-1,minDist=-1,remove_resp=False,isDoneSkip=False,isPlot=False,\
-		isSave=False,respStr='_remove_resp',para={},isSkip=False,doSave=False):
+		isSave=False,respStr='_remove_resp',para={},isSkip=False,doSave=False,isCal=False):
 		sacsL = []
 		staIndexs = self.staIndexs()
 		tmpDir = self.resDir(resDir)
@@ -1115,6 +1146,21 @@ class Quake(Dist):
 								sac.filter(para['filterName'],\
 									freq=para['freq'][0],  \
 									corners=para['corners'], zerophase=para['zerophase'])
+					if 'delta0' in para:
+						sampling_rateNew=1/para['delta0']
+						for sac in sacsL[-1]:
+							N = round(sampling_rateNew/sac.stats.sampling_rate)
+							if N!=1:
+								#sac.interpolate(sampling_rateNew, method="lanczos",a=20)
+								sac.resample(sampling_rateNew, window='boxcar')
+								sac.stats.sac['delta']=sac.stats.delta
+								if np.random.rand()<0.01:
+									print('*****do resample f:',sac.stats.sampling_rate,'delta',sac.stats.delta)
+					if isCal:
+						for I in len(sacsL[-1]):
+							sac = sacsL[-1][I]
+							station.time= sac.stats.starttime.timestamp
+							sacsL[-1][I]=adjust(sac,stloc=station.loc(),eloc=self.loc())
 					if isPlot:
 						plt.savefig(resSacNames[0]+'.jpg',dpi=200)
 					if isSave and remove_resp and station['oRemove'] ==False:
@@ -1527,7 +1573,7 @@ def adjust(data,stloc=None,kzTime=None,kzTimeNew=None,tmpFile='test.sac',decMul=
 
 
 
-def mergeSacByName(sacFileNames, **kwargs):
+def mergeSacByName(sacFileNames,isDe=True, **kwargs):
 	para ={\
 	'delta0'    :0.02,\
 	'freq'      :[-1, -1],\
@@ -1550,8 +1596,10 @@ def mergeSacByName(sacFileNames, **kwargs):
 				tmpSacs.detrend('demean').detrend('linear').filter(para['filterName'],\
 						freqmin=para['freq'][0], freqmax=para['freq'][1], \
 						corners=para['corners'], zerophase=para['zerophase'])
-			else:
+			elif isDe:
 				tmpSacs.detrend('demean').detrend('linear')
+			else:
+				print('no filter','no detrend')
 		except:
 			print('wrong read sac')
 			continue

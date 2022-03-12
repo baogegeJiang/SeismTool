@@ -269,9 +269,15 @@ class DS:
             self1.modelPeriod.plotByZ(self1.runPath,vR=self.config.para['vR'],self1=self1.fastP,head='period',R=R,selfRef=self.modelPeriod)
             if self.config.para['iso']=='F':
                 self.fastDiff = self.fast.copy()
-                self.fastDiff.v = self.fastDiff.v - self1.fast.v
+                v0 = self.fastDiff.v - self1.fast.v
+                v1 = self.fastDiff.v + self1.fast.v
+                v0[np.abs(v1)<np.abs(v0)]=v1[np.abs(v1)<np.abs(v0)]
+                self.fastDiff.v=v0
                 self.fastPDiff = self.fastP.copy()
-                self.fastPDiff.v = self.fastPDiff.v - self1.fastP.v
+                v0 = self.fastPDiff.v - self1.fastP.v
+                v1 = self.fastPDiff.v + self1.fastP.v
+                v0[np.abs(v1)<np.abs(v0)]=v1[np.abs(v1)<np.abs(v0)]
+                self.fastPDiff.v = v0
             self.modelResDiff = self.modelRes.copy()
             self.modelResDiff.v = self.modelResDiff.v/self1.modelRes.v-1
             self.modelPeriodDiff = self.modelPeriod.copy()
@@ -614,7 +620,7 @@ class Model(Model0):
             if isDiff:
                 plotPlane(m,x,y,per*100,R,z[i],mean*100,vmin*100,vmax*100,isFault=isFault,head=head,isVol=False,cLabel='V. D.(%)',meanLabel='%',midName='abs mean',cmap=diffMap)
             else:
-                plotPlane(m,x,y,per*100,R,z[i],mean,vmin*100,vmax*100,isFault=isFault,head=head,isVol=isVol,cLabel='V. A.(%)',midName='$v_0$',cmap=cmap)
+                plotPlane(m,x,y,per*100,R,z[i],mean,vmin*100,vmax*100,isFault=isFault,head=head,isVol=isVol,cLabel='V. A.(%)',midName='$v_0$',cmap=cmap)#cmap
             #plotPlane(m,x,y,out,R,z[i],mean,vmin,vmax,isFault=True,head=head,isVol=False)
             plt.gca().set(facecolor='w')
             if self1 !='':
@@ -623,7 +629,7 @@ class Model(Model0):
                 #printplt.arrow(x0+0.01*dx1,y0-0.05*dx1,0,0.03*dx1,color='b')
                 ac.plot([x0+0.01*dx1,x0+0.01*dx1],\
                     [y0-0.05*dx1,y0-0.05*dx1+0.03*dx1],color=color,linewidth=0.75)
-                ac.text(x0+0.01*dx1,y0-0.05*dx1,'0.03',ha='left',va='top',color='r',size=10)
+                ac.text(x0+0.01*dx1,y0-0.05*dx1,'0.03',ha='left',va='top',color='k',size=10)
                 for ii in range(v1.shape[0]):
                     for jj in range(v1.shape[1]):
                         if vR!='':
