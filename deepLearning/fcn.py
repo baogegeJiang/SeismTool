@@ -688,7 +688,7 @@ def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
                     if config.isBNL[-1]:
                         upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'0'+'_Up')(upL[j])
                     upL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0'+'_Up')(upL[j])
-                    upL[j]  = Conv2D(config.outputSize[-1]*2,kernel_size=config.kernelL[-1],strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(upL[j])
+                    upL[j]  = Conv2D(config.outputSize[-1]*1,kernel_size=config.kernelL[-1],strides=(1,1),padding='same',name=name+layerStr+'1'+'_Up',kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(upL[j])
                     if config.isBNL[-1]:
                         upL[j] = BatchNormalization(axis=BNA,name='BN_'+layerStr+'1'+'_Up')(upL[j])
                     upL[j] = Activation(config.activationL[j],name='Ac_'+layerStr+'1'+'_Up')(upL[j])
@@ -1654,6 +1654,7 @@ class fcnConfig:
             self.featureL      = [50,40,30,25,20,15,320]
             self.featureL      = [50,50,50,55,50,50,320]
             self.featureL      = [50,40,32,24,16,8,320]
+            self.featureL      = [50,40,30,20,10,5,320]
             #self.featureL      = [50,50,75,75,100,100,125]
             #self.featureL      = [50,75,75,100,125,150,200]
             #self.featureL      = [75,75,75,75,75,75,75]

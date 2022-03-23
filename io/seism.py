@@ -1269,6 +1269,10 @@ class QuakeL(list):
 			quakesNew.inRecord = self.inRecord
 			quakesNew.kyes = self.keys
 		return quakesNew
+	def getL(self):
+		self.timeL = np.array([q['time'] for q in self])
+		self.laL = np.array([q['la'] for q in self])
+		self.loL = np.array([q['lo'] for q in self])
 	def find(self,quake0):
 		if len(self)==0:
 			return -1
@@ -1279,9 +1283,7 @@ class QuakeL(list):
 		if quake0.name() in self.nameD:
 			return self.nameD[quake0.name()]
 		if len(self.timeL)!=len(self):
-			self.timeL = np.array([q['time'] for q in self])
-			self.laL = np.array([q['la'] for q in self])
-			self.loL = np.array([q['lo'] for q in self])
+			self.getL()
 		d = np.abs(self.timeL-quake0['time'])/10+np.abs(self.laL-quake0['la'])+np.abs(self.loL-quake0['lo'])
 		if d.min()<1:
 			return d.argmin()

@@ -209,14 +209,15 @@ class DS:
                 ,A=self.config.para['perAGc'],base=0)
         for i in range(nz):
           print (dep1[i]),
-    def test(self,fvLL,indexL,stations):
+    def test(self,fvLL,indexL,stations,isRun=False):
         self.writeInput()
         self.writeMod()
         self.writeData(fvLL,indexL,stations)
-        self.run()
+        if isRun:
+            self.run()
     def run(self):
         os.system('cd %s;DAzimSurfTomo_batch_20220111 ds &'%(self.runPath))
-    def testSyn(self,fvLL,indexL,stations,M=1):
+    def testSyn(self,fvLL,indexL,stations,M=1,isRun=False):
         self.writeMod()
         periods = ['' for i in range(self.config.para['kmaxRc'])]
         for i in range(self.config.para['kmaxRc']):
@@ -250,22 +251,29 @@ class DS:
         with open('%s/dsin'%self.runPath,'w+') as f:
             for period in periods:
                 f.write(period)
-        self.run()
-    def plotByZ(self,p2L=[],R=[],self1='',isCompare=False):
+        if isRun:
+            self.run()
+    def plotByZ(self,p2L=[],R=[],self1='',isCompare=False,**kwargs):
         if self.mode == 'syn':
-            self.modelTrue.plotByZ(self.runPath,self1=self.fastTrue,head='true',R=R,isVol=False,maxDep=9000,isFault=False)
-            self.modelRes.plotByZ(self.runPath,self1=self.fast,R=R,head='depth',isVol=False,maxDep=9000,isFault=False)
-            #self.fast.plotArrByZ(self.runPath,head='fast')
-            self.modelPeriod.plotByZ(self.runPath,self1=self.fastP,head='period',R=R,isVol=False,isFault=False)
+            if self.config.para['iso']=='F':
+                self.modelTrue.plotByZ(self.runPath,self1=self.fastTrue,head='true',R=R,isVol=False,maxDeep=9000,isFault=False,**kwargs)
+                self.modelRes.plotByZ(self.runPath,self1=self.fast,R=R,head='depth',isVol=False,maxDeep=9000,isFault=False,**kwargs)
+                #self.fast.plotArrByZ(self.runPath,head='fast')
+                self.modelPeriod.plotByZ(self.runPath,self1=self.fastP,head='period',R=R,isVol=False,isFault=False,**kwargs)
+            else:
+                self.modelTrue.plotByZ(self.runPath,head='true',R=R,isVol=False,maxDeep=9000,isFault=False,**kwargs)
+                self.modelRes.plotByZ(self.runPath,R=R,head='depth',isVol=False,maxDeep=9000,isFault=False,**kwargs)
+                #self.fast.plotArrByZ(self.runPath,head='fast')
+                self.modelPeriod.plotByZ(self.runPath,head='period',R=R,isVol=False,isFault=False,**kwargs)
             return
         '''
         for p2 in p2L:
             self.modelRes.plotByP2(self.runPath,head='P2',P2=p2,vR=self.config.para['vR'])
         '''
         if self1!='' and isCompare:
-            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth',selfRef=self.modelRes)
-            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R,selfRef=self.modelPeriod)
-            self1.modelRes.plotByZ(self1.runPath,vR=self.config.para['vR'],self1=self1.fast,R=R,head='depth',selfRef=self.modelRes)
+            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth',selfRef=self.modelRes,**kwargs)
+            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R,selfRef=self.modelPeriod,**kwargs)
+            self1.modelRes.plotByZ(self1.runPath,vR=self.config.para['vR'],self1=self1.fast,R=R,head='depth',selfRef=self.modelRes,**kwargs)
             self1.modelPeriod.plotByZ(self1.runPath,vR=self.config.para['vR'],self1=self1.fastP,head='period',R=R,selfRef=self.modelPeriod)
             if self.config.para['iso']=='F':
                 self.fastDiff = self.fast.copy()
@@ -282,16 +290,16 @@ class DS:
             self.modelResDiff.v = self.modelResDiff.v/self1.modelRes.v-1
             self.modelPeriodDiff = self.modelPeriod.copy()
             self.modelPeriodDiff.v = self.modelPeriodDiff.v/self1.modelPeriod.v-1
-            self.modelResDiff.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastDiff,R=R,head='depth',isDiff=True)
-            self.modelPeriodDiff.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastPDiff,head='period',R=R,isDiff=True)
+            self.modelResDiff.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastDiff,R=R,head='depth',isDiff=True,**kwargs)
+            self.modelPeriodDiff.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastPDiff,head='period',R=R,isDiff=True,**kwargs)
         elif self1!='' :
-            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth',selfRef=self1.modelRes)
+            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth',selfRef=self1.modelRes,**kwargs)
             #self.fast.plotArrByZ(self.runPath,head='fast')
-            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R,selfRef=self1.modelPeriod)
+            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R,selfRef=self1.modelPeriod,**kwargs)
         else:
-            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth')
+            self.modelRes.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fast,R=R,head='depth',**kwargs)
             #self.fast.plotArrByZ(self.runPath,head='fast')
-            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R)
+            self.modelPeriod.plotByZ(self.runPath,vR=self.config.para['vR'],self1=self.fastP,head='period',R=R,**kwargs)
     def plotTK(self):
         nxyz,la,lo,z = self.config.output()
         la = la[::-1]
@@ -526,7 +534,7 @@ class Model(Model0):
         v = self.v[i0,i1,i2]
         return v 
     
-    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False,selfRef='',isVol=False,maxDep=20,isFault=True):
+    def plotByZ(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,R=[],isDiff=False,selfRef='',isVol=False,maxDeep=20,isFault=True,FORMAT='eps'):
         R0=R
         resDir = runPath+'/'+'plot/'
         if not os.path.exists(resDir):
@@ -602,13 +610,24 @@ class Model(Model0):
                 vmax=+0.05
                 mean = np.abs(v[np.isnan(v)==False]).mean()
             else:
-                per/=mean
-                per-=1
-                perA=0.05
-                if z[i]> maxDep:
-                    perA=0.03
-                vmin=-perA
-                vmax=+perA
+                if maxDeep>10000:
+                    per/=mean
+                    per-=1
+                    if len(per[np.isnan(per)==False])>0:
+                        perA=np.abs(per[np.isnan(per)==False]).max()
+                    else:
+                        perA=0.05
+                    print(perA)
+                    vmin=-perA
+                    vmax=+perA
+                else:
+                    per/=mean
+                    per-=1
+                    perA=0.05
+                    if z[i]> maxDeep:
+                        perA=0.03
+                    vmin=-perA
+                    vmax=+perA
             ac =plt.gca()
             if self1 !='':
                 x0,y0= m(R[2],R[1])
@@ -643,7 +662,7 @@ class Model(Model0):
             headNew = head
             if isDiff:
                 headNew=head+'Diff'
-            plt.savefig('%s/%s_%f.eps'%(resDir,headNew,self.z[i]),dpi=500)
+            plt.savefig('%s/%s_%f.%s'%(resDir,headNew,self.z[i],FORMAT),dpi=300)
             print('###################################',self.z[i])
             plt.close()
     def plotByP2(self,runPath='DS',head='res',self1='',vR='',maxA=0.02,P2=[],N=300):
@@ -824,9 +843,9 @@ def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
     if isVol:
         vX,vY=m(mt.volcano[:,0],mt.volcano[:,1])
         m.plot(vX, vY,'^r')
-    pc=m.pcolormesh(x,y,per,cmap=cmap,shading='auto',rasterized=True)
+    pc=m.pcolormesh(x,y,per,cmap=cmap,vmin=vmin,vmax=vmax,shading='auto',rasterized=True)
     #m.drawcoastlines(linewidth=0.8, linestyle='dashdot', color='k')
-    plt.clim(vmin=vmin,vmax=vmax)
+    print(vmin,vmax)
     plt.title('%s %.2f km %s: %.3f %s'%(head,z,midName,mean,meanLabel))
     if 'period' in head:
         plt.title('%s %.2f s %s: %.3f %s'%(head,z,midName,mean,meanLabel))

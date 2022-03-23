@@ -1,16 +1,19 @@
 isCheckSignal=False
 isNew = True
-isRun=True
+isRun=False
+isDS = False
 isSave=False
 isPlot=True
 isSurfNet = True
-isConv=False
+isConv=True
 isPredict=True
 isCheck=True
 isStaCheck = False
-N=1
-
+N=5
+isHalf=True
 #from SurfDisp.dispersion import model
+from tkinter.ttk import Label
+from trace import Trace
 import obspy
 from glob import glob
 from SeismTool.io import seism
@@ -52,7 +55,6 @@ if isStaCheck:
         plt.close()
     exit()
     
-
 
 import os
 import sys
@@ -155,6 +157,7 @@ if isSurfNet:
     for i in range(N):
         resDir=resDir0[:-1]+('_%d/'%i)
         R.config.para['resDir']=resDir
+        R.config.para['disAmp']=1
         tmpDir='predict/'+R.config.para['resDir'].split('/')[-2]+'/'
         if os.path.exists(tmpDir+'resOnTrainTestValid'):
             with open(tmpDir+'resOnTrainTestValid') as f:
@@ -169,7 +172,7 @@ if isSurfNet:
         run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True,isRun=isRun,isAll=isAll)
         if isRun:
             R.calFromCorrL()
-        run.run.loadRes(R)
+        run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
         run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
         run.run.getAV(R)
         run.run.limit(R)
@@ -182,14 +185,20 @@ if isSurfNet:
             #R.plotStaDis(isAll=True)
             if isPredict:
                 R.showTest()
-            R.preDS(isByTrain=True,do=isRun)
-            R.preDSTrain(do=isRun)
-            R.preDSSyn(isByTrain=True,do=isRun)
+            R.preDS(isByTrain=True,do=isDS)
+            R.preDSTrain(do=isDS)
+            R.preDSSyn(isByTrain=True,do=isDS)
+        if isHalf:
+            R.config.para['resDir']=resDir[:-1]+'_half/'
+            run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
+            run.run.getAV(R)
+            run.run.limit(R)
+            run.run.analyRes(R,format='eps')
         R.config.para['resDir']=resDir[:-1]+'_rand2/'
         #R.config.para['randA'] = 0.05
         if isRun:
             R.calFromCorrL(isRand=True)
-        run.run.loadRes(R)
+        run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
         run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
         run.run.getAV(R)
         run.run.limit(R)
@@ -197,16 +206,64 @@ if isSurfNet:
         if i==0:
             run.run.plotGetAvDis(R)
             run.run.plotGetDis(R)
+    for i in range(N):
+        resDir=resDir0[:-1]+('_%d_noDis/'%i)
+        R.config.para['resDir']=resDir
+        R.config.para['disAmp']=0
+        tmpDir='predict/'+R.config.para['resDir'].split('/')[-2]+'/'
+        if os.path.exists(tmpDir+'resOnTrainTestValid'):
+            with open(tmpDir+'resOnTrainTestValid') as f:
+                R.config.para['modelFile']=f.readline()[:-1]
+        #R.config.para['randA'] = 0.0
+        if isRun:
+            R.model=None
+            R.loadModelUp()
+        elif isPredict:
+            R.model=None
+            R.loadModelUp(file=R.config.para['modelFile'])
+        run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True,isRun=isRun,isAll=isAll)
+        if isRun:
+            R.calFromCorrL()
+        run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
+        run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+        run.run.getAV(R)
+        run.run.limit(R)
+        run.run.analyRes(R,format='eps')
+        if i==-1:
+            run.run.plotGetAvDis(R)
+            run.run.plotGetDis(R)
+            R.plotTrainDis()
+            R.plotStaDis()
+            R.plotStaDis(isAll=True,isAllQuake=True)
+            if isPredict:
+                R.showTest()
+            R.preDS(isByTrain=True,do=isRun)
+            R.preDSTrain(do=isRun)
+            R.preDSSyn(isByTrain=True,do=isRun)
+        if False:
+            R.config.para['resDir']=resDir[:-1]+'_rand2__noDis/'
+            #R.config.para['randA'] = 0.05
+            if isRun:
+                R.calFromCorrL(isRand=True)
+            run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
+            run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+            run.run.getAV(R)
+            run.run.limit(R)
+            run.run.analyRes(R,format='eps')
+            if i==0:
+                run.run.plotGetAvDis(R)
+                run.run.plotGetDis(R)
 else:
     run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True,isRun=False,isAll=isAll)
 
+R.config.para['disAmp']=1
 import time
 resDir = resDir0[:-1]+('_%d/'%0)
 R.config.para['resDir']=resDir
 if isSurfNet:
     if isPlot:
         if N==1 and isRun:
-            time.sleep(60*25)
+            time.sleep(60*10)
         R.loadAndPlot(R.DS,isPlot=False)
         R.loadAndPlot(R.DSTrain,isPlot=False)
         R.compare(R.DS,R.DSTrain,isCompare=True)
@@ -244,18 +301,32 @@ if isConv:
     R.config.para['resDir']=resDir[:-1]+'_tra/'
     run.run.analyRes(R,format='eps')
     run.run.plotGetAvDis(R)
+    if isHalf:
+        R.config.para['resDir']=resDir[:-1]+'_tra_half/'
+        run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
+        run.run.getAV(R)
+        run.run.limit(R)
+        run.run.analyRes(R,format='eps')
 
 from glob import glob
 saveDir='predict/'+resDir0.split('/')[-2]
 if isSurfNet:
     M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?/resOnTrainTestValid')] )
     run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet',method='Surf-Net',isStd=True,isRand='F')
+    if isHalf:
+        M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_half/resOnTrainTestValid')] )
+        run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_half',method='Surf-Net',isStd=True,isRand='F')
     M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_rand2/resOnTrainTestValid')] )
     run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_rand',method='Surf-Net',isStd=True,isRand='T')
+    M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_noDis/resOnTrainTestValid')] )
+    run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_noDis',method='Surf-Net_noDis',isStd=True,isRand='F')
 
 if isConv:
     M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_tra/resOnTrainTestValid')] )
     run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_tra',method='conventional',isStd=False,isRand='F')
+    if isHalf:
+        M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_tra_half/resOnTrainTestValid')] )
+        run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_tra_half',method='conventional',isStd=False,isRand='F')
 
 import obspy
 from glob import glob
@@ -291,3 +362,297 @@ if False:
         plt.xlabel('t/d')
         plt.ylabel('lo')
         plt.savefig('%s/%s.jpg'%(resDirLocSave,key),dpi=300)
+
+    from obspy import read
+    from SeismTool.SurfDisp import dispersion as d
+    from imp import reload
+    import numpy as np
+    from matplotlib import pyplot as plt
+
+    file='/media/jiangyr/1TSSD/eventSac/1288975239.80000_12.92000_122.96999/FJ.DSXP._remove_resp_DISP.BHZ'
+    trace = read(file)[0]
+    trace.filter('bandpass',freqmin=1/160, freqmax=1/6, corners=4, zerophase=True)
+    dist=trace.stats.sac['gcarc']*111.19
+    timeL = np.arange(len(trace.data))/trace.stats.sampling_rate+trace.stats.sac['b']
+    time0=0
+    time1=dist/1.25
+    timeB=dist/5
+    timeE=dist/2.5
+    tRef = dist/3.5
+    T = np.arange(160,9,-1)
+    f = 1/T
+    data=trace.data[(timeL>time0)*(timeL<time1)]
+    timeLNew= timeL[(timeL>time0)*(timeL<time1)]
+    Phi,std,S0,S1 = d.calPhi(data,timeLNew,f,tRef=f*0+tRef,gamma=20,isS=True)
+    d.showS(timeLNew,data,f,S0,'predict/S.jpg')
+
+    modelFile = '../models/iasp'
+    zMax=900
+    Tmax=400
+    z= np.arange(0,zMax,10)
+    TL =np.arange(1,Tmax,8)
+    f = 1/TL
+    z0=80
+    z02=300
+    dz=20
+    dz2=10
+    A=0.15
+    model = np.loadtxt(modelFile)
+    index= np.abs(model[:,0]-zMax).argmin()
+    Z,Vp,Vs,Rho=model[:index+1,:4].transpose()
+    vp=d.scipy.interpolate.interp1d(Z,Vp)(z)
+    vs=d.scipy.interpolate.interp1d(Z,Vs)(z)
+    rho=d.scipy.interpolate.interp1d(Z,Rho)(z)
+
+    v0,GP0,GS0,GRho0=d.model2kernel(vp,vs,z,f,rho,wave='rayleigh',mode=1,velocity='phase',flat_earth=True)
+    v1,GP1,GS1,GRho1=d.model2kernel(vp,vs,z,f,rho,wave='rayleigh',mode=2,velocity='phase',flat_earth=True)
+
+    plt.close()
+    linewidth=1
+    plt.figure(figsize=(2,4))
+    plt.subplot(2,1,1)
+    plt.plot(vp,z,'k',label='$v_p$',linewidth=linewidth)
+    plt.plot(vs,z,'r',label='$v_p$',linewidth=linewidth)
+    plt.ylim([zMax,0])
+    plt.xlabel('$v$(km/s)')
+    plt.ylabel('depth(km)')
+    plt.legend()
+    plt.subplot(2,1,2)
+    plt.plot(v0,TL,'k',label='$v_0$',linewidth=linewidth)
+    plt.plot(v1,TL,'r',label='$v_1$',linewidth=linewidth)
+    plt.ylim([T.max(),1])
+    plt.legend()
+    plt.xlabel('$v$(km/s)')
+    plt.ylabel('$T$(s)')
+    plt.gca().set_yscale('log')
+    plt.tight_layout()
+    plt.savefig('predict/structrue.jpg',dpi=300)
+    plt.close()
+
+    plt.close()
+    Gmax=None
+    Gmin=None
+    plt.figure(figsize=(2,4))
+    plt.subplot(2,1,1)
+    #plt.pcolor(TL,z,GP0,cmap='hot',vmax=Gmax,vmin=Gmin)
+    #plt.colorbar(label='$G_{p0}(km^{-1})$')
+    colorL='krgbm'
+    tL=[30,60,90,120,200]
+    for t in tL:
+        index = np.abs(TL-t).argmin()
+        print(index)
+        plt.plot(GP0[:,index],z,colorL[tL.index(t)],label=str(t),linewidth=linewidth)
+
+    plt.legend()
+    plt.xlabel('$G_{P0}(km^{-1})$')
+    plt.ylabel('depth(s)')
+    plt.ylim([zMax-200,1])
+    #plt.xlim([0,0.02])
+    #plt.xlim([T.max(),1])
+    #plt.gca().set_xscale('log')
+    #plt.gca().set_yscale('log')
+    plt.subplot(2,1,2)
+    #plt.pcolor(TL,z,GS0,cmap='hot',vmax=Gmax,vmin=Gmin)
+    #plt.colorbar(label='$G_{s0}(km^{-1})$')
+    for t in tL:
+        index = np.abs(TL-t).argmin()
+        plt.plot(GS0[:,index],z,colorL[tL.index(t)],label=str(t),linewidth=linewidth)
+
+    plt.xlabel('$G_{s0}(km^{-1})$')
+    plt.ylabel('depth(s)')
+    #plt.gca().set_xscale('log')
+    #plt.gca().set_yscale('log')
+    plt.ylim([zMax-200,1])
+    #plt.xlim([0,0.1])
+    plt.tight_layout()
+    plt.legend()
+    plt.savefig('predict/structrueG.jpg',dpi=300)
+
+
+
+    plt.figure(figsize=(2,4))
+    plt.subplot(2,1,1)
+    #plt.pcolor(TL,z,GP0,cmap='hot',vmax=Gmax,vmin=Gmin)
+    #plt.colorbar(label='$G_{p0}(km^{-1})$')
+    colorL='krgbm'
+    tL=[30,60,90,120,200]
+    for t in tL:
+        index = np.abs(TL-t).argmin()
+        print(index)
+        plt.plot(GP1[:,index],z,colorL[tL.index(t)],label=str(t),linewidth=linewidth)
+
+    plt.legend()
+    plt.xlabel('$G_{P0}(km^{-1})$')
+    plt.ylabel('depth(s)')
+    plt.ylim([zMax-200,1])
+    #plt.xlim([0,0.02])
+    #plt.xlim([T.max(),1])
+    #plt.gca().set_xscale('log')
+    #plt.gca().set_yscale('log')
+    plt.subplot(2,1,2)
+    #plt.pcolor(TL,z,GS0,cmap='hot',vmax=Gmax,vmin=Gmin)
+    #plt.colorbar(label='$G_{s0}(km^{-1})$')
+    for t in tL:
+        index = np.abs(TL-t).argmin()
+        plt.plot(GS1[:,index],z,colorL[tL.index(t)],label=str(t),linewidth=linewidth)
+
+    plt.xlabel('$G_{s0}(km^{-1})$')
+    plt.ylabel('depth(s)')
+    #plt.gca().set_xscale('log')
+    #plt.gca().set_yscale('log')
+    plt.ylim([zMax-200,1])
+    #plt.xlim([0,0.1])
+    plt.tight_layout()
+    plt.legend()
+    plt.savefig('predict/structrueG1.jpg',dpi=300)
+
+    from SeismTool.SurfDisp import run
+    RNorth = run.run(run.runConfig(run.paraNorth))
+    RNorth.plotStaDis(True,True,'predict/')
+    RNorth.plotStaDis(False,True,'predict/')
+
+    R = run.run(run.runConfig(run.paraTrainTest))
+    resDir0 = R.config.para['resDir']
+    resDir=resDir0[:-1]+('_%d/'%0)
+    R.config.para['resDir']=resDir
+    R.plotStaDis(True,True)
+    R.plotStaDis(False,True)
+    '''
+    plt.subplot(3,1,3)
+    plt.pcolor(TL,z,GRho0,cmap='hot',vmax=Gmax,vmin=Gmin)
+    plt.colorbar(label='$G_{rho0}(cm/g)$')
+    plt.xlabel('$T$/s')
+    plt.ylabel('depth(s)')
+    plt.gca().set_yscale('log')
+
+    '''
+    T=np.array([30])
+    f=1/T
+    omega=np.pi*2*f
+    A=0.3
+    DOmega = omega*0.5
+    timeL=np.arange(0,200,0.1)
+    x = 300
+    phi=0
+
+    v0=d.model2disp(vp,vs,z,f,rho,wave='rayleigh',mode=1,velocity='phase',flat_earth=True)
+    u0=d.model2disp(vp,vs,z,f,rho,wave='rayleigh',mode=1,velocity='group',flat_earth=True)
+    v1=d.model2disp(vp,vs,z,f,rho,wave='rayleigh',mode=2,velocity='phase',flat_earth=True)
+    u1=d.model2disp(vp,vs,z,f,rho,wave='rayleigh',mode=2,velocity='group',flat_earth=True)
+    for DOmega in [omega*0.5,omega*0.3,omega*0.1]:
+        data0,oData0,sData0 = d.genSharpW(omega,v0,u0,DOmega,x,phi,timeL) 
+        data1,oData1,sData1= d.genSharpW(omega,v1,u1,DOmega,x,phi,timeL)
+        plt.figure(figsize=[4,6])
+        #plt.plot(timeL,oData0,'k',linewidth=linewidth)
+        plt.subplot(3,1,1)
+        plt.plot(timeL,data0,'k',linewidth=linewidth,Label='0')
+        plt.plot(timeL,sData0,'g',linewidth=linewidth,Label='$S$')
+        plt.plot([x/v0,x/v0],[-1.5,1.5],'r',linewidth=linewidth,label='$t_0$')
+        plt.legend()
+        plt.xlim([timeL[0],timeL[-1]])
+        plt.subplot(3,1,2)
+        plt.plot(timeL,data1*A,'k',linewidth=linewidth,label='1')
+        plt.plot(timeL,sData1,'g',linewidth=linewidth,Label='$S$')
+        plt.plot([x/v1,x/v1],[-1.5,1.5],'r',linewidth=linewidth,label='$t_1$')
+        plt.legend()
+        plt.xlim([timeL[0],timeL[-1]])
+        plt.subplot(3,1,3)
+        plt.plot(timeL,data0+data1*A,'k',linewidth=linewidth,label='0+1')
+        plt.plot([x/v0,x/v0],[-1.5,1.5],'r',linewidth=linewidth,label='$t_0$')
+        plt.xlabel('t/s')
+        plt.legend()
+        plt.xlim([timeL[0],timeL[-1]])
+        plt.suptitle('$\omega$: %.1f mHz, D$\omega$: %.1fmHz'%(omega*1000,DOmega*1000))
+        plt.savefig('predict/DW_%.1f_%.1f.jpg'%(omega*1000,DOmega*1000),dpi=300)
+        plt.close()
+
+
+
+
+if False:
+    vpNew = (1+np.exp(-(z-z0)**2/dz**2)*A)*vp
+    vsNew = (1+np.exp(-(z-z0)**2/dz**2)*A)*vs
+    rhoNew = (1+np.exp(-(z-z0)**2/dz**2)*A)*rho
+
+    vpNew2 = (1+np.exp(-(z-z02)**2/dz2**2)*A)*vp
+    vsNew2 = (1+np.exp(-(z-z02)**2/dz2**2)*A)*vs
+    rhoNew2 = (1+np.exp(-(z-z02)**2/dz2**2)*A)*rho
+
+    TL =np.arange(1,Tmax,8)
+    f = 1/TL
+    RPL =np.array([d.model2disp(vp,vs,z,f,rho,wave='rayleigh',mode=i,velocity='phase',flat_earth=True)for i in range(1,2)])
+    RPLNew =np.array([d.model2disp(vpNew,vsNew,z,f,rhoNew,wave='rayleigh',mode=i,velocity='phase',flat_earth=True)for i in range(1,2)])
+    RPLNew2 =np.array([d.model2disp(vpNew2,vsNew2,z,f,rhoNew2,wave='rayleigh',mode=i,velocity='phase',flat_earth=True)for i in range(1,2)])
+
+    plt.close()
+    #plt.subplots_adjust(wspace=0.2)
+    plt.figure(figsize=(2,4))
+    plt.subplot(3,1,1)
+    #plt.plot(vp,z,'k',label='$v_p$',linewidth=0.5)
+    plt.plot(vs,z,'k',label='$v_s$',linewidth=1)
+    #plt.plot(vpNew,z,'--r',label='$v_p$',linewidth=0.5)
+    plt.plot(vsNew,z,'--r',label='$v_s^0$',linewidth=1)
+    #plt.plot(vpNew2,z,'--r',label='$v_p$',linewidth=0.5)
+    #plt.plot(vsNew2,z,'--g',label='$v_s^1$',linewidth=0.5)
+    plt.ylim([500,-2])
+    plt.xlabel('$v$(km/s)')
+    plt.ylabel('depth(km)')
+    plt.legend()
+    plt.subplot(3,1,2)
+    RPL[RPL==0]=np.nan
+    RPLNew[RPLNew==0]=np.nan
+    RPLNew2[RPLNew2==0]=np.nan
+    plt.plot(RPL.transpose(),TL,'k',linewidth=1)
+    plt.plot(RPLNew.transpose(),TL,'--r',linewidth=1)
+    #plt.plot(RPLNew2.transpose(),TL,'--r',linewidth=1)
+    plt.ylim([Tmax,1])
+    plt.xlabel('$v_{phase}$(km/s)')
+    #plt.gca().set_yscale('log')
+    plt.ylabel('$period$(s)')
+    plt.xlim([2.8,6.5])
+    plt.subplot(3,1,3)
+    plt.plot(RPLNew.transpose()-RPL.transpose(),TL,'k',linewidth=1)
+    #plt.plot(RPLNew2.transpose(),TL,'--r',linewidth=1)
+    plt.ylim([Tmax,1])
+    plt.xlabel('$v_d$(km/s)')
+    #plt.gca().set_yscale('log')
+    plt.ylabel('$period$(s)')
+    #plt.xlim([],6.5])
+    #plt.legend()
+    plt.tight_layout()
+    plt.savefig('predict/structrue1.jpg',dpi=300)
+
+    plt.close()
+    plt.figure(figsize=(2,4))
+    plt.subplot(3,1,1)
+    #plt.plot(vp,z,'k',label='$v_p$',linewidth=0.5)
+    plt.plot(vs,z,'k',label='$v_s$',linewidth=1)
+    #plt.plot(vpNew,z,'--r',label='$v_p$',linewidth=0.5)
+    #plt.plot(vsNew,z,'--r',label='$v_s^0$',linewidth=0.5)
+    #plt.plot(vpNew2,z,'--r',label='$v_p$',linewidth=0.5)
+    plt.plot(vsNew2,z,'--r',label='$v_s^1$',linewidth=1)
+    plt.ylim([500,-2])
+    plt.xlabel('depth(km)')
+    plt.legend()
+    plt.subplot(3,1,2)
+    RPL[RPL==0]=np.nan
+    RPLNew[RPLNew==0]=np.nan
+    RPLNew2[RPLNew2==0]=np.nan
+    plt.plot(RPL.transpose(),TL,'k',linewidth=1)
+    #plt.plot(RPLNew.transpose(),TL,'--r',linewidth=0.5)
+    plt.plot(RPLNew2.transpose(),TL,'--r',linewidth=1)
+    plt.ylim([Tmax,1])
+    plt.xlabel('$v_{phase}$(km/s)')
+    #plt.gca().set_yscale('log')
+    plt.ylabel('$period$(s)')
+    plt.xlim([2.8,6.5])
+    plt.subplot(3,1,3)
+    plt.plot(RPLNew2.transpose()-RPL.transpose(),TL,'k',linewidth=1)
+    #plt.plot(RPLNew2.transpose(),TL,'--r',linewidth=1)
+    plt.ylim([Tmax,1])
+    plt.xlabel('$v_d$(km/s)')
+    #plt.gca().set_yscale('log')
+    plt.ylabel('$period$(s)')
+    #plt.legend()
+    plt.tight_layout()
+    plt.savefig('predict/structrue2.jpg',dpi=300)

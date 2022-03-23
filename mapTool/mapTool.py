@@ -12,11 +12,142 @@ from ..mathTool.distaz import DistAz
 from ..mathTool.mathFunc_bak import R as mathR
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
 from ..plotTool import figureSet as fs
+import matplotlib.colors as mcolors
+#from pycpt.load import gmtColormap
+def gmtColormap_openfile(cptf, name=None):
+    """Read a GMT color map from an OPEN cpt file
 
+    Parameters
+    ----------
+    cptf : open file or url handle
+        path to .cpt file
+    name : str, optional
+        name for color map
+        if not provided, the file name will be used
+    """
+    # generate cmap name
+    if name is None:
+        name = '_'.join(os.path.basename(cptf.name).split('.')[:-1])
+
+    # process file
+    x = []
+    r = []
+    g = []
+    b = []
+    lastls = None
+    A0=1
+    A1=1
+    for l in cptf.readlines():
+        ls = l.split()
+
+        # skip empty lines
+        if not ls:
+            continue
+
+        # parse header info
+        if ls[0] in ["#", b"#"]:
+            if ls[-1] in ["HSV", b"HSV"]:
+                colorModel = "HSV"
+            else:
+                colorModel = "RGB"
+            if len(ls)>2:
+                if ls[1]=='RANGE':
+                    A0 = np.abs(float(ls[3].split('/')[0]))
+                    A1 = float(ls[3].split('/')[1])
+            continue
+
+        # skip BFN info
+        if ls[0] in ["B", b"B", "F", b"F", "N", b"N"]:
+            continue
+
+        # parse color vectors
+        if '/' in l:
+            x.append(float(ls[0]))
+            R,G,B=ls[1].split('/')
+            if x[-1]>0:
+                x[-1]=x[-1]*A1
+            else:
+                x[-1]=x[-1]*A0
+            r.append(float(R))
+            g.append(float(G))
+            b.append(float(B))
+            x.append(float(ls[2]))
+            if x[-1]>0:
+                x[-1]=x[-1]*A1
+            else:
+                x[-1]=x[-1]*A0
+            R,G,B=ls[3].split('/')
+            r.append(float(R))
+            g.append(float(G))
+            b.append(float(B))
+        else:
+            x.append(float(ls[0]))
+            r.append(float(ls[1]))
+            g.append(float(ls[2]))
+            b.append(float(ls[3]))
+            x.append(float(ls[4]))
+            r.append(float(ls[5]))
+            g.append(float(ls[6]))
+            b.append(float(ls[7]))
+
+        # save last row
+        #lastls = ls
+
+    
+    
+    x = np.array(x)
+    r = np.array(r)
+    g = np.array(g)
+    b = np.array(b)
+
+    if colorModel == "HSV":
+        for i in range(r.shape[0]):
+            # convert HSV to RGB
+            rr,gg,bb = colorsys.hsv_to_rgb(r[i]/360., g[i], b[i])
+            r[i] = rr ; g[i] = gg ; b[i] = bb
+    elif colorModel == "RGB":
+        r /= 255.
+        g /= 255.
+        b /= 255.
+
+    red = []
+    blue = []
+    green = []
+    xNorm = (x - x[0])/(x[-1] - x[0])
+    doneL =[]
+    for i in range(len(x)):
+        X = x[i]
+        if X in doneL:
+            continue
+        else:
+            doneL.append(X)
+        red.append([xNorm[i],r[x==X][0],r[x==X][-1]])
+        green.append([xNorm[i],g[x==X][0],g[x==X][-1]])
+        blue.append([xNorm[i],b[x==X][0],b[x==X][-1]])
+
+    # return colormap
+    cdict = dict(red=red,green=green,blue=blue)
+    return mcolors.LinearSegmentedColormap(name=name,segmentdata=cdict)
+
+
+def gmtColormap(cptfile, name=None):
+    """Read a GMT color map from a cpt file
+
+    Parameters
+    ----------
+    cptfile : str or open file-like object
+        path to .cpt file
+    name : str, optional
+        name for color map
+        if not provided, the file name will be used
+    """
+    with open(cptfile, 'r') as cptf:
+        return gmtColormap_openfile(cptf, name=name)
 cmap = cpt2cm(os.path.dirname(__file__)+'/../data/temperatureInv')
 cmapNoGreen = cpt2cm(os.path.dirname(__file__)+'/../data/no_green.cpt').reversed()
 cmapTemp = cpt2cm(os.path.dirname(__file__)+'/../data/temperature')
-cmapETopo=cpt2cm(os.path.dirname(__file__)+'/ETOPO1.cpt')
+#cmapETopo=cpt2cm(os.path.dirname(__file__)+'/ETOPO1.cpt')
+cmapETopo=gmtColormap(os.path.dirname(__file__)+'/ETOPO1.cpt')
 volcano=np.loadtxt(os.path.dirname(__file__)+'/../data/volcano')
 pi=3.1415927
 def genBaseMap(R=[0,90,0,180], topo=None,**kwags):
@@ -46,10 +177,15 @@ def readnetcdf(R,file='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd'):
     laStr = 'lat'
     loStr = 'lon'
     zStr  = 'z'
-    if 'http' in file:
+    print(nc.variables)
+    if 'etopo05' in file:
         laStr = 'ETOPO05_Y'
         loStr = 'ETOPO05_X'
         zStr  = 'ROSE'
+    if laStr not in nc.variables:
+        laStr = 'y'
+        loStr = 'x'
+        zStr  = 'z'
     la=np.array(nc.variables[laStr][:])
     lo=np.array(nc.variables[loStr][:])
     R = R.copy()

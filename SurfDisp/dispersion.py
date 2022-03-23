@@ -26,6 +26,7 @@ from matplotlib import colors,cm
 import h5py
 from ..plotTool import figureSet
 from mathTool import mathFunc
+from pysurf96 import surf96
 figureSet.init()
 gpdcExe = '/home/jiangyr/program/geopsy/bin/gpdc'
 Vav = -1
@@ -1709,7 +1710,7 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     plt.yticks([1/100,1/10])
     #plt.title(title)
     #plt.tight_layout()
-    plt.text((binDVR[(-2)]), (binF[(-2)]), thresholdText, va='top', ha='right')
+    #plt.text((binDVR[(-2)]), (binF[(-2)]), thresholdText, va='top', ha='right')
     plt.gca().set_position([0.15,0.2,0.6,0.7])
     ax_divider = make_axes_locatable(plt.gca())
     cax = ax_divider.append_axes('right', size="7%", pad="10%",)
@@ -1755,8 +1756,8 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     plt.xticks([1/100,1/10])
     #plt.title(title)
     #plt.tight_layout()
-    ax1.set_position([0.15,0.2,0.7,0.7])
-    ax2.set_position([0.15,0.2,0.7,0.7])
+    ax1.set_position([0.15,0.2,0.6,0.7])
+    ax2.set_position([0.15,0.2,0.6,0.7])
     plt.savefig((filename[:-4] + 'FCount' + filename[-4:]), dpi=300)
     plt.close()
 
@@ -1796,8 +1797,8 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     #plt.xticks([1/100,1/10])
     #plt.title(title)
     #plt.tight_layout()
-    ax1.set_position([0.15,0.2,0.7,0.7])
-    ax2.set_position([0.15,0.2,0.7,0.7])
+    ax1.set_position([0.15,0.2,0.6,0.7])
+    ax2.set_position([0.15,0.2,0.6,0.7])
     plt.savefig((filename[:-4] + 'DisCount' + filename[-4:]), dpi=300)
     plt.close()
 
@@ -1838,8 +1839,8 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     #plt.xticks([1/100,1/10])
     #plt.title(title)
     #plt.tight_layout()
-    ax1.set_position([0.15,0.2,0.7,0.7])
-    ax2.set_position([0.15,0.2,0.7,0.7])
+    ax1.set_position([0.15,0.2,0.6,0.7])
+    ax2.set_position([0.15,0.2,0.6,0.7])
     plt.savefig((filename[:-4] + 'NCount' + filename[-4:]), dpi=300)
     plt.close()
 
@@ -3288,7 +3289,7 @@ def calPhi_(data,timeL,f,sigmaF=8,deltaF=0/100,sigmaT=4,deltaT=0):
         #print(timeF,Phi)
     return Phi
 
-def calPhi(data,timeL,f,tRef,gamma=3,deltaF=0/100,gammaW=20,deltaT=0):
+def calPhi(data,timeL,f,tRef,gamma=3,deltaF=0/100,gammaW=20,deltaT=0,isS=False):
     delta= timeL[1]-timeL[0]
     fMax  = 1/(delta)
     N = len(timeL)
@@ -3296,6 +3297,9 @@ def calPhi(data,timeL,f,tRef,gamma=3,deltaF=0/100,gammaW=20,deltaT=0):
     Phi = f*0
     std = f*0
     emin=7
+    if isS:
+        S0=[]
+        S1=[]
     #f= np.round(f/fMin)*fMin
     #f=np.unique(f)
     for i in range(len(f)):
@@ -3320,6 +3324,9 @@ def calPhi(data,timeL,f,tRef,gamma=3,deltaF=0/100,gammaW=20,deltaT=0):
         x1x2h = np.convolve(data,yfil)
         x1x2h = x1x2h[it0-1:len(data)+it0-1]
         x1x2h = signal.detrend(x1x2h)
+        if isS:
+            #print(len(x1x2h))
+            S0.append(x1x2h.copy())
         #x1x2h -=x1x2h.mean()
         if i0>=i1:
             i1=i0+1
@@ -3332,7 +3339,48 @@ def calPhi(data,timeL,f,tRef,gamma=3,deltaF=0/100,gammaW=20,deltaT=0):
         x1x2h = x1x2h * h
         Phi[i] =np.angle(calSpec(x1x2h,timeL,np.array([F])))[0]
         std[i] = aMax/noise
+        if isS:
+            S1.append(x1x2h.copy())
+    if isS:
+        return Phi,std,np.array(S0),np.array(S1)
     return Phi,std
+
+def showS(timeL,data,f,S,filename):
+    plt.figure(figsize=[4,4])
+    S = S/np.abs(S).max(axis=1,keepdims=True)
+    SH = signal.hilbert(S,axis=1)
+    SH = SH/np.abs(SH).max(axis=1,keepdims=True)
+    plt.subplot(3,1,1)
+    #plt.gca().set_position([0.2,0.7,0.6,0.2])
+    plt.plot(timeL,data,'k')
+    plt.xlabel('t/s')
+    #plt.xticks([])
+    plt.xlim([timeL[0],timeL[-1]])
+    plt.subplot(3,1,2)
+    #plt.gca().set_position([0.2,0.4,0.6,0.2])
+    pc=plt.pcolor(timeL,1/f,S,vmin=-1,vmax=1,cmap='bwr',rasterized=True)
+    plt.xlim([timeL[0],timeL[-1]])
+    #plt.xlabel('t/s')
+    plt.ylabel('T/s')
+    #plt.colorbar(label='$S(f)$',orientation="horizontal")
+    #plt.xticks([])
+    #figureSet.setColorbar(pc,'$S(f)$',pos='right')
+    #plt.colorbar(label='$S(f)$')
+    #plt.yscale('log')
+    plt.gca().set_yscale('log')
+    plt.subplot(3,1,3)
+    #plt.gca().set_position([0.2,0.1,0.6,0.2])
+    pc=plt.pcolor(timeL,1/f,np.abs(SH)**2,vmin=0,vmax=1,cmap='hot',rasterized=True)
+    plt.xlabel('t/s')
+    plt.ylabel('T/s')
+    #plt.colorbar(label='$|A|^2$',orientation="horizontal")
+    #figureSet.setColorbar(pc,'$|A|^2$',pos='right')
+    plt.xlim([timeL[0],timeL[-1]])
+    #plt.yscale('log')
+    plt.gca().set_yscale('log')
+    plt.savefig(filename,dpi=300)
+    plt.close()
+
 
 def calSpec(data,timeL,f):
         timeLT=timeL.reshape([1,-1])
@@ -4570,7 +4618,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
                 head = sta0+'_'+sta1
             timeL    = corrL[index].timeL-corrL[index].timeL[0]#+t[i,j]
             timeLOut = corrL[index].timeLOut-corrL[index].timeLOut[0]#+t[i,j]
-            xlim=[0,1000]
+            xlim=[0,1023]
             ylim=[-6,6]
             tmpy0=y0[i,:,j,:]
             tmpy=y[i,:,j,:]
@@ -4683,6 +4731,51 @@ def analyModel(depth, v, resDir='predict/KEA20/'):
 def getSacTimeL(sac):
     return np.arange(len(sac)) * sac.stats['delta'] + sac.stats['sac']['b']
 
+def model2disp(vp,vs,z,f,rho=[],**kwags):
+    if len(rho)==0:
+        rho = vp * .32 + .77
+    thickness = z[1:]-z[:-1]
+    vp =0.5*(vp[1:]+vp[:-1])
+    vs =0.5*(vs[1:]+vs[:-1])
+    rho =0.5*(rho[1:]+rho[:-1])
+    vp = vp[thickness!=0]
+    vs = vs[thickness!=0]
+    rho = rho[thickness!=0]
+    thickness =thickness[thickness!=0]
+    #thickness, vp, vs, rho, periods,
+    #                wave='love', mode=1, velocity='group', flat_earth=True)
+    #print(thickness, vp, vs, rho, 1/f,kwags)
+    return surf96(thickness, vp, vs, rho, 1/f,**kwags)
+def model2kernel(vp0,vs0,z,f,rho0=[],**kwags):
+    v0 = model2disp(vp0,vs0,z,f,rho0,**kwags)
+    t = z[1:]-z[:-1]
+    dv = 0.5
+    GP = np.zeros([len(z),len(f)])
+    GS = np.zeros([len(z),len(f)])
+    GRho = np.zeros([len(z),len(f)])
+    for i in range(len(z)):
+        DV = dv*np.exp(-(z-z[i])**2/30**2)*dv
+        DS = (t*(DV[1:]+DV[:-1])/2).sum()
+        vp = vp0+DV
+        vs = vs0+DV
+        rho = rho0+DV
+        v_p = model2disp(vp,vs0,z,f,rho0,**kwags)
+        v_s = model2disp(vp0,vs,z,f,rho0,**kwags)
+        v_rho = model2disp(vp0,vs0,z,f,rho,**kwags)
+        GP[i]  = (v_p-v0)/DS
+        GS[i]  = (v_s-v0)/DS
+        GRho[i]  = (v_rho-v0)/DS
+    GP[:,v0==0]=np.nan
+    GS[:,v0==0]=np.nan
+    GRho[:,v0==0]=np.nan
+    v0[v0==0]=np.nan
+    return v0,GP,GS,GRho
+
+def genSharpW(omega,vp,vg,DOmega,x,phi,timeL):
+    k = omega/vp
+    k1 = 1/vg
+    return np.cos(k*x-omega*timeL+phi)*np.sin((k1*x-timeL+0.00001)*DOmega)/(k1*x-timeL+0.00001)/DOmega,np.cos(k*x-omega*timeL+phi),np.sin((k1*x-timeL+0.00001)*DOmega)/(k1*x-timeL+0.00001)/DOmega
+    
 
 def corrSac(d, sac0, sac1, name0='', name1='', quakeName='', az=np.array([0, 0]), dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), dis=np.array([0, 0]), dep=10, modelFile='', srcSac='', isCut=False, maxCount=-1, **kwags):
     corr = d.sacXcorr(sac0, sac1, isCut=isCut, maxCount=maxCount)
@@ -4732,10 +4825,10 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
             distL[i] = sacsL[i][0].stats['sac']['dist']
             if isDisp:
                 sacsL[i][0].integrate()
-            to = -300
+            to = -500
             dto = to - sacsL[i][0].stats['sac']['b']
             io = max(0, int(dto / sacsL[i][0].stats['sac']['delta']))
-            te = 60
+            te = 100
             dte= te - sacsL[i][0].stats['sac']['b']
             ie = max(0, int(dte / sacsL[i][0].stats['sac']['delta']))
             TS = IASP91(sacsL[i][0].stats['sac']['evdp'], sacsL[i][0].stats['sac']['gcarc'])
@@ -4765,17 +4858,6 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
             
             #sigmaS= (data[maxI0:maxI1]**2).mean()**0.5
             #sigmaN= (data[io:ie]**2).mean()**0.5
-            sacNew = sacsL[i][0].copy()
-            #sacNew.filter('bandpass',freqmin=1/100, freqmax=1/20, corners=4, zerophase=True)
-            data=sacNew.data.copy()
-            data-=data.mean()
-            maxI = np.abs(data[i0:i1]).argmax()+i0
-            maxI0 = int(maxI*0.75)
-            maxI1 = int(maxI*1.25)
-
-            sigmaS= data[maxI0:maxI1].std()#np.abs(data[i0:i1]).max()#
-            sigmaN= data[io:ie].std()
-            SNR[i] = sigmaS / sigmaN
             if isIqual:
                 if 'iqual' in sacsL[i][0].stats['sac']:
                     iqual = sacsL[i][0].stats['sac']['iqual']
@@ -4788,10 +4870,25 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
                 else:
                     print('no iqual')
                     continue
-            DATA = data
-            data=sacsL[i][0].data.copy()
-            data-=data.mean()
+            else:
+                sacNew = sacsL[i][0].copy()
+                sacNew.filter('bandpass',freqmin=1/60, freqmax=1/30, corners=4, zerophase=True)
+                data=sacNew.data.copy()
+                data-=data.mean()
+                maxI = np.abs(data[i0:i1]).argmax()+i0
+                maxI0 = int(maxI*0.75)
+                maxI1 = int(maxI*1.25)
+                sigmaS= data[maxI0:maxI1].std()#np.abs(data[i0:i1]).max()#
+                sigmaN= data[io:ie].std()
+                SNR[i] = sigmaS / sigmaN
+                if SNR[i]<3:
+                    if np.random.rand()<0.001:
+                        print('control by snr',SNR[i])
+            
             if SNR[i]>minSNR:
+                DATA = data
+                data=sacsL[i][0].data.copy()
+                data-=data.mean()
                 if len(plotDir)!=0:
                     b=sacsL[i][0].stats['sac']['b']
                     timeL = b+sacsL[i][0].stats['sac']['delta']*np.arange(len(sacsL[i][0].data))
