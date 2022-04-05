@@ -1,16 +1,25 @@
+from tkinter import TRUE
+from numpy import True_
+
+
 isCheckSignal=False
 isNew = True
-isRun=False
-isDS = False
-isSave=False
+isRun= True
+isDS = True
+isSave= True
 isPlot=True
+isAn= True
 isSurfNet = True
-isConv=True
-isPredict=False
+isConv=  False
+doL=[1]
+isPredict= True
 isCheck=True
 isStaCheck = False
 N=5
-isHalf=True
+isHalf=2
+isRePick=False
+doRePick=False
+threshold=0.015
 #from SurfDisp.dispersion import model
 from tkinter.ttk import Label
 from trace import Trace
@@ -66,18 +75,21 @@ from tensorflow.python.framework.tensor_util import FastAppendBFloat16ArrayToTen
 import h5py
 
 if isCheckSignal:
+    print('checking')
     R = run.run(run.runConfig(run.paraTrainTest))
     para = R.config.para
     para['isIqual']=False
     para['minSNRL']=[0]
     para['time0']  = 0
+    R.config.para['matH5']='/media/jiangyr/1TSSD/trainTest1Hz_20220402_snrSTD3V15.h5'
+    R.config.para['matH5']='/media/jiangyr/1TSSD/trainTest4Hz_check_snr0_from-384-1152V10.h5'
     if not os.path.exists(R.config.para['matH5']):
         R.calCorrOneByOne()
-
+    
     sta     = run.seism.StationList(para['stationFileL'][0])
     q  = run.seism.QuakeL(para['quakeFileL'][0])
     dRatioD={}
-    fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][0],quakeD=q,dRatioD=dRatioD)
+    fvd, q0 = para['dConfig'].loadQuakeNEFV(sta,quakeFvDir=para['pairDirL'][0],quakeD=q,dRatioD=dRatioD,time0=R.config.para['time0'],isCheck=isCheck)
     corrL = run.d.corrL()
     with h5py.File(para['matH5']) as h5:
         for j in range(len(sta)):
@@ -89,8 +101,6 @@ if isCheckSignal:
                 if sta0>sta1:
                     sta1,sta0=[sta0,sta1]
                 corrL.loadByPairsH5([sta0+'_'+sta1],h5)
-    
-
     '''
     i=0
     para['sacPara']['delta0']=1.
@@ -103,17 +113,23 @@ if isCheckSignal:
             minSNR=0,isLoadFv=False,\
             fvD={},isByQuake=True,para=para['sacPara'],resDir=para['eventDir'],maxCount=para['maxCount'],up=para['up'],isIqual=False)
     '''
+reload(run.d)
+if isCheckSignal:
     fvDGet ={}
     allCount=0
     validCount = 0
     getCount =0
     fvCount=0
     for corr in corrL:
+        xx = corr.xx
         modelFile = corr.modelFile
         if modelFile in fvd:
             fvCount+=1
             fvRef = fvd[modelFile]
             f = fvRef.f
+            travel = corr.dDis/4
+            MAXT  = travel*2
+            f =f[f>1/MAXT]
             f =f[f>1/170]
             f =f[f<1/8]
             if len(f)==0:
@@ -121,19 +137,19 @@ if isCheckSignal:
             allCount+=len(f)
             if len(corr.xx)==0:
                 continue
-            fvGet=run.d.corr.getFV(corr,f,fvRef,-100+f*0,100+f*0,1000+f*0,-0.02+f*0,0.02+f*0,minSNR=0+para['T']*0,N=50,v0=1.5,v1=5.,k=0,isControl=False,isByLoop=False,isStr=True)
+            fvGet=run.d.corr.getFV(corr,f,fvRef,-100+f*0,100+f*0,1000+f*0,-0.03+f*0,0.03+f*0,minSNR=0+para['T']*0,N=100,v0=1.5,v1=5.,k=0,isControl=False,isByLoop=False,isStr=True)
+            #if 1/fvGet.f.min()-1/fvGet.f.max()<5:
+            #    continue
             validCount+=len(fvGet.f)
             fvDGet[modelFile]=fvGet
             if len(f)/len(fvGet.f)-1>0.1:
-                print(modelFile,corr.dDis,corr.dis,'wrong')
+                #print(modelFile,corr.dDis,corr.dis,'wrong')
                 continue
             getCount+=1
             print(validCount/allCount,getCount/fvCount,fvCount/len(fvd))
-
-    saveDir='../models/New/Pairs_pvtsel/'
+    saveDir='../models/New/Pairs_pvtsel_4Hz_-384-1152V10/'
     run.d.saveFVD(fvDGet,sta,q,saveDir,'pair',isOverwrite=True)
     exit()
-
 isAll    = False
 run.d.Vav=-1
 isDisQC =True
@@ -144,7 +160,7 @@ resDir = R.config.para['resDir']
 R.config.para['resDir']=resDir
 
 if isNew:
-    R.config.para['pairDirL'][0]='../models/New/Pairs_pvtsel/'
+    R.config.para['pairDirL'][0]='../models/New/Pairs_pvtsel_4Hz_-384-1152V10/'
 
 if not os.path.exists(R.config.para['matH5']):
     R.calCorrOneByOne()
@@ -154,105 +170,125 @@ R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=True,isDisQC=isDisQC,isAl
 R.getDisCover()
 
 if isSurfNet:
-    for i in range(N):
-        resDir=resDir0[:-1]+('_%d/'%i)
-        R.config.para['resDir']=resDir
-        R.config.para['disAmp']=1
-        tmpDir='predict/'+R.config.para['resDir'].split('/')[-2]+'/'
-        if os.path.exists(tmpDir+'resOnTrainTestValid'):
-            with open(tmpDir+'resOnTrainTestValid') as f:
-                R.config.para['modelFile']=f.readline()[:-1]
-        #R.config.para['randA'] = 0.0
-        if isRun:
-            R.model=None
-            R.loadModelUp()
-        elif isPredict:
-            R.model=None
-            R.loadModelUp(file=R.config.para['modelFile'])
-        run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True,isRun=isRun,isAll=isAll)
-        if isRun:
-            R.calFromCorrL()
-        run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
-        run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
-        run.run.getAV(R)
-        run.run.limit(R)
-        run.run.analyRes(R,format='eps')
-        if i==0:
-            run.run.plotGetAvDis(R)
-            run.run.plotGetDis(R)
-            R.plotTrainDis()
-            R.plotStaDis()
-            #R.plotStaDis(isAll=True)
-            if isPredict:
-                R.showTest()
-            R.preDS(isByTrain=True,do=isDS)
-            R.preDSTrain(do=isDS)
-            R.preDSSyn(isByTrain=True,do=isDS)
-        if isHalf:
-            R.config.para['resDir']=resDir[:-1]+'_half/'
-            run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
-            run.run.getAV(R)
-            run.run.limit(R)
-            run.run.analyRes(R,format='eps',isHalf=True)
-        R.config.para['resDir']=resDir[:-1]+'_rand2/'
-        #R.config.para['randA'] = 0.05
-        if isRun:
-            R.calFromCorrL(isRand=True)
-        run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
-        run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
-        run.run.getAV(R)
-        run.run.limit(R)
-        run.run.analyRes(R,format='eps')
-        if i==0:
-            run.run.plotGetAvDis(R)
-            run.run.plotGetDis(R)
-    for i in range(N):
-        resDir=resDir0[:-1]+('_%d_noDis/'%i)
-        R.config.para['resDir']=resDir
-        R.config.para['disAmp']=0
-        tmpDir='predict/'+R.config.para['resDir'].split('/')[-2]+'/'
-        if os.path.exists(tmpDir+'resOnTrainTestValid'):
-            with open(tmpDir+'resOnTrainTestValid') as f:
-                R.config.para['modelFile']=f.readline()[:-1]
-        #R.config.para['randA'] = 0.0
-        if isRun:
-            R.model=None
-            R.loadModelUp()
-        elif isPredict:
-            R.model=None
-            R.loadModelUp(file=R.config.para['modelFile'])
-        run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True,isRun=isRun,isAll=isAll)
-        if isRun:
-            R.calFromCorrL()
-        run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
-        run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
-        run.run.getAV(R)
-        run.run.limit(R)
-        run.run.analyRes(R,format='eps')
-        if i==-1:
-            run.run.plotGetAvDis(R)
-            run.run.plotGetDis(R)
-            R.plotTrainDis()
-            R.plotStaDis()
-            R.plotStaDis(isAll=True,isAllQuake=True)
-            if isPredict:
-                R.showTest()
-            R.preDS(isByTrain=True,do=isRun)
-            R.preDSTrain(do=isRun)
-            R.preDSSyn(isByTrain=True,do=isRun)
-        if False:
-            R.config.para['resDir']=resDir[:-1]+'_rand2__noDis/'
-            #R.config.para['randA'] = 0.05
+    if 1 in doL:
+        for i in range(N):
+            resDir=resDir0[:-1]+('_%d/'%i)
+            R.config.para['resDir']=resDir
+            R.config.para['disAmp']=1
+            tmpDir='predict/'+R.config.para['resDir'].split('/')[-2]+'/'
+            if len(glob(tmpDir+'resOnTrainTestValid_0.0??'))>0:
+                with open(glob(tmpDir+'resOnTrainTestValid_0.0??')[0]) as f:
+                    R.config.para['modelFile']=f.readline()[:-1]
+            #R.config.para['randA'] = 0.0
+            if isRun:
+                #R.model=None
+                R.loadModelUp()
+            elif isPredict:
+                #R.model=None
+                R.loadModelUp(file=R.config.para['modelFile'])
+            run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True,isRun=isRun,isAll=isAll)
             if isRun:
                 R.calFromCorrL(isRand=True)
             run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
             run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
             run.run.getAV(R)
             run.run.limit(R)
-            run.run.analyRes(R,format='eps')
+            if isAn:
+                run.run.analyRes(R,threshold=threshold,format='eps')
             if i==0:
-                run.run.plotGetAvDis(R)
-                run.run.plotGetDis(R)
+                if isAn:
+                    run.run.plotGetAvDis(R)
+                    run.run.plotGetDis(R)
+                    R.plotTrainDis()
+                    R.plotStaDis()
+                #R.plotStaDis(isAll=True)
+                if isPredict:
+                    R.showTest()
+                R.preDS(isByTrain=True,do=isDS,isRun=isDS)
+                R.preDSTrain(do=isDS,isRun=isDS)
+                R.preDSSyn(isByTrain=True,do=isDS,isRun=isDS)
+            if isHalf!=False:
+                R.config.para['resDir']=resDir[:-1]+'_half/'
+                run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
+                run.run.getAV(R)
+                run.run.limit(R)
+                if isAn:
+                    run.run.analyRes(R,threshold=threshold,format='eps',isHalf=True)
+            if isRePick:
+                R.config.para['resDir']=resDir[:-1]+'_re/'
+                if doRePick:
+                    R.rePick()
+                run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
+            if False:
+                R.config.para['resDir']=resDir[:-1]+'_rand2/'
+                #R.config.para['randA'] = 0.05
+                if isRun:
+                    R.calFromCorrL(isRand=True)
+                run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
+                run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+                run.run.getAV(R)
+                run.run.limit(R)
+                run.run.analyRes(R,format='eps')
+                if i==0:
+                    run.run.plotGetAvDis(R)
+                    run.run.plotGetDis(R)
+    if 2 in doL:
+        for i in range(N):
+            resDir=resDir0[:-1]+('_%d_noDis/'%i)
+            R.config.para['resDir']=resDir
+            R.config.para['disAmp']=0
+            tmpDir='predict/'+R.config.para['resDir'].split('/')[-2]+'/'
+            if os.path.exists(tmpDir+'resOnTrainTestValid'):
+                with open(tmpDir+'resOnTrainTestValid') as f:
+                    R.config.para['modelFile']=f.readline()[:-1]
+            #R.config.para['randA'] = 0.0
+            if isRun:
+                #R.model=None
+                R.loadModelUp()
+            elif isPredict:
+                #R.model=None
+                R.loadModelUp(file=R.config.para['modelFile'])
+            run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True,isRun=isRun,isAll=isAll)
+            if isRun:
+                R.calFromCorrL(isRand=True)
+            run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
+            run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+            run.run.getAV(R)
+            run.run.limit(R)
+            if isAn:
+                run.run.analyRes(R,threshold=threshold,format='eps')
+            if i==-1:
+                if isAn:
+                    run.run.plotGetAvDis(R)
+                    run.run.plotGetDis(R)
+                    R.plotTrainDis()
+                    R.plotStaDis()
+                    R.plotStaDis(isAll=True,isAllQuake=True)
+                if isPredict:
+                    R.showTest()
+                R.preDS(isByTrain=True,do=isRun)
+                R.preDSTrain(do=isRun)
+                R.preDSSyn(isByTrain=True,do=isRun)
+            if isHalf!=False:
+                R.config.para['resDir']=resDir[:-1]+'_half/'
+                run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
+                run.run.getAV(R)
+                run.run.limit(R)
+                if isAn:
+                    run.run.analyRes(R,threshold=threshold,format='eps',isHalf=True)
+            if False:
+                R.config.para['resDir']=resDir[:-1]+'_rand2__noDis/'
+                #R.config.para['randA'] = 0.05
+                if isRun:
+                    R.calFromCorrL(isRand=True)
+                run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
+                run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+                run.run.getAV(R)
+                run.run.limit(R)
+                run.run.analyRes(R,format='eps')
+                if i==0:
+                    run.run.plotGetAvDis(R)
+                    run.run.plotGetDis(R)
 else:
     run.run.trainMul(R,isAverage=False,isRand=True,isShuffle=True,isRun=False,isAll=isAll)
 
@@ -260,73 +296,139 @@ R.config.para['disAmp']=1
 import time
 resDir = resDir0[:-1]+('_%d/'%0)
 R.config.para['resDir']=resDir
-if isSurfNet:
+if isSurfNet and (1 in doL):
     if isPlot:
-        if N==1 and isRun:
-            time.sleep(60*10)
+        if N==1 and isDS:
+            time.sleep(60*50)
         R.loadAndPlot(R.DS,isPlot=False)
         R.loadAndPlot(R.DSTrain,isPlot=False)
         R.compare(R.DS,R.DSTrain,isCompare=True)
         R.loadAndPlot(R.DSSyn,isPlot=True)
 
+fvRef = run.d.averageFVL([R.fvD0[key] for key in R.fvD0],fL=1/R.config.para['T'])
 if isConv:
     resDirAllSave = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fvAllTra/'
     resDirSave = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fvTra/'
     resDirAvSave = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fvAvTra/'
+    resDirSaveRand = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fvTraRand/'
+    resDirAvSaveRand = 'predict/'+R.config.para['resDir'].split('/')[-2]+'/fvAvTraRand/'
     if isRun :
-        run.run.plotDVK(R,R.fvD0,isPlot=False)
-        fvDAll = run.run.calByDKV(R,R.corrL1,fvD0=R.fvD0,isControl=False,isByLoop=False)
-        run.d.saveFVD(fvDAll,R.stations,R.quakes,resDirAllSave,'pair',isOverwrite=True)
-        run.run.plotDVK(R,fvDAll,fvD0=R.fvD0,isRight=True,format='eps')
-        run.run.plotDVK(R,fvDAll,fvD0=R.fvD0,isRight=False,format='eps')
-        fvD = run.run.calByDKV(R,R.corrL,isControl=True,isByLoop=False)
+        if os.path.exists(resDirAllSave):
+            R.config.para['resDir']=resDirAllSave
+            R.loadRes()
+            fvDAll =R.fvDGet
+        else:
+            run.run.plotDVK(R,R.fvD0,fvRef,isPlot=False)
+            fvDAll = run.run.calByDKV(R,R.corrL1,fvRef,fvD0=R.fvD0,isControl=False,isByLoop=False)
+            run.d.saveFVD(fvDAll,R.stations,R.quakes,resDirAllSave,'pair',isOverwrite=True)
+        R.config.para['resDir']=resDir
+        R.config.para['vPer']=0.08
+        run.run.plotDVK(R,fvDAll,fvRef,fvD0=R.fvD0,isRight=False,format='eps',isRand=True)
+        run.run.plotDVK(R,fvDAll,fvRef,fvD0=R.fvD0,isRight=True,format='eps',isRand=True)
+        
+        fvD = run.run.calByDKV(R,R.corrL,fvRef,isControl=True,isByLoop=False,isRand=True,randA=R.config.para['randA'])
+        R.fvDGet = fvD
+        run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+        run.run.getAV(R)
+        run.run.limit(R)
+        run.d.saveFVD(fvD,R.stations,R.quakes,resDirSaveRand,'pair',isOverwrite=True)
+        run.d.saveFVD(R.fvAvGet,R.stations,R.quakes,resDirAvSaveRand,'NEFile',isOverwrite=True)
+        R.config.para['resDir']=resDir[:-1]+'_tra_rand/'
+        run.run.analyRes(R,threshold=threshold,format='eps')
+        run.run.plotGetAvDis(R)
+        if isHalf:
+            R.config.para['resDir']=resDir[:-1]+'_tra_rand_half/'
+            run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
+            run.run.getAV(R)
+            run.run.limit(R)
+            run.run.analyRes(R,format='eps',isHalf=True)
+            
+        run.run.plotDVK(R,fvDAll,fvRef,fvD0=R.fvD0,isRight=False,format='eps')
+        run.run.plotDVK(R,fvDAll,fvRef,fvD0=R.fvD0,isRight=True,format='eps')
+        R.config.para['vPer']=0.08
+        fvD = run.run.calByDKV(R,R.corrL,fvRef,isControl=True,isByLoop=False)
         R.fvDGet = fvD
         run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
         run.run.getAV(R)
         run.run.limit(R)
         run.d.saveFVD(fvD,R.stations,R.quakes,resDirSave,'pair',isOverwrite=True)
         run.d.saveFVD(R.fvAvGet,R.stations,R.quakes,resDirAvSave,'NEFile',isOverwrite=True)
+        R.config.para['resDir']=resDir[:-1]+'_tra/'
+        run.run.analyRes(R,threshold=threshold,format='eps')
+        run.run.plotGetAvDis(R)
+        if isHalf:
+            R.config.para['resDir']=resDir[:-1]+'_tra_half/'
+            run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
+            run.run.getAV(R)
+            run.run.limit(R)
+            run.run.analyRes(R,threshold=threshold,format='eps',isHalf=True)
     else:
         R.config.para['resDir']=resDirAllSave
         R.loadRes()
         fvDAll =R.fvDGet
         R.config.para['resDir']=resDir
-        run.run.plotDVK(R,fvDAll,fvD0=R.fvD0,isRight=True,format='eps')
-        run.run.plotDVK(R,fvDAll,fvD0=R.fvD0,isRight=False,format='eps')
+        R.config.para['vPer']=0.10
+        run.run.plotDVK(R,fvDAll,fvRef,fvD0=R.fvD0,isRight=True,format='eps')
+        run.run.plotDVK(R,fvDAll,fvRef,fvD0=R.fvD0,isRight=False,format='eps')
         R.config.para['resDir']=resDirSave
         R.loadRes()
         run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
         run.run.getAV(R)
         run.run.limit(R)
-    R.config.para['resDir']=resDir[:-1]+'_tra/'
-    run.run.analyRes(R,format='eps')
-    run.run.plotGetAvDis(R)
-    if isHalf:
-        R.config.para['resDir']=resDir[:-1]+'_tra_half/'
-        run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
+        R.config.para['resDir']=resDir[:-1]+'_tra/'
+        run.run.analyRes(R,threshold=threshold,format='eps')
+        run.run.plotGetAvDis(R)
+        if isHalf:
+            R.config.para['resDir']=resDir[:-1]+'_tra_half/'
+            run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
+            run.run.getAV(R)
+            run.run.limit(R)
+            run.run.analyRes(R,threshold=threshold,format='eps',isHalf=True)
+        R.config.para['resDir']=resDir
+        R.config.para['vPer']=0.10
+        run.run.plotDVK(R,fvDAll,fvRef,fvD0=R.fvD0,isRight=False,format='eps',isRand=True)
+        run.run.plotDVK(R,fvDAll,fvRef,fvD0=R.fvD0,isRight=True,format='eps',isRand=True)
+        R.config.para['resDir']=resDirSaveRand
+        R.loadRes()
+        run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
         run.run.getAV(R)
         run.run.limit(R)
-        run.run.analyRes(R,format='eps',isHalf=True)
-
+        R.config.para['resDir']=resDir[:-1]+'_tra_rand/'
+        run.run.analyRes(R,threshold=threshold,format='eps')
+        run.run.plotGetAvDis(R)
+        if isHalf:
+            R.config.para['resDir']=resDir[:-1]+'_tra_rand_half/'
+            run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
+            run.run.getAV(R)
+            run.run.limit(R)
+            run.run.analyRes(R,threshold=threshold,format='eps',isHalf=True)
+    
 from glob import glob
 saveDir='predict/'+resDir0.split('/')[-2]
 if isSurfNet:
-    M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?/resOnTrainTestValid')] )
-    run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet',method='Surf-Net',isStd=True,isRand='F')
-    if isHalf:
-        M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_half/resOnTrainTestValid')] )
-        run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_half',method='Surf-Net',isStd=True,isRand='F')
-    M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_rand2/resOnTrainTestValid')] )
-    run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_rand',method='Surf-Net',isStd=True,isRand='T')
+    M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?/resOnTrainTestValid_%.3f'%threshold)] )
+    run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet',method='Surf-Net',isStd=True,isRand='T')
+    if isHalf!=False:
+        M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_half/resOnTrainTestValid_%.3f'%threshold)] )
+        run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_half',method='Surf-Net',isStd=True,isRand='T')
+        M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_noDis_half/resOnTrainTestValid_%.3f'%threshold)] )
+        run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_noDis_half',method='Surf-Net_noDis_half',isStd=True,isRand='T')
+    #M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_rand2/resOnTrainTestValid')] )
+    #run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_rand',method='Surf-Net',isStd=True,isRand='T')
     M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_noDis/resOnTrainTestValid')] )
-    run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_noDis',method='Surf-Net_noDis',isStd=True,isRand='F')
+    run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_noDis',method='Surf-Net_noDis',isStd=True,isRand='T')
 
 if isConv:
-    M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_tra/resOnTrainTestValid')] )
+    M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_tra/resOnTrainTestValid_%.3f'%threshold)] )
     run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_tra',method='conventional',isStd=False,isRand='F')
-    if isHalf:
-        M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_tra_half/resOnTrainTestValid')] )
-        run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_tra_half',method='conventional',isStd=False,isRand='F')
+    if isHalf!=False:
+        M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_tra_half/resOnTrainTestValid_%.3f'%threshold)] )
+        run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_tra_half',method='conventional_half',isStd=False,isRand='F')
+    M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_tra_rand/resOnTrainTestValid_%.3f'%threshold)] )
+    run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_tra_rand',method='conventional_rand',isStd=False,isRand='F')
+    if isHalf!=False:
+        M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_tra_rand_half/resOnTrainTestValid_%.3f'%threshold)] )
+        run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_tra_rand_half',method='conventional_rand_half',isStd=False,isRand='F')
 
 import obspy
 from glob import glob

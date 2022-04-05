@@ -31,7 +31,7 @@ from numba import jit
 from .node_cell import ODELSTMR
 import gc
 from ..plotTool import figureSet
-
+K.set_floatx('float32')
 # this module is to construct deep learning network
 def defProcess():
     config = tf.compat.v1.ConfigProto()
@@ -152,9 +152,9 @@ class lossFuncSoft__:
                          (maxChannel*0.975+0.025)*maxSample,\
                                                                          )
 isUnlabel=1#1
-W0=0.05
+W0=0.125
 class lossFuncSoft:
-    def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=1536):
+    def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=2048):
         self.__name__ = 'lossFuncSoft'
         self.w = K.ones([1,maxCount,1,len(TL)])
         w = np.ones([1,maxCount,1,len(TL)])*0.05
@@ -273,8 +273,8 @@ def hitRate(yin,yout,maxD=10):
     return hitCount/count
 
 up=-1
-def rateNp(yinPos,youtPos,yinMax,youtMax,maxD=0.03,K=np,minP=0.5):
-    threshold = yinPos*maxD
+def rateNp(yinPos,youtPos,yinMax,youtMax,maxD=0.03,K=np,minP=0.5,fromI=-384*4):
+    threshold = (yinPos+fromI)*maxD
     threshold[threshold<up]=up
     d0      = youtPos-yinPos
     d       = K.abs(yinPos - youtPos)
@@ -284,7 +284,7 @@ def rateNp(yinPos,youtPos,yinMax,youtMax,maxD=0.03,K=np,minP=0.5):
     recall = hitCount/count0
     right  = hitCount/count1
     F = 2/(1/recall+1/right)
-    res = d0[(d<threshold*3)*(yinMax>0.5)*(youtMax>minP)]/yinPos[(d<threshold*3)*(yinMax>0.5)*(youtMax>minP)]
+    res = d0[(d<threshold*3)*(yinMax>0.5)*(youtMax>minP)]/(yinPos[(d<threshold*3)*(yinMax>0.5)*(youtMax>minP)]+fromI)
     return recall, right,F,res.mean(),res.std()
 '''
 def rightRateNp(yinPos,youtPos,yinMax,youtMax,maxD=0.03,K=np, minP=0.5):
@@ -318,7 +318,7 @@ def printRes_old_(yin, yout,resL=globalFL,isUpdate=False):
         strL+='\n'+('-'*len(tmpStr))
     print(strL)
     return strL
-def printRes_old(yin, yout,resL=globalFL,isUpdate=False,N=5):
+def printRes_old(yin, yout,resL=globalFL,isUpdate=False,N=10):
     #       0.01  0.8  0.36600 0.9996350
     strL   = 'maxD   minP hitRate rightRate F mean  std old'
     strfmt = '\n%5.3f&%3.1f&%7.5f&%7.5f&%7.5f&%7.3f&%7.3f'
@@ -1402,9 +1402,9 @@ def trainAndTestMul(model,corrDTrain,corrDValid,corrDTest,outputDir='predict/',t
     tmpOutputDir ='%s_predict/'%(head)
     if not os.path.exists(tmpOutputDir):
         os.makedirs(tmpOutputDir)
-    for level in range(-1,-model.config.deepLevel-1,-1):
-        model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
-        T=tTrain,outputDir=tmpOutputDir,level=level)
+    #for level in range(-1,-model.config.deepLevel-1,-1):
+    #    model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
+    #    T=tTrain,outputDir=tmpOutputDir,level=level)
     return head+'_model.h5'
 
 def trainAndTestSq(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTrain=tTrain,\
@@ -1607,6 +1607,8 @@ class fcnConfig:
             self.mul           = mul
             self.inputSize     = [512*2,mul,4]
             self.outputSize    = [512*2*up,mul,50]
+            self.inputSize     = [512*12,mul,4]
+            self.outputSize    = [512*12*up,mul,50]
             self.featureL      = [60,80,80,100,100,120,120,150]
             self.featureL      = [30,30,30,45,45,45,60,60]
             self.featureL      = [60,60,60,80,80,80,100,100]
@@ -1655,6 +1657,9 @@ class fcnConfig:
             self.featureL      = [50,50,50,55,50,50,320]
             self.featureL      = [50,40,32,24,16,8,320]
             self.featureL      = [50,40,30,20,10,5,320]
+            #self.featureL      = [50,50,50,50,50,50,320]
+            self.featureL      = [50,40,30,20,10,5,320]
+            self.featureL      = [50,40,30,25,20,15,320]
             #self.featureL      = [50,50,75,75,100,100,125]
             #self.featureL      = [50,75,75,100,125,150,200]
             #self.featureL      = [75,75,75,75,75,75,75]
@@ -1676,6 +1681,16 @@ class fcnConfig:
             self.kernelL       = [(4,1),(8,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
             self.strideL       = [(2,1),(2,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
             self.kernelL       = [(4,1),(4,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
+            self.strideL       = [(2,1),(4,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(4,1),(8,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
+            self.strideL       = [(2,1),(3,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(4,1),(6,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
+            self.strideL       = [(2,1),(4,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(4,1),(4,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
+            self.strideL       = [(3,1),(4,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(6,1),(4,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
+            self.strideL       = [(6,1),(4,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(12,1),(8,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
             #self.kernelL       = [(6,1),(6,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
             #self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(16,1),(8,1),(1,mul*2),(up*3,1)]
             self.isBNL       = [True]*20
@@ -1694,6 +1709,7 @@ class fcnConfig:
             MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,\
             MaxPooling2D,MaxPooling2D,MaxPooling2D]
             self.poolL        = [MaxPooling2D]*20
+            #self.poolL        = [AveragePooling2D]*20
             self.lossFunc     = lossFuncSoft(**kwags)#10
             self.inAndOutFunc = inAndOutFuncNewNetDenseUp#inAndOutFuncNewUp
             self.lossFuncNP     = lossFuncSoftNP(**kwags)
@@ -2408,6 +2424,7 @@ class modelUp(Model):
             for ii in iL:
                 sampleDone[ii]+=r*mul
             x, y , t0L = XYT(iL,mul=mul,N=mul)
+            print('fromT:',np.array(t0L).mean())
             print('loop:',sampleDone.mean())
             self.fit(x ,y,batchSize=batchSize)
             #print(self.layers[47].variables[-2][-10:],self.layers[47].variables[-1][-10:])

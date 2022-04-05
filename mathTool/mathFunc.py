@@ -32,13 +32,11 @@ def xcorr(a,b):
 
 @jit
 def xcorrSimple(a,b):
-    
     la=a.size
     lb=b.size
     c=np.zeros(la-lb+1)
     for i in range(la-lb+1):
-        tc= (a[i:(i+lb)]*b[0:(0+lb)]).sum()
-        c[i]=tc
+        c[i]= (a[i:(i+lb)]*b[0:(0+lb)]).sum()
     return c
 
 def xcorrAndDe(a,b):
@@ -109,11 +107,16 @@ def xcorrAndDeV3(a,b):
     C1[absB<=thresholdB] = 0
     return np.fft.ifft(C1)
 
-def xcorrFrom0(a,b):
+def xcorrFrom0_(a,b):
     la = a.size
     lb = b.size
     x =  signal.correlate(a,b,'full')
     return x[lb-1:]
+def xcorrFrom0(a,b,fromI=0):
+    la = a.size
+    lb = b.size
+    x =  signal.correlate(a,b,'full')
+    return x[lb-1+fromI:]
 
 def xcorrAndConv(a,b):
     la = a.size
@@ -554,11 +557,11 @@ def calNSigma(N,q0=0.95):
     return dr*sqrt2
 
 
-def Max(data,N=5):
-    return data.argmax( axis=1),data.max(axis=1)
-    youtPos = yout.argmax(axis=1)
-    yinMax = yin.max(axis=1)
-    youtMax = yout.max(axis=1)
+def Max(data,N=10):
+    return data.argmax(axis=1),data.max(axis=1)
+    #youtPos = yout.argmax(axis=1)
+    #yinMax = yin.max(axis=1)
+    #youtMax = yout.max(axis=1)
     shape = list(data.shape)
     shapeNew= shape[:1]+shape[2:]
     data = data.reshape([shape[0],shape[1],-1])
@@ -568,7 +571,8 @@ def Max(data,N=5):
     for i in range(data.shape[0]):
         for j in range(data.shape[-1]):
             POS = pos[i,j]
-            if A[i,j]>10:
+            if A[i,j]>0.5:
                 DATA = data[i,POS+line,j]
-                pos[i,j]+=(DATA*line).sum()/DATA.sum()
+                #pos[i,j]+=(DATA*line).sum()/DATA.sum()
+                #print((DATA*line).sum()/DATA.sum())
     return pos.reshape(shapeNew),A.reshape(shapeNew)

@@ -51,8 +51,8 @@ dConfig=d.config(originName='models/prem',srcSacDir=srcSacDir,\
 		isFlat=True,R=6371,flatM=-2,pog='p',calMode='gpdc',\
 		T=T,threshold=0.02,expnt=12,dk=0.05,\
 		fok='/k',order=0,minSNR=10,isCut=False,\
-		minDist=110*10,maxDist=110*170,minDDist=120,\
-		maxDDist=1800,para=para,isFromO=True,removeP=True)
+		minDist=110*10,maxDist=110*170,minDDist=00,\
+		maxDDist=18000,para=para,isFromO=True,removeP=True,fromT=-384)
 def saveListStr(file,strL):
 	with open(file,'w+') as f:
 		for STR in strL:
@@ -71,7 +71,7 @@ class runConfig:
 		sacPara = {#'pre_filt': (1/500, 1/350, 1/2, 1/1.5),\
 				   'output':'DISP','freq':[1/200,1/6],\
 					#[1/250,1/8*0+1/6]
-					'delta0':1,
+					'delta0':0.25,
 				   'filterName':'bandpass',\
 				   'corners':4,'toDisp':False,\
 				   'zerophase':True,'maxA':1e15,'gaussianTail':800}
@@ -168,7 +168,7 @@ def output(M,S,file,isRand='T',method='SurfNet',isStd=True):
 
 
 disRandA=1/15.0
-disMaxR =2
+disMaxR =1
 delta   =1
 up=2
 defaultTrainSetDir ='/media/jiangyr/1TSSD/trainSet/'
@@ -449,6 +449,8 @@ class run:
 		self.fvDO =fvDO
 		self.quakes = quakes
 		self.stations = stations
+		self.fvDAverageNewCount=fvDAverageNewCount
+		self.fvDAverageNewAllCount=fvDAverageNewAllCount
 		if isSave:
 			resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/fv/'
 			resDirAv = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/fvAv/'
@@ -539,13 +541,13 @@ class run:
 			fvD =self.fvD0
 		self.corrLTrain.setTimeDis(fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,randA=para['randA'],midV=para['midV'],disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,randA=para['randA'],midV=para['midV'],disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrLTest.setTimeDis(fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,randA=para['randA'],midV=para['midV'],disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,randA=para['randA'],midV=para['midV'],disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrLValid.setTimeDis(fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,randA=para['randA'],midV=para['midV'],disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,randA=para['randA'],midV=para['midV'],disAmp=para['disAmp'],fromT=para['fromT'])
 		#self.loadModel()
 		sigma = np.ones(len(self.config.para['T']))
 		N =len(self.config.para['T'])
@@ -563,9 +565,11 @@ class run:
 	def Sigma(self):
 		sigma = np.ones(len(self.config.para['T']))
 		N =len(self.config.para['T'])
+		T = self.config.para['T']
 		N_5=int(N/5)
 		N_10=int(N/10)
 		N_20=int(N/20)
+		'''
 		sigma[:N_10]        = 1.7
 		sigma[1*N_10:2*N_10]   = 1.8
 		sigma[2*N_10:3*N_10]   = 1.8
@@ -577,6 +581,22 @@ class run:
 		sigma[8*N_10:9*N_10] = 3.8
 		sigma[9*N_10:10*N_10] = 4.6
 		sigma[9*N_10:10*N_10] = 4.8
+		'''
+		sigma[:N_10]        = 1.5
+		sigma[1*N_10:2*N_10]   = 1.75
+		sigma[2*N_10:3*N_10]   = 1.75
+		sigma[3*N_10:4*N_10] = 2.0
+		sigma[4*N_10:5*N_10] = 2.2
+		sigma[5*N_10:6*N_10] = 2.4
+		sigma[6*N_10:7*N_10] = 2.8
+		sigma[7*N_10:8*N_10] = 3.2
+		sigma[8*N_10:9*N_10] = 3.6
+		sigma[9*N_10:10*N_10] = 4.2
+		sigma[9*N_10:10*N_10] = 4.5
+		s0 = 1.2
+		s1 = 3.6
+		k  = (s1-s0)/(np.log(T[-1])-np.log(T[0]))
+		sigma = k*(np.log(T)-np.log(T[0]))+s0
 		return sigma
 	def trainMul(self,isRand=True,isShuffle=False,isAverage=False,isRun=True,isAll=False):
 		if isAll:
@@ -605,7 +625,7 @@ class run:
 				for i in range(len(fvL)):
 					index = indexL[i]
 					print(i,index,disL[index],fvL[index])
-					if i%10==8:
+					if i%10==0:
 						fvValid.append(fvL[index])
 					elif i%10==9:
 						fvTest.append(fvL[index])
@@ -645,15 +665,15 @@ class run:
 		self.corrLTrain.setTimeDis(fvD,tTrain,sigma=sigma,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
 		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,isGuassianMove=isGuassianMove,\
-			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'])
+			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrLTest.setTimeDis(fvD,tTrain,sigma=sigma,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
 		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,isGuassianMove=isGuassianMove,\
-			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'])
+			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrLValid.setTimeDis(fvD,tTrain,sigma=sigma,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
 		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,isGuassianMove=isGuassianMove,\
-			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'])
+			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'])
 		#self.loadModel()
 		self.corrDTrain = d.corrD(self.corrLTrain)
 		self.corrDTest = d.corrD(self.corrLTest)
@@ -701,13 +721,13 @@ class run:
 		tTrain = para['T']
 		self.corrLTrain.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=True,rThreshold=0.0,byAverage=False,\
-		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrLTest.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=True,rThreshold=0.0,byAverage=False,\
-		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrLValid.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=True,rThreshold=0.0,byAverage=False,\
-		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrLTrain.newCall(np.arange(10))
 		print(self.corrLTrain.t0L)
 		self.loadModelSq()
@@ -734,13 +754,13 @@ class run:
 		tTrain = para['T']
 		self.corrLTrain.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=True,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrLTest.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=True,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrLValid.setTimeDis(self.fvD,tTrain,sigma=1.5,maxCount=para['maxCount'],\
 		byT=True,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=False,\
-		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrLTrain.newCall(np.arange(10))
 		print(self.corrLTrain.t0L)
 		self.loadModelDt()
@@ -758,6 +778,8 @@ class run:
 			if 'delta0' in self.config.para['sacPara']:
 				delta = self.config.para['sacPara']['delta0']
 			self.model = fcn.modelUp(channelList=[0,1],up=self.config.para['up'],mul=self.config.para['mul'],randA=self.config.para['randA'],TL=self.config.para['T'],disRandA=disRandA,disMaxR=disMaxR,maxCount=self.config.para['maxCount'],delta=delta)
+			self.weight0 = self.model.get_weights()
+		self.model.set_weights(self.weight0)
 		if file != '':
 			self.model.load_weights(file, by_name= True)
 	def loadModelSq(self,file=''):
@@ -812,7 +834,7 @@ class run:
 				para = self.config.para
 				self.corrL.setTimeDis(fvDAverage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
 							byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
-							set2One=para['set2One'],move2Int=para['move2Int'],modelNameO=para['refModel'],noY=True,randMove=isRand,randA=para['randA'],disAmp=para['disAmp'])
+							set2One=para['set2One'],move2Int=para['move2Int'],modelNameO=para['refModel'],noY=True,randMove=isRand,randA=para['randA'],disAmp=para['disAmp'],fromT=para['fromT'])
 				self.corrL.getAndSaveOld(self.model,'%s/CEA_P_'%para['resDir'],self.stations,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'],)
 				corrL0 = 0
 				self.corrL = 0
@@ -916,7 +938,7 @@ class run:
 							corrL.reSetUp(up=para['up'])
 							corrL.setTimeDis(fvDAverage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
 							byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
-							set2One=para['set2One'],move2Int=para['move2Int'],modelNameO=para['refModel'],noY=True,randMove=isRand,randA=para['randA'],disAmp=para['disAmp'])
+							set2One=para['set2One'],move2Int=para['move2Int'],modelNameO=para['refModel'],noY=True,randMove=isRand,randA=para['randA'],disAmp=para['disAmp'],fromT=para['fromT'])
 							corrD = d.corrD(corrL)
 							print('predicting')
 							sTimePredict=time()
@@ -936,17 +958,48 @@ class run:
 		fvDAverage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
 		self.corrL.setTimeDis(fvDAverage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
-		set2One=para['set2One'],move2Int=para['move2Int'],modelNameO=para['refModel'],noY=True,randMove=isRand,randA=para['randA'],disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],modelNameO=para['refModel'],noY=True,randMove=isRand,randA=para['randA'],disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrL.reSetUp(up=para['up'])
 		corrD = d.corrD(self.corrL)
 		print('predicting')
 		corrD.getAndSaveOldPer(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
 		,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'],mul=para['mul'])
+	def rePick(self):
+		para = self.config.para
+		fvd = self.fvDGet
+		fvdRe = {}
+		allCount=0
+		validCount = 0
+		getCount =0
+		fvCount=0
+		for corr in self.corrL:
+			modelFile = corr.modelFile
+			if modelFile in fvd:
+				fvCount+=1
+				fvRef = fvd[modelFile]
+				f = fvRef.f
+				f =f[f>1/170]
+				f =f[f<1/8]
+				if len(f)==0:
+					continue
+				allCount+=len(f)
+				if len(corr.xx)==0:
+					continue
+				fvGet=run.d.corr.getFV(corr,f,fvRef,-100+f*0,100+f*0,1000+f*0,-0.02+f*0,0.02+f*0,minSNR=0+para['T']*0,N=50,v0=1.5,v1=5.,k=0,isControl=False,isByLoop=False,isStr=True)
+				validCount+=len(fvGet.f)
+				fvdRe[modelFile]=fvGet
+				if len(f)/len(fvGet.f)-1>0.1:
+					print(modelFile,corr.dDis,corr.dis,'wrong')
+					continue
+				getCount+=1
+				print(validCount/allCount,getCount/fvCount,fvCount/len(fvd))
+		self.fvDGet = fvdRe
+		run.d.saveFVD(fvdRe,self.stations,self.q,'%s/CEA_P_'%para['resDir'],'pair',isOverwrite=True)
 	def calRes(self):
 		para = self.config.para
 		self.corrL1.setTimeDis(self.fvDAverage,para['T'],sigma=1.5,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=0.0,byAverage=True,\
-		set2One=para['set2One'],move2Int=para['move2Int'],modelNameO=para['refModel'],noY=True,disAmp=para['disAmp'])
+		set2One=para['set2One'],move2Int=para['move2Int'],modelNameO=para['refModel'],noY=True,disAmp=para['disAmp'],fromT=para['fromT'])
 		self.corrL1.getAndSaveOld(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
 		,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'])
 		#print(self.corrL.t0L)
@@ -1005,9 +1058,9 @@ class run:
 		para = self.config.para
 		self.fvMGet  =d.fvD2fvM(self.fvDGet,isDouble=True)
 		#print(self.fvMGet)qcThreshold
-		if isHalf:
+		if isHalf!=False:
 			for key in self.fvMGet:
-				self.fvMGet[key] = self.fvMGet[key][::2]
+				self.fvMGet[key] = self.fvMGet[key][::isHalf]
 		self.fvAvGet = d.fvM2Av(self.fvMGet,threshold=para['qcThreshold'],minThreshold=para['minThreshold'],minSta=para['minSta'],isWeight=isWeight,weightType=weightType,it=para['it'])
 		#print(self.fvAvGet)
 		fvRef=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
@@ -1025,7 +1078,7 @@ class run:
 		corrD = d.corrD(self.corrDTest.corrL)
 		mul   = self.config.para['mul']
 		T     = self.config.para['T']
-		x,y0,t= corrD(mul=mul,N=mul,isRand=False)
+		x,y0,t= corrD(mul=mul,N=1,isRand=False)
 		y =  self.model.predict(x)
 		x   =  self.model.inx(x)
 		iL  = np.array(corrD.corrL.iL).reshape([-1,mul])
@@ -1044,7 +1097,7 @@ class run:
 		#plt.xlim([1/self.config.para['T'].min()*1.1,1/self.config.para['T'].max()*0.9])
 		plt.semilogx()
 		plt.savefig(resDir+'sigmaDis.%s'%(format),dpi=300)
-	def analyRes(self,threshold=0.015,format='eps',isAverage=False):
+	def analyRes(self,threshold=0.015,format='eps',isAverage=False,isHalf=False):
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
 		if not os.path.exists(resDir):
 			os.makedirs(resDir)
@@ -1066,16 +1119,33 @@ class run:
 		plt.savefig(resDir+'count_distance_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),dpi=300)
 		plt.close()
 		self.showSigma(format=format)
+		fvTrain = self.fvTrain
+		fvTest = self.fvTest
+		fvValid = self.fvValid
+		if isHalf!=False:
+			fvTrain = []# self.fvTrain
+			fvTest = []#self.fvTest
+			fvValid = []#self.fvValid
+			for key in self.fvTrain:
+				if self.fvDAverageNewCount[key]>=self.config.para['minSta']*isHalf:
+					fvTrain.append(key)
+			for key in self.fvTest:
+				if self.fvDAverageNewCount[key]>=self.config.para['minSta']*isHalf:
+					fvTest.append(key)
+			for key in self.fvValid:
+				if self.fvDAverageNewCount[key]>=self.config.para['minSta']*isHalf:
+					fvValid.append(key)
+
 		fStrike=2
-		averageTrain=d.compareFVD(self.fvDAverage,self.fvAvGet,self.stations,resDir+'erroTrain_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=self.fvTrain,fStrike=fStrike,title='E. D. on Train',thresholdForGet=self.config.para['threshold'])
-		singleTrain=d.compareFVD(fvD,self.fvDGet,self.stations,resDir+'erroTrainSingle_%.3f_%.3f.%s'%(threshold,self.config.para['minP'],format),t=self.config.para['T'],keys=self.fvTrain,fStrike=fStrike,title='E. D. S. on Train',thresholdForGet=-self.config.para['minP'],isCount=False,plotRate=0.6,fvRef=self.fvDAverage['models/prem'])
+		averageTrain=d.compareFVD(self.fvDAverage,self.fvAvGet,self.stations,resDir+'erroTrain_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=fvTrain,fStrike=fStrike,title='E. D. on Train',threshold=threshold,thresholdForGet=self.config.para['threshold'])
+		singleTrain=d.compareFVD(fvD,self.fvDGet,self.stations,resDir+'erroTrainSingle_%.3f_%.3f.%s'%(threshold,self.config.para['minP'],format),t=self.config.para['T'],keys=fvTrain,fStrike=fStrike,title='E. D. S. on Train',threshold=threshold,thresholdForGet=-self.config.para['minP'],isCount=False,plotRate=0.6,fvRef=self.fvDAverage['models/prem'])
 
-		averageValid=d.compareFVD(self.fvDAverage,self.fvAvGet,self.stations,resDir+'erroValid_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=self.fvValid,fStrike=fStrike,title='E. D. on Valid',thresholdForGet=self.config.para['threshold'])
-		singleValid=d.compareFVD(fvD,self.fvDGet,self.stations,resDir+'erroValidSingle_%.3f_%.3f.%s'%(threshold,self.config.para['minP'],format),t=self.config.para['T'],keys=self.fvValid,fStrike=fStrike,title='E. D. S. on Valid',thresholdForGet=-self.config.para['minP'],isCount=False,plotRate=0.6,fvRef=self.fvDAverage['models/prem'])
+		averageValid=d.compareFVD(self.fvDAverage,self.fvAvGet,self.stations,resDir+'erroValid_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=fvValid,fStrike=fStrike,title='E. D. on Valid',threshold=threshold,thresholdForGet=self.config.para['threshold'])
+		singleValid=d.compareFVD(fvD,self.fvDGet,self.stations,resDir+'erroValidSingle_%.3f_%.3f.%s'%(threshold,self.config.para['minP'],format),t=self.config.para['T'],keys=fvValid,fStrike=fStrike,title='E. D. S. on Valid',threshold=threshold,thresholdForGet=-self.config.para['minP'],isCount=False,plotRate=0.6,fvRef=self.fvDAverage['models/prem'])
 
-		averageTest=d.compareFVD(self.fvDAverage,self.fvAvGet,self.stations,resDir+'erroTest_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=self.fvTest,fStrike=fStrike,title='E. D. on test',threshold=threshold,thresholdForGet=self.config.para['threshold'])
-		singleTest=d.compareFVD(fvD,self.fvDGet,self.stations,resDir+'erroTestSingle_%.3f_%.3f.%s'%(threshold,self.config.para['minP'],format),t=self.config.para['T'],keys=self.fvTest,fStrike=fStrike,title='E. D. S. on test',thresholdForGet=-self.config.para['minP'])
-		with open(resDir+'resOnTrainTestValid','w') as f:
+		averageTest=d.compareFVD(self.fvDAverage,self.fvAvGet,self.stations,resDir+'erroTest_%.3f_%.3f.%s'%(threshold,self.config.para['threshold'],format),t=self.config.para['T'],keys=fvTest,fStrike=fStrike,title='E. D. on test',threshold=threshold,thresholdForGet=self.config.para['threshold'])
+		singleTest=d.compareFVD(fvD,self.fvDGet,self.stations,resDir+'erroTestSingle_%.3f_%.3f.%s'%(threshold,self.config.para['minP'],format),t=self.config.para['T'],keys=fvTest,fStrike=fStrike,title='E. D. S. on test',threshold=threshold,thresholdForGet=-self.config.para['minP'])
+		with open(resDir+'resOnTrainTestValid_%.3f'%threshold,'w') as f:
 			f.write('%s\n'%self.config.para['modelFile'])
 			f.write('%s&single&%s\\\\[2pt]\n'%('train',singleTrain))
 			f.write('%s&single&%s\\\\[2pt]\n'%('valid',singleValid))
@@ -1084,9 +1154,10 @@ class run:
 			f.write('%s&average&%s\\\\[2pt]\n'%('train',averageTrain))
 			f.write('%s&average&%s\\\\[2pt]\n'%('valid',averageValid))
 			f.write('%s&average&%s\\\\[2pt]\n'%('test',averageTest))
-
+		with open(resDir+'validPair','w') as f:
+			f.write('%d %d %d'%(len(fvTrain),len(fvValid),len(fvTest)))
 		#M,V0,V1=d.compareInF(self.fvDAverage,self.fvAvGetO,self.stations,1/self.config.para['T'],R=self.config.para['R'],saveDir=resDir+'compareInF/')
-		d.plotFVM(self.fvMGet,self.fvAvGet,self.fvDAverage,resDir=resDir+'/compare/',isDouble=True,fL0=1/self.config.para['T'],format=format,stations=self.stations,keyL=self.fvTest)
+		d.plotFVM(self.fvMGet,self.fvAvGet,self.fvDAverage,resDir=resDir+'/compare/',isDouble=True,fL0=1/self.config.para['T'],format=format,stations=self.stations,keyL=fvTest,threshold=threshold)
 	def getAV(self):
 		self.fvAvGetL = [self.fvAvGetO[key] for key in self.fvAvGetO]
 		self.FVAV     = d.averageFVL(self.fvAvGetL)
@@ -1318,14 +1389,21 @@ class run:
 		#fvAverage = self.fvDAverage['models/prem']
 		disL,vL,fL,fvAverage_,keyL = d.outputFvDist(self.fvAvGetO,self.stations,t=self.config.para['T'],keys=[])
 		d.plotFV(vL,fL,resDir+'FVGet.eps',isAverage=True,fvAverage=self.FVAV,thresL=[self.config.para['areasLimit']])
-	def plotDVK(self,fvD,format='jpg',head='',fvD0={},isRight=True,isPlot=True):
+	def plotDVK(self,fvD,fvRef,format='jpg',head='',fvD0={},isRight=True,isPlot=True,isRand=False):
 		f = 1/self.config.para['T']
 		DV,K,V,SNR = d.getDVK(fvD,f,fvD0=fvD0,isRight=isRight)
+		if isRand:
+			#DV*=1+(np.random.rand(*DV.shape)*2-1)*self.config.para['randA']*np.random.rand(*DV.shape)
+			rand = (np.random.rand(*V.shape)*2-1)*self.config.para['randA']*np.random.rand(*V.shape)
+			if np.random.rand()>0.5:
+				rand=V*rand/self.config.para['midV']
+				DV*=1+rand
+			V*= 1+rand
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
 		if not os.path.exists(resDir):
 			os.makedirs(resDir)
 		para = self.config.para
-		fvRef=self.fvDAverage[para['refModel']]
+		#fvRef=self.fvDAverage[para['refModel']]
 		vRef = fvRef(f)
 		DVRef,KRef = fvRef.getDVK(f)
 		per = V/vRef.reshape([1,-1])-1
@@ -1343,6 +1421,8 @@ class run:
 				tail='right'
 			else:
 				tail= 'wrong'
+			if isRand:
+				tail+='_rand'
 		head = head+ tail
 		dvBins = np.arange(-2,2,0.025)
 		KBins =np.arange(0,15,0.2)
@@ -1394,7 +1474,7 @@ class run:
 		plt.hist2d(SNR[SNR>-100],F[SNR>-100],cmap='gray_r', norm=(colors.LogNorm()),bins=(snrBins,fBins))
 		plt.gca().set_position([0.15,0.15,0.7,0.7])
 		#if isRight:
-		plt.plot(self.minSNR,f,'b',linewidth=0.5,label='$SNR_{0.95}$')
+		plt.plot(self.minSNR,f,'r',linewidth=0.5,label='$SNR_{0.95}$')
 		#plt.plot(KRef,f,'r',linewidth=0.5,label='ref')
 		plt.gca().set_xscale('log')
 		plt.gca().set_yscale('log')
@@ -1436,26 +1516,47 @@ class run:
 		np.savetxt(resDir+'minPer'+tail,self.minPer)
 		np.savetxt(resDir+'maxPer'+tail,self.maxPer)
 		np.savetxt(resDir+'minSNR'+tail,self.minSNR)
-	def calByDKV(self,corrL,k=0,maxCount=-1,fvD0={},**kwags):
+	def calByDKV(self,corrL,fvRef,k=0,maxCount=-1,fvD0={},isRand=False,**kwags):
 		fvD = {}
 		f = 1/self.config.para['T']
 		#corrL = self.corrDTest.corrL
 		if maxCount<0:
 			maxCount=len(corrL)
 		para = self.config.para
-		fvRef=self.fvDAverage[para['refModel']]
+		#fvRef=self.fvDAverage[para['refModel']]
 		count=0
 		count0=0
 		for corr in corrL[:maxCount]:
 			if len(fvD0)>0:
 				if corr.modelFile not in fvD0:
 					continue
+			
+			if isRand:
+				rand = (np.random.rand()*2-1)*self.config.para['randA']*np.random.rand()
+				dis0 = corr.dis
+				timeL0=corr.timeL
+				midV=self.config.para['midV']
+				dDis0 = np.abs(dis0[0]-dis0[1])
+				dDis = dDis0
+				dT = 0
+				#timeL0=corr.timeL
+				if np.random.rand()>0.5:
+					corr.dis=[dis0[0],dis0[1]+dDis0*rand]
+					dDis =  np.abs(corr.dis[0]-corr.dis[1])
+				else:
+					dT=dDis0/midV*rand
+					corr.timeL=timeL0+dT
 			FV=d.corr.getFV(corr,f,fvRef,self.minDV*0-para['dV'],self.maxDV*0+para['dV'],self.maxK*para['mulK'],self.minPer*0-para['vPer'],self.maxPer*0+para['vPer'],minSNR=self.minSNR,k=k,**kwags)
 			count0+=1
+			if isRand:
+				corr.dis=dis0
+				corr.timeL=timeL0
+				if len(FV.f)>2:
+					FV.v = dDis0/(dDis/FV.v-dT)
 			if len(FV.f)>2:
 				fvD[corr.modelFile]=FV
 				count+=1
-				if count%10:
+				if count%10==0:
 					print('%d/%d'%(count,count0))
 		return fvD
 
@@ -1470,34 +1571,35 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220113-025122_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
-	'maxCount'    : 512*2,\
-	'minSNRL'     : [2.5],\
+	'maxCount'    : 512*12,\
+	'minSNRL'     : [3],\
 	'oRemoveL'    : [False],\
 	'trainMatDir'	  :'/media/jiangyr/1TSSD/',\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
 	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
-	'matH5'	  :'/media/jiangyr/1TSSD/trainTest1HzAfter091016iqual5_150_New8_snrSTD2.5.h5',#_noQual
-	'randA'       : 0.04,\
+	'matH5'	  :'/media/jiangyr/1TSSD/trainTest4Hz_20220402_snrSTD3_noX01_V300.h5',#/media/jiangyr/1TSSD/trainTest2Hz_0_New8_snrSTD2.5V8.h5
+	'randA'       : 0.06,\
 	'disAmp'      : 1,\
+	'fromT'       : -384,
 	'midV'        : 4,\
 	'mul'		  : 1,\
 	'up'          :  1,\
 	'isIqual'     : False,\
 	'time0'       : obspy.UTCDateTime(2009,10,16).timestamp,
 	'move2Int'    : False,
-	'set2One'	  : True,
+	'set2One'	  : False,
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220313_15_randA4_w0.04_150_1Hz_after_snrSTD2.5_0.02_adadadadSigma_small_min4_2Int_New_V1/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220405_it2_0.02_V80/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 100,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
-	'z'           :[0,5,10,15,20,25,30,40,50,60,70,80,100,120,140,160,200,240,360,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+	'z'           :[0,2.5,7.5,10,15,20,25,30,35,40,45,50,60,70,80,100,120,140,160,240,360,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
 	'T'           : (15**np.arange(0,1.000001,1/N1))*10,\
 	'Tav'         : (15**np.arange(0-1/N1,1.000001+1/N1,1/N1))*10,\
-	'tSur'        : (15**np.arange(0,1.000001,1/N2))*10,\
+	'tSur'        : (15**np.arange(0,1.000001,1/N1))*10,\
 	'surPara'     : { 'nxyz':[19,28,14], 'lalo':[55,110],#[40,60,0][55,108]\
 					'dlalo':[1,1], 'maxN':60,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.3,\
-					'maxIT':15,'nBatch':1,'smoothDV':20,'smoothG':15,'vR':np.array([[53.5,122.1],[48,134.1],[42.1,131.1],[39.1,125],[39.9,115.1],[42,111.9],[45,111.9],[53.5,122.1]]),'perAGs':0.025,'perAGc':0.025,'perN':[3,3,5],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.03,'iso':'F',},\
+					'maxIT':15,'nBatch':1,'smoothDV':30,'smoothG':20,'vR':np.array([[53.5,122.1],[48,134.1],[42.1,131.1],[39.1,125],[39.9,115.1],[42,111.9],[45,111.9],[53.5,122.1]]),'perAGs':0.025,'perAGc':0.025,'perN':[3,3,5],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.03,'iso':'F',},\
 	'runDir'      : '../DS/20220111_CEA160_TrainTest/',#_man/',\
 	'gpuIndex'    : 0,\
 	'gpuN'        : 1,\
@@ -1506,7 +1608,7 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'thresholdTrain'   :0.02,\
 	'thresholdTrainDiff'   :0.02,\
 	'threshold'   :0.02,\
-	'qcThreshold': 0.82285,\
+	'qcThreshold': 0.957301, #2:0.82285,3:0.957301\
 	'minProb'     :0.5,\
 	'minP'        :0.5,\
 	'dV'          : 0.3,\
