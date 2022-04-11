@@ -1,9 +1,10 @@
 from posixpath import dirname
+from re import X
 from tensorflow import keras
 from tensorflow.keras import  Model
 from tensorflow.keras.layers import Input, MaxPooling2D,\
   AveragePooling2D,Conv2D,Conv2DTranspose,concatenate,\
-  Dropout,BatchNormalization, Dense,Softmax,Conv1D,Reshape,DenseFeatures
+  Dropout,BatchNormalization, Dense,Softmax,Conv1D,Reshape,DenseFeatures,LayerNormalization
 from tensorflow.python.keras.layers import Layer, Lambda
 from tensorflow.python.keras import initializers, regularizers, constraints, activations
 #LayerNormalization = keras.layers.BatchNormalization
@@ -48,6 +49,7 @@ tf.config.experimental.set_virtual_device_configuration(gpus[0],[tf.config.exper
 #session =tf.compat.v1.Session(config=config)
 #K.set_session(session)
 #defProcess()
+'''
 class LayerNormalization(Layer):
     """Layer Normalization Layer.
     
@@ -79,7 +81,7 @@ class LayerNormalization(Layer):
             'eps': self.eps,
         })
         return config
-
+'''
 #默认是float32位的网络
 def swish(inputs):
     return (K.sigmoid(inputs) * inputs)
@@ -152,7 +154,7 @@ class lossFuncSoft__:
                          (maxChannel*0.975+0.025)*maxSample,\
                                                                          )
 isUnlabel=1#1
-W0=0.125
+W0=0.08
 class lossFuncSoft:
     def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=2048):
         self.__name__ = 'lossFuncSoft'
@@ -174,15 +176,15 @@ class lossFuncSoft:
             w[0,i1:,0,i]=0
         K.set_value(self.w,w)
     def __call__(self,y0,yout0):
-        y1 = 1-y0
-        yout1 = 1-yout0
-        yout0 = K.clip(yout0,1e-7,1)
-        yout1 = K.clip(yout1,1e-7,1)
+        #y1 = 1-y0
+        #yout1 = 1-yout0
+        #yout0 = K.clip(yout0,1e-7,1)
+        #yout1 = K.clip(yout1,1e-7,1)
         maxChannel  = (K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2
-        maxSample   = K.max(maxChannel,axis=2, keepdims=True)
+        #maxSample   = K.max(maxChannel,axis=2, keepdims=True)
         return -K.mean(\
                          (\
-                             y0*K.log(yout0)+y1*K.log(yout1)\
+                             y0*K.log( K.clip(yout0,1e-7,1))+(1-y0)*K.log(K.clip(1-yout0,1e-7,1))\
                                                                      )*\
                          (maxChannel*1+isUnlabel*self.w*(1-maxChannel)),\
                                                                          )
@@ -213,7 +215,7 @@ class lossFuncSoftNP:
     def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=1536):
         K=np
         self.__name__ = 'lossFuncSoft'
-        w = np.ones([1,maxCount,1,len(TL)])*0.05
+        w = np.ones([1,maxCount,1,len(TL)],dtype=np.float32)*0.05
         for i in range(len(TL)):
             i0 = int(TL[i]/disMaxR/delta*(1+randA))
             i1 = min(int(TL[i]/disRandA/delta*(1-randA)),maxCount)
@@ -231,16 +233,14 @@ class lossFuncSoftNP:
         self.w=w
     def __call__(self,y0,yout0):
         K=np
-        y1 = 1-y0
-        yout1 = 1-yout0
-        yout0 = K.clip(yout0,1e-7,1)
-        yout1 = K.clip(yout1,1e-7,1)
-        maxChannel  = (K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2
-        mean = maxChannel.mean()
-        maxSample   = K.max(maxChannel,axis=2, keepdims=True)
+        #y1 = 1-y0
+        #yout1 = 1-yout0
+        #yout0 = K.clip(yout0,1e-7,1)
+        #yout1 = K.clip(yout1,1e-7,1)
+        maxChannel  = ((K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2)
         return -K.mean(\
                          (\
-                             y0*K.log(yout0)+y1*K.log(yout1)\
+                             y0*K.log(K.clip(yout0,1e-7,1))+(1-y0)*K.log(K.clip(1-yout0,1e-7,1))\
                                                                      )*\
                          (maxChannel*1+isUnlabel*self.w*(1-maxChannel)),\
                                                                          )                                                                      
@@ -337,7 +337,6 @@ def printRes_old(yin, yout,resL=globalFL,isUpdate=False,N=10):
     return strL
 
 def printRes_sq(yin, yout):
-    #       0.01  0.8  0.36600 0.9996350
     strL   = 'maxD   minP hitRate rightRate F old'
     strfmt = '\n%5.3f %3.1f %7.5f %7.5f %7.5f'
     yinPos  = yin.argmax( axis=1)
@@ -550,6 +549,7 @@ def inAndOutFuncNewNetUp(config, onlyLevel=-10000):
         outputs = outputsL[onlyLevel]
     return inputs,outputs
 def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
+    BatchNormalization =LayerNormalization
     BNA = -1
     inputs  = Input(config.inputSize,name='inputs')
     depth   =  len(config.featureL)
@@ -1382,8 +1382,9 @@ def trainAndTestMul(model,corrDTrain,corrDValid,corrDTest,outputDir='predict/',t
     xTest=None
     yTest=None
     tTest=None
-    corrDValid.corrL.x=None
-    corrDValid.corrL.y=None
+    corrDTrain.corrL.clear()
+    corrDValid.corrL.clear()
+    #corrDValid.corrL.clear()
     xTest, yTest, tTest =corrDTest(mul=mul)
     yout=model.predict(xTest)
     resStr+= printRes_old(yTest, yout)+'\n'
@@ -1405,6 +1406,7 @@ def trainAndTestMul(model,corrDTrain,corrDValid,corrDTest,outputDir='predict/',t
     #for level in range(-1,-model.config.deepLevel-1,-1):
     #    model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
     #    T=tTrain,outputDir=tmpOutputDir,level=level)
+    corrDTest.corrL.clear()
     return head+'_model.h5'
 
 def trainAndTestSq(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTrain=tTrain,\
@@ -1660,6 +1662,9 @@ class fcnConfig:
             #self.featureL      = [50,50,50,50,50,50,320]
             self.featureL      = [50,40,30,20,10,5,320]
             self.featureL      = [50,40,30,25,20,15,320]
+            self.featureL      = [50,40,30,20,10,5,320]
+            self.featureL      = [50,35,25,15,8,4,320]
+            self.featureL      = [50,40,30,25,20,10,320]
             #self.featureL      = [50,50,75,75,100,100,125]
             #self.featureL      = [50,75,75,100,125,150,200]
             #self.featureL      = [75,75,75,75,75,75,75]
@@ -2217,16 +2222,15 @@ class modelUp(Model):
                 X = self.inx(x[i:min(i+maxN,NX)])
                 if len(X)>0:
                     Y.append(super().predict(X,batch_size=batch_size,**kwargs))
-            Y=np.concatenate(Y,axis=0)
+            Y=np.concatenate(Y,axis=0).astype(np.float32)
             return Y
         else:
-            return super().predict(x,batch_size=batch_size,**kwargs)
+            return super().predict(x,batch_size=batch_size,**kwargs).astype(np.float32)
     def fit(self,x,y,batchSize=None,**kwargs):
         x=self.inx(x)
         if np.isnan(x).sum()>0 or np.isinf(x).sum()>0:
             print('bad record')
             return None
-        #print('train',batchSize)
         return super().fit(x ,y,batch_size=batchSize,**kwargs)
     def plot(self,filename='model.png'):
         plot_model(self, to_file=filename)
@@ -2427,14 +2431,18 @@ class modelUp(Model):
             print('fromT:',np.array(t0L).mean())
             print('loop:',sampleDone.mean())
             self.fit(x ,y,batchSize=batchSize)
+            x=0
+            y=0
             #print(self.layers[47].variables[-2][-10:],self.layers[47].variables[-1][-10:])
             if int(sampleDone.mean())>sampleTime:
                 sampleTime = int(sampleDone.mean())
                 if len(xTest)>0:
-                    youtTrain = 0
-                    youtTest  = 0
                     #xTrain=x
                     #yTrain=y
+                    #xTrain = x
+                    #yTrain = y
+                    youtTrain = 0
+                    youtTest  = 0
                     youtTrain = self.predict(xTrain,batch_size=batchSize)
                     #youtTrain = self.predict(x,batch_size=batchSize)
                     youtTest  = self.predict(xTest,batch_size=batchSize)
@@ -2455,6 +2463,8 @@ class modelUp(Model):
                     trainTestLoss.append([i,lossTrain,lossTest])
                     resStr+='\ntrain '+printRes_old(yTrain,youtTrain)
                     resStr+='\ntest '+printRes_old(yTest, youtTest,isUpdate=True)
+                    youtTrain = 0
+                    youtTest  = 0
                     if lossTest >= lossMin:
                         count -= 1
                     if lossTest > 3*lossMin and lossMin>0:
@@ -2470,11 +2480,12 @@ class modelUp(Model):
                         break
                     #print(self.metrics)
                     if True:#i%15==0:
-                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.9)
+                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.8)
                         print('learning rate: ',self.optimizer.lr)
                     if True:#i>10 and i%50==0:
                         batchSize = int(batchMax/self.mul)
                         print('batchSize ',batchSize)
+            gc.collect()
         self.set_weights(w0)
         return resStr,trainTestLoss
     def trainByXYTCross(self,self1,XYT0,XYT1,N=2000,perN=100,batchSize=None,\
