@@ -32,6 +32,7 @@ gpdcExe = '/home/jiangyr/program/geopsy/bin/gpdc'
 Vav = -1
 import numexpr as ne
 ne.set_num_threads(16)
+ne.set_vml_num_threads(16)
 class config:
     def __init__(self,originName='models/prem',srcSacDir='/home/jiangyr/home/Surface-Wave-Dispersion/',\
         distance=np.arange(400,1500,100),srcSacNum=100,delta=0.5,layerN=1000,\
@@ -272,7 +273,7 @@ class config:
                 maxDDist=self.maxDDist, srcSac=quake.name(s='_'), 
                 isCut=self.isCut, isFromO=self.isFromO, removeP=self.removeP, 
                 fvD=fvD, isLoadFv=isLoadFv, quakeName=quakeName, isByQuake=isByQuake, 
-                maxCount=maxCount,fromT=self.fromT, **kwags)
+                maxCount=maxCount,fromT=self.fromT,freq=self.para0['freq'],corners=self.para0['corners'], **kwags)
             print('###########', len(corrL))
 
         return corrL
@@ -1031,7 +1032,7 @@ class disp:
         if isShow:
             plt.show()
 
-    def sacXcorr(self, sac0, sac1, isCut=False, maxCount=-1,fromT=0, **kwags):
+    def sacXcorr(self, sac0, sac1, isCut=False, maxCount=-1,fromT=0,freq=[],corners=4, **kwags):
         fs = sac0.stats['sampling_rate']
         self.fs = fs
         self.halfN = np.int(self.halfDt * self.fs)
@@ -1046,7 +1047,18 @@ class disp:
         #    data0=data0[fromI:]
         #if fromI<0:
         #    data1=data1[-fromI:]
-        xx, i0, i1 = self.xcorr(data0, data1, isCut,fromI=fromI)
+        if len(freq)>0:
+            dIndex = int(1/freq[0]/sac0.stats['sac']['delta'])
+            xx, i0, i1 = self.xcorr(data0, data1, isCut,fromI=fromI-dIndex)
+            if np.random.rand() <0.01:
+                print('#######xx####bandpass',freq,corners,fs,fromI,dIndex)
+            #fs = 1/sac0.stats['sac']['delta']
+            xx -= xx.mean()
+            xx =signal.detrend(xx,)
+            b,a=signal.butter(N=corners,Wn=freq,fs=fs,btype='bandpass')
+            xx = signal.filtfilt(b, a, xx)[dIndex:]
+        else:
+            xx, i0, i1 = self.xcorr(data0, data1, isCut,fromI=fromI)
         time1New = time1 + i0 / fs
         dTime = time0 - time1New
         timeL = np.arange(xx.size) / fs + dTime+fromT
@@ -1569,10 +1581,11 @@ def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minD
     binD = np.arange(18) / 18 * 1800
     print(DISTL.max())
     plt.close()
-    plt.figure(figsize=[3, 2])
+    plt.figure(figsize=[2.8, 1.6])
     plt.hist2d(DISTL, FL, bins=(binD, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
     plt.gca().set_yscale('log')
-    plt.gca().set_position([0.15,0.2,0.6,0.7])
+    #plt.gca().set_position([0.15,0.2,0.6,0.7])
+    plt.gca().set_position([0.2,0.25,0.5,0.6])
     ax=plt.gca()
     ax_divider = make_axes_locatable(plt.gca())
     cax = ax_divider.append_axes('right', size="7%", pad="10%",)
@@ -1583,9 +1596,9 @@ def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minD
         #plt.plot( minDis * (1 - R), fLDis,'-.k',linewidth=0.5,label='control')
         #plt.plot( maxDis * (1 + R), fLDis,'-.k',linewidth=0.5)
         ax.legend()
-    ax.set_xlabel('$\Delta$(km)')
+    ax.set_xlabel('$D$(km)')
     ax.set_ylabel('$f$(Hz)')
-    ax.set_xlim([0,1800])
+    ax.set_xlim([0,2500])
     #plt.title(title)
     #plt.tight_layout()
     plt.savefig(filename, dpi=300)
@@ -1638,16 +1651,16 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
 
     binF = fL[::fStrike]
     binF.sort()
-    binV = np.arange(2.8, 5.2, 0.02)
+    binV = np.arange(1, 5, 0.01)
     plt.close()
-    plt.figure(figsize=[3, 2])
+    plt.figure(figsize=[2.4, 1.6])
     plt.hist2d(VL, FL, bins=(binV, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
     #plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('$v$(km/s)')
-    plt.xlim([3, 5])
+    plt.xlim([1.5, 4.8])
     plt.ylabel('$f$(Hz)')
-    plt.gca().set_position([0.15,0.2,0.6,0.7])
+    plt.gca().set_position([0.2,0.25,0.6,0.6])
     ax =plt.gca()
     ax_divider = make_axes_locatable(plt.gca())
     cax = ax_divider.append_axes('right', size="7%", pad="10%",)
@@ -1716,7 +1729,7 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     THRESHOLD = delta / TL
     THRESHOLD[THRESHOLD <= threshold] = threshold
     plt.figure(figsize=[4, 2.25])
-    plt.hist2d((dvR[((VL > 1) * (VLGet > 1))]), (FL[((VL > 1) * (VLGet > 1))]), bins=(binDVR, binF), rasterized=True, cmap='Greys')
+    plt.hist2d((dvR[((VL > 1) * (VLGet > 1))]), (FL[((VL > 1) * (VLGet > 1))]), bins=(binDVR, binF), rasterized=True, cmap='Greys',)#norm=(colors.LogNorm()))
     plt.gca().set_yscale('log')
     plt.xlabel('$dv/v_0$')
     plt.ylabel('$f$(Hz)')
@@ -2552,7 +2565,7 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1],th
     plt.close()
     hL = []
     lL = []
-    plt.figure(figsize=[4, 2.5])
+    plt.figure(figsize=[4, 3])
     plt.subplots_adjust(left=0.15,bottom=0.21,wspace=0.25)
     plt.subplot(1, 2, 1)
     for fv in fvL:
@@ -3003,7 +3016,7 @@ class corr:
          (
           'quakeName', h5Str, 1)])
         return corrType
-    def outputTimeDis(self, FV, T=np.array([5, 10, 20, 30, 50, 80, 100, 150, 200, 250, 300]), sigma=2, byT=False, byA=False, rThreshold=1e-2, set2One=False, move2Int=False, noY=False, randMove=False,dtG=[],disRandA=1/15,disMaxR=1,**kwargs):
+    def outputTimeDis(self, FV, T=np.array([5, 10, 20, 30, 50, 80, 100, 150, 200, 250, 300]), sigma=2, byT=False, byA=False, rThreshold=4e-3, set2One=False, move2Int=False, noY=False, randMove=False,dtG=[],disRandA=1/15,disMaxR=1,**kwargs):
         self.T = T
         f = 1 / T
         t0 = self.timeLOut[0]
@@ -3051,58 +3064,87 @@ class corr:
                 timeDis[timeDis > halfV] = 1
                 #timeDis[timeDis > 1 / np.e] = 1
                 #timeDis[timeDis <= 1 / np.e] = 0
-            if byA or self.isSyn:
-                if len(self.aF)==0:
-                    self.aF = np.abs(self.getA(f[0])).astype(np.float32)/f[0]**0.5
-                timeDis[:, self.aF < rThreshold] = 0
+            if byA:
+                aF = np.abs(self.getA(f[0])).astype(np.float32)/f[0]**0.5
+                timeDis[:, aF < rThreshold] = 0
             return (
              timeDis, t0)
-    def synthetic(self,FV,rThreshold=1e-2,isFv=False,F=[],disRandA=1/15,disMaxR=1,isNoise=False,**kwargs):
+    def synthetic(self,FV,rThreshold=4e-3,isFv=False,F=[],disRandA=1/15,disMaxR=1,isNoise=False,**kwargs):
         #tiqian suanhao 
+        FF = F
+        FVFV = FV
         fL = np.fft.fftfreq(len(self.xx),self.timeL[1]-self.timeL[0]).astype(np.float32)
-        fL=fL[fL>1/200]
-        fL=fL[fL<1/6]
+        fL=fL[fL>=1/150]
+        fL=fL[fL<=1/8]
         v = FV(fL)
         dt=(self.dDis / v).astype(np.float32)
         if len(self.af)==0:
-            self.af =np.abs(self.getA(fL).reshape([1,-1])).astype(np.float32)
+            self.af =np.abs(self.getA(fL).reshape([1,-1])).astype(np.float32)/fL**0.5
         timeL = self.timeL.reshape([-1,1])
+        maxF = fL[self.af.argmax()]*(0.8+np.random.rand()*0.4)
+        sigma =np.exp(
+            (
+                (
+                    (
+                        np.log(fL)-np.log(maxF)
+                    )**2*self.af
+                ).sum()/self.af.sum()
+            )**0.5
+            )*(0.75*np.random.rand()+0.5)*0.5
+        af = np.exp(
+            -(np.log(fL)-np.log(maxF)
+            )**2/sigma**2
+            )*fL**0.5*(
+                0.85+np.random.rand(
+                    len(fL)
+                    )*0.3
+                )
         dt = dt.reshape([1,-1])
         fL = fL.reshape([1,-1])
-        af = self.af
+        #af = self.af 
         pi = np.pi
         data=ne.evaluate('cos(-pi*2*(timeL-dt)*fL)*af').sum(axis=1)
-        #data=ne.evaluate(np.cos(-np.pi*2*(timeL-dt)*fL)*af).sum(axis=1)
-        if isNoise:
-            TMIN = self.dDis / 5
-            TMax = self.dDis / 2.8
-            fMin=fL[af>rThreshold].min()
-            minDT = 1/fMin*0.75
-            A = (np.random.rand()-0.5)*0.1
-            if np.random.rand()<0.01:
-                print('Noise',A,'minDT',minDT)
+        if isFv:
+            #if len(self.aF)==0:
+            F = np.array(F)
+            aF = np.abs(self.getA(F,data)).astype(np.float32)/F**0.5
+            V = FV(F).astype(np.float32)
+            DT=self.dDis / V
+            
+        if isNoise and np.random.rand()<0.75:
+            TRef = self.dDis / 4
+            FValid=F[aF > rThreshold*0.9]
+            if len(FValid)>0:
+                fMin=FValid.min()
+            else:
+                fMin=1/140
+            minDT = 1/fMin*1.5
+            A = (np.random.rand()-0.5)*0.20
+            dt=0
             if np.random.rand()>0.5:
-                dt = TMIN*(0.3+np.random.rand()*0.6)
+                dt = TRef*(0.15+np.random.rand()*0.7)
                 dt = max(minDT,dt)
                 dIndex =int(dt/(self.timeL[1]-self.timeL[0]))
                 data[:-dIndex]+=data[dIndex:]*A
             else:
-                dt = TMax*(0.2+np.random.rand()*0.6)
+                dt = TRef*(0.15+np.random.rand()*0.7)
                 dt = max(minDT,dt)
                 dIndex =int(dt/(self.timeL[1]-self.timeL[0]))
                 data[dIndex:]+=data[:-dIndex]*A
+            if np.random.rand()<0.0005:
+                print('Noise',A,'minDT',minDT,'sigma',sigma,'maxT',1/maxF,'dt',dt)
         if isFv:
-            if len(self.aF)==0:
-                self.aF = np.abs(self.getA(F)).astype(np.float32)/F**0.5
-            v = FV(F).astype(np.float32)
-            DT=self.dDis / v
-            v[self.aF < rThreshold]=0
-            v[DT>1/F/disRandA]=0
-            v[DT<1/F/disMaxR]=0
-            return data,fv([F,v])
-        return data
+            V[aF < rThreshold]=0
+            V[DT>1/F/disRandA]=0
+            V[DT<1/F/disMaxR]=0
+            if (V>1).sum()==0:
+                print('!!!!!!!!!!!!!!no energy!!!!!!!!!!')
+                return self.synthetic(FVFV,rThreshold=rThreshold,isFv=isFv,F=FF,disRandA=disRandA,disMaxR=disMaxR,isNoise=isNoise,**kwargs)
+            return data,fv([F,V])
+        else:
+            return data
 
-    def outputTimeDisNew(self, FV, sigma=2, byT=False, byA=False, rThreshold=1e-2, set2One=False, move2Int=False, noY=False, T=[]):
+    def outputTimeDisNew(self, FV, sigma=2, byT=False, byA=False, rThreshold=4e-3, set2One=False, move2Int=False, noY=False, T=[]):
         t0 = self.timeLOut[0]
         delta = self.timeLOut[1] - self.timeLOut[0]
         halfV = np.exp(-(delta * 0.5 / sigma) ** 2)
@@ -3201,12 +3243,15 @@ class corr:
         netSta1 = os.path.basename(self.name1).split('.')[:2]
         return ('%s.%s' % (netSta0[0], netSta0[1]), '%s.%s' % (netSta1[0], netSta1[1]))
 
-    def getA(self,f):
-        t0 = self.dDis/6
-        t1 = self.dDis/2
+    def getA(self,f,xx=[]):
+        t0 = self.dDis/6-160
+        t1 = self.dDis/2+160
         i0 =int((t0-self.timeL[0])/(self.timeL[1]-self.timeL[0])) 
         i1 =int((t1-self.timeL[0])/(self.timeL[1]-self.timeL[0]))
-        xx = self.xx[i0:i1]
+        if len(xx)==0:
+            xx = self.xx[i0:i1]
+        else:
+            xx = xx[i0:i1]
         return calSpec(xx/xx.std()/len(xx),self.timeL[i0:i1],f)
     def show(self, d, FV):
         linewidth = 0.3
@@ -3386,7 +3431,7 @@ class corr:
                  V.append(v[i])
                  STD.append(std[i])
         return fv([np.array(F),np.array(V),-np.array(STD)],mode='num')
-    def getFVSimple(self,f,fvRef,N=50,v0=1.5,v1=5.,k=0,isControl=True,isByLoop=False,isStr=False,isRand=False, randA=0,midV=4,isNoMove=False):
+    def getFVSimple(self,f,fvRef,N=50,v0=1.5,v1=5.,k=0,isControl=True,isByLoop=False,isStr=False,isRand=False, randA=0,midV=4,isNoMove=False,isDirect=False):
         data = self.xx.copy()
         Loop = np.arange(-5,N)
         d    = np.abs(self.dis[0]-self.dis[1])
@@ -3440,6 +3485,8 @@ class corr:
                 T = t[i,index]
                 v[i]=d/T
         #print(d/t[i],v[i])
+        if isDirect:
+            return fv([f.copy(),v,-std],mode='num')
         FV = fv([f.copy()[v>1],v[v>1],-std[v>1]],mode='num')
         return FV
 
@@ -3490,30 +3537,23 @@ def calPhi(data,timeL,f,tRef,gamma=4,deltaF=0/100,gammaW=20,deltaT=0,isS=False,i
         iN1 = -1
         F = f[i]
         T = 1/f[i]
-        if  T<25:
-            gammaW=25
-        elif  T<40:
-            gammaW=24
-        elif T<80:
-            gammaW=22
-        elif T<100:
-            gammaW=20
-        elif T<150:
-            gammaW=18
-        else:
-            gammaW=18
-        gammaW=20
+        #gammaW=20
+        F0=1/10
+        F1=1/140
+        gammaW0=20
+        gammaW1=15
+        gammaW = 20#((np.log(F)-np.log(F0))*gammaW1+(np.log(F1)-np.log(F))*gammaW0)/(np.log(F1)-np.log(F0))
         wn = 2*np.pi*F
         alpha = gamma**2 * wn
         t0 = np.sqrt( emin * np.log(10) * 4 * alpha) / wn
         it0 =  t0/delta;
         it0 = round(it0/2) * 2
-        nfil = it0 * 2 - 1;
+        nfil = it0 * 2 - 1
 
         tfil = delta *  ( np.arange(nfil) - it0+1 )
         yfil = wn / (2 * np.sqrt( np.pi * alpha )) * np.exp( - wn**2 / ( 4 * alpha ) * tfil**2)
-        yfil = yfil * np.cos( wn * tfil )
-        x1x2h = np.convolve(data,yfil)
+        yfil = (yfil * np.cos( wn * tfil )).astype(np.float32)
+        x1x2h = signal.convolve(data,yfil)
         x1x2h = x1x2h[it0-1:len(data)+it0-1]
         x1x2h = signal.detrend(x1x2h)
         if isS:
@@ -3530,7 +3570,7 @@ def calPhi(data,timeL,f,tRef,gamma=4,deltaF=0/100,gammaW=20,deltaT=0,isS=False,i
         noise=(x1x2h[iN0:iN1]).std()
         alpha = (gammaW)**2 * wn
         h = ((np.arange(len(data))-indexMax)*delta)**2 * wn**2 / (4*alpha);
-        h = np.exp(-h);
+        h = np.exp(-h).astype(np.float32);
         x1x2h = x1x2h * h
         Phi[i] =np.angle(calSpec(x1x2h,timeL,np.array([F])))[0]
         std[i] = aMax/noise
@@ -3908,7 +3948,7 @@ class corrL(list):
     def __str__(self):
         return '%d %s' % (len(self), str(self.timeDisKwarg))
 
-    def getTimeDis(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=1e-2, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, randA=0.03, midV=4, randR=0.5, mul=1,isGuassianMove=False,disAmp=1,fromT=0,fvDSyn={},**kwags):
+    def getTimeDis(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=4e-3, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, randA=0.03, midV=4, randR=0.5, mul=1,isGuassianMove=False,disAmp=1,fromT=0,fvDSyn={},**kwags):
         if len(iL) == 0:
             iL = np.arange(len(self))
         if not isinstance(iL, np.ndarray):
@@ -3963,6 +4003,8 @@ class corrL(list):
                     fv = fvNone 
             else:
                 fv = fvDSyn[random.choice(keyLSyn)]
+                if np.random.rand()<0.0003:
+                    print('choose fv')
             if isGuassianMove and randMove and randN > randR and (self[i].isSyn==False): 
                 AT=(Rand0 - 0.5) * 2 * (self[i].dDis / midV) * randA * Rand1,
                 f0=1/((30**Rand2)*8)
@@ -3973,7 +4015,11 @@ class corrL(list):
                     print('##random ', 'AT',AT, 'f0',f0, 'sigma',sigmaG,'dDis',self[i].dDis)
             else:
                 dtGFV=fLFV*0
-            
+
+            if not self[i].isSyn:
+                xx=self[i].xx
+            else:
+                xx,fv=self[i].synthetic(fv,isFv=True,F=fLFV,**kwags)
             tmpy, t0,= self[i].outputTimeDis((fv), T=T,
                 sigma=sigma,
                 byT=byT,
@@ -3986,10 +4032,6 @@ class corrL(list):
                 dtG=dtGFV,**kwags)
             iP, iN = self.ipin(t0-fromT, self[i].fs)
             y[ii, iP * up:maxCount * up + iN * up, 0, :] = tmpy[-iN * up:maxCount * up - iP * up]
-            if not self[i].isSyn:
-                xx=self[i].xx
-            else:
-                xx=self[i].synthetic(fv,**kwags)
             x[ii, iP:maxCount + iN, 0, 0] = xx.reshape([
                 -1])[-iN:maxCount - iP]
             if isGuassianMove and randMove and randN > randR and (self[i].isSyn==False):
@@ -4005,7 +4047,7 @@ class corrL(list):
                         print('******* rand1:', rand1)
                     dDis = dDis * rand1
             timeMin = dDis / 5.0-fromT
-            timeMax = dDis / 3.0-fromT
+            timeMax = dDis / 2.0-fromT
             I0 = int(np.round(timeMin / delta0).astype(np.int))
             I1 = int(np.round(timeMax / delta0).astype(np.int))
             x[ii, I0:I1, 0, 1] = disAmp
@@ -4052,7 +4094,7 @@ class corrL(list):
         self.t0L=0
         self.iL=np.arange(0)
         gc.collect()
-    def getTimeDisNew(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=1e-2, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, up=1):
+    def getTimeDisNew(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=4e-3, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, up=1):
         if len(iL) == 0:
             iL = np.arange(len(self))
         if not isinstance(iL, np.ndarray):
@@ -4613,7 +4655,7 @@ class corrD(dict):
 
         self.keyL = list(self.keys())
 
-    def __call__(self, keyL=[], mul=1, N=-1,isRand=True,isSyn=False):
+    def __call__(self, keyL=[], mul=1, N=-1,isRand=True,isSyn=False,isNoise=False):
         N0 = N
         iL = []
         if len(keyL) == 0:
@@ -4626,6 +4668,14 @@ class corrD(dict):
                     if self.corrL[index].isSyn:
                         iL.append(index)
                         break
+                continue
+            if isNoise:
+                fvD = self.corrL.timeDisArgv[0]
+                for index in self[key]:
+                    if self.corrL[index].modelFile not in fvD:
+                        iL.append(index)
+                        break
+                continue
             if False:#len(self[key]) < mul:
                 pass
             else:
@@ -4805,18 +4855,20 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
     count = x.shape[1]
     cmap = plt.cm.bwr
     norm = colors.Normalize(vmin=0, vmax=1)
+    pc =cm.ScalarMappable(norm=norm, cmap=cmap)
     for i in range(len(x)):
         plt.close()
         axL=[]
         caxL=[]
         figL=[]
         for nn in range(number):
-            fig=plt.figure(figsize=[4,2])
-            grids=plt.GridSpec(8,4)
+            fig=plt.figure(figsize=[3.2,1.6])
             #axL.append(fig.add_subplot(projection='3d'))
-            axL.append(fig.add_subplot(grids[0:4,:]))
-            caxL.append(fig.add_subplot(grids[6,:]))
+            axL.append(plt.gca())
             figL.append(fig)
+            plt.gca().set_position([0.15,0.32,0.7,0.58])
+            ax_divider = make_axes_locatable(axL[-1])
+            caxL.append(ax_divider.append_axes('bottom', size="10%", pad="70%",))
         for j in range(1):
             print(j)
             index= iL[i,j]
@@ -4854,40 +4906,45 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             #plt.legend()
             axL[0].set_xlim(xlim)
             #axL[0].set_ylim(ylim)
-            axL[0].set_xlabel('$t$/s')
+            axL[0].set_xlabel('time(s)')
             axL[0].set_ylabel('$A$')
             #axL[0].set_yticks(np.arange(mul))
             #axL[0].set_yticks([-2,0,2])
             caxL[0].axis('off')
-            figureSet.setColorbar(None,label='Probability',pos='bottom',isAppend=False)
+            #figureSet.setColorbar(None,label='Probability',pos='bottom',isAppend=False)
             #plt.clim(0,1)
             #pc=plt.pcolormesh(timeLOut,f,tmpy0.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
-            surf=axL[1].pcolormesh(timeLOut[timeLOut<xlim[1]],f,tmpy0[timeLOut<xlim[1]].transpose(),vmin=0,vmax=1,cmap='bwr',rasterized=True)
+            pc=axL[1].pcolormesh(timeLOut[timeLOut<xlim[1]],f,tmpy0[timeLOut<xlim[1]].transpose(),vmin=0,vmax=1,cmap='bwr',rasterized=True)
             #figureSet.setColorbar(pc,label='Probility',pos='right')
             ##if number==3:
             #    axL[1].plot(timeLOutL,f,'--k',linewidth=0.5)
-            axL[1].set_ylabel('$f$/Hz')
-            axL[1].set_xlabel('$t$/s')
+            axL[1].set_ylabel('$f$(z)')
+            axL[1].set_xlabel('time(s)')
             axL[1].set_yscale('log')
             axL[1].set_xlim(xlim)
+            axL[1].set_yticks([1/100,1/10])
             #axL[1].set_ylim(ylim)
-            pc =cm.ScalarMappable(norm=norm, cmap=cmap)
             #caxL[1].axis('off')
-            figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[1])
+            #figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[1])
+            cbar=plt.colorbar(pc, cax=caxL[1], orientation="horizontal")
+            cbar.set_label('Probability')
             #plt.colorbar(label='Probility')
             if number==3:
                 #pc=plt.pcolormesh(timeLOut,f,tmpy.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
-                surf=axL[2].pcolormesh(timeLOut[timeLOut<xlim[1]],f,tmpy[timeLOut<xlim[1]].transpose(),vmin=0,vmax=1,cmap='bwr',rasterized=True)
-                axL[2].plot(timeLOutL0,f,'--k',linewidth=0.5)
-                axL[2].set_ylabel('$f$/Hz')
-                axL[2].set_xlabel('$t$/s')
+                axL[2].pcolormesh(timeLOut[timeLOut<xlim[1]],f,tmpy[timeLOut<xlim[1]].transpose(),vmin=0,vmax=1,cmap='bwr',rasterized=True)
+                axL[2].plot(timeLOutL0,f,'--k',linewidth=0.25)
+                axL[2].set_ylabel('$f$(Hz)')
+                axL[2].set_xlabel('time(s)')
                 axL[2].set_yscale('log')
                 #axL[2].set_zticks([f.max(),f.min()])
                 axL[2].set_xlim(xlim)
+                axL[2].set_yticks([1/100,1/10])
                 #axL[2].set_ylim(ylim)
-                pc =cm.ScalarMappable(norm=norm, cmap=cmap)
+                #pc =cm.ScalarMappable(norm=norm, cmap=cmap)
                 #caxL[2].axis('off')
-                figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[2])
+                cbar=plt.colorbar(pc, cax=caxL[2], orientation="horizontal")
+                cbar.set_label('Probability')
+                #figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[2])
         #plt.colorbar(label='Probility')
         #plt.gca().semilogx()
         for nn in range(number):
@@ -4898,6 +4955,8 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
                 tail = 'without'
                 kind = ['wave','label'][nn]
             figL[nn].savefig('%s/%s_%s_%s.eps'%(outputDir,head,kind,tail),dpi=500)
+        for nn in range(number):
+            plt.close()
 
 def analyModel(depth, v, resDir='predict/KEA20/'):
     if not os.path.exists(resDir):
@@ -4959,13 +5018,102 @@ vs0=np.array([3.352,3.352,3.374,3.419,3.489,3.569,3.632,3.651,4.125,4.563,4.483,
 vp0=vs0*1.7
 data = np.loadtxt('/home/jiangyr/Surface-Wave-Dispersion/models/prem')
 z,vp,vs,rho,qp,qs=data.transpose()
-z0 = np.array([0,10,20,30,40,50,60,80,100,125,150,175,200,250,300,360,420,500])
+z0 = np.array([0,2,5,8,10,12,16,20,25,30,35,40,45,50,60,70,80,100,120,140,160,180,200,250,300,350,400,450,500,700])
 vp0 = interpolate.interp1d(z,vp)(z0)
 vs0 = interpolate.interp1d(z,vs)(z0)
 #vs0=np.array([3.352,3.352,3.474,3.819,3.889,38769,3.832,3.951,4.125,4.323,4.333,4.356,4.363,4.365,4.374,4.389,4.400,4.427,4.530,4.719,5.058])
 #vs0=vs0*1.05
 #vs0[-12:]*=1.0
 #
+from netCDF4 import Dataset
+class Litho:
+    def __init__(self,litho='data/LITHO1.0.nc',vsDeeper='data/3D2018-08Sv-depth.nc',refVs='data/refModelVs2016',zMax=600):
+        self.litho=Dataset(litho)
+        self.vsDeeper=Dataset(vsDeeper)
+        z,vs = np.loadtxt(refVs).transpose()
+        self.refVs=vs
+        self.zMax=zMax
+    def __call__(self,la,lo,keyL=['upper_sediments','middle_sediments','lower_sediments','upper_crust','middle_crust','lower_crust','lid','asthenospheric_mantle']):
+        la=la%180
+        lo=lo%360
+        litho=self.litho
+        vsDeeper=self.vsDeeper
+        refVs=self.refVs
+        zMax=self.zMax
+        z=[]
+        vp=[]
+        vs=[]
+        rho=[]
+        laL = litho.variables['latitude'][:]%180
+        loL = litho.variables['longitude'][:]%360
+        i = np.abs(laL-la).argmin()
+        j = np.abs(loL-lo).argmin()
+        if np.random.rand()<0.0001:
+            print('finding',laL[i],loL[j])
+        for I in range(len(keyL)):
+            key = keyL[I]
+            keyTop=key+'_top'
+            if key=='asthenospheric_mantle':
+                keyBottom=key+'_top'
+            else:
+                keyBottom=key+'_bottom'
+            #if key=='upper_sediments':
+            #print(keyTop)
+            if np.isnan(litho[keyTop+'_depth'][i,j]):
+                continue
+            #print(keyTop,'geting')
+            zTop = float(litho[keyTop+'_depth'][i,j])
+            vpTop = float(litho[keyTop+'_vp'][i,j])
+            vsTop = float(litho[keyTop+'_vs'][i,j])
+            rhoTop = float(litho[keyTop+'_density'][i,j]/1000)
+            zBottom = float(litho[keyBottom+'_depth'][i,j])
+            vpBottom = float(litho[keyBottom+'_vp'][i,j])
+            vsBottom = float(litho[keyBottom+'_vs'][i,j])
+            rhoBottom = float(litho[keyBottom+'_density'][i,j] /1000)
+            if np.isnan(np.array([zTop,zBottom,vpTop,vpBottom,vsBottom,vpBottom,rhoTop,rhoBottom])).sum()>0:
+                print('nan layer',key)
+                continue
+            if zBottom==zTop and key!='asthenospheric_mantle':
+                print('same Z',zTop,zBottom,vpTop,vpBottom,key)
+                keyBottom=keyL[I+1]+'_top'
+                zBottomO = zBottom
+                zBottom = float(litho[keyBottom+'_depth'][i,j])
+                if np.isnan(zBottom):
+                    print('nan depth')
+                    keyBottom=keyL[I+2]+'_top'
+                    zBottom = float(litho[keyBottom+'_depth'][i,j])
+                    if np.isnan(zBottom):
+                        print('next nan depth')
+                        keyBottom=keyL[I+3]+'_top'
+                        zBottom = float(litho[keyBottom+'_depth'][i,j])
+                        print('next next find',keyBottom,zTop,zBottom)
+                    else:
+                        print('next find',keyBottom,zTop,zBottom)
+                else:
+                    print('find',keyBottom,zTop,zBottom)
+            z+=[zTop,0.75*zTop+0.25*zBottom,0.5*zTop+0.5*zBottom,0.25*zTop+0.75*zBottom,1*zBottom]
+            vp+=[vpTop,0.75*vpTop+0.25*vpBottom,0.5*vpTop+0.5*vpBottom,0.25*vpTop+0.75*vpBottom,1*vpBottom]
+            vs+=[vsTop,0.75*vsTop+0.25*vsBottom,0.5*vsTop+0.5*vsBottom,0.25*vsTop+0.75*vsBottom,1*vsBottom]
+            rho+=[rhoTop,0.75*rhoTop+0.25*rhoBottom,0.5*rhoTop+0.5*rhoBottom,0.25*rhoTop+0.75*rhoBottom,1*rhoBottom]
+        laNew = vsDeeper.variables['latitude'][:]%180
+        loNew = vsDeeper.variables['longitude'][:]%360
+        i = np.abs(laNew-la).argmin()
+        j = np.abs(loNew-lo).argmin()
+        if np.random.rand()<0.0001:
+            print('##finding',laNew[i],loNew[j])
+        #print(z[-1])
+        zNew=np.arange(max(z[-1],40),zMax,20)
+        #vs0 = refVs(zNew)
+        zDeeper=vsDeeper.variables['depth'][:]
+        vsNew= interpolate.interp1d(
+            zDeeper,
+            refVs*(
+                    1 + 0.01 * vsDeeper.variables['dvs'][:,i,j])*(
+                    1 + 0.01 * vsDeeper.variables['as'][:,i,j]*np.cos(
+                        (i+j+vsDeeper.variables['az'][:,i,j]/180*np.pi)*2 ) )
+            )(zNew)
+        #vsNew=vs0*(1+0.01*perVs)
+        return np.array(z+zNew.tolist()),np.array(vp+(1.71*vsNew).tolist()),np.array(vs+(1*vsNew).tolist()),np.array(rho+(0.8*vsNew).tolist())
 class One:
     def __init__(self,vp=vp0,vs=vs0,z=z0,rho=[]):
         if len(rho)==0:
@@ -4974,18 +5122,29 @@ class One:
         vp =0.5*(vp[1:]+vp[:-1])
         vs =0.5*(vs[1:]+vs[:-1])
         rho =0.5*(rho[1:]+rho[:-1])
-        self.vp = vp[thickness!=0]
-        self.vs = vs[thickness!=0]
-        self.rho = rho[thickness!=0]
-        self.thickness =thickness[thickness!=0]
-    def getDisp(self,f,wave='rayleigh', mode=1, velocity='phase', flat_earth=True,isRand=False):
+        self.vp = vp[thickness>1e-4]
+        self.vs = vs[thickness>1e-4]
+        self.rho = rho[thickness>1e-4]
+        self.thickness =thickness[thickness>1e-4]
+    def getDisp(self,f,wave='rayleigh', mode=1, velocity='phase', flat_earth=True,isRand=False,fv=''):
         randA =  self.vp*0+1
+        if not fv=='':
+            #print('no cal')
+            return fv(f)
         if isRand:
-            I0 = np.random.rand()*len(self.thickness)
-            sigmaI = np.random.rand()*10
+            I0 = np.random.rand()**1.5*len(self.thickness)
+            #I0=random.choice([0,1,2,3])
+            sigmaI = np.random.rand()**4*len(self.thickness)
             A = (np.random.rand()*2-1)*0.1
             randI = np.arange(len(self.thickness))
-            randA = A*np.exp(-(randI-I0)**2/sigmaI**2)+1
+            alpha=np.random.rand()**0.5
+            fA = np.exp(-(randI-I0)**2/sigmaI**2)*(np.random.rand(len(self.vp))*0.3+0.85)
+            randA = A*(
+                1.35-0.6*(I0/len(self.thickness))**0.5
+                )*(
+                    (1-alpha)**2*0.7*(2*np.random.rand()*2-1)+alpha*fA
+                    )+1
+            #print(I0,sigmaI,randA)
         fMax = f.max()
         fMin = f.min()
         fL = fMin*(fMax/fMin)**np.arange(-0.0000000001,1.000001,1/59)
@@ -4999,11 +5158,11 @@ class One:
         for i in range(len(AL)):
             v =  self.getDisp(f,mode=i+1,**kwags)
             A = AL[i]
-            fA = np.exp(-(f-f0)**2/sigmaF**2)*A
+            fA = np.exp(-(np.log(f)-np.log(f0))**2/sigmaF**2)*A*f**0.5
             if i ==0:
                 fValid  =  f[fA>minA]
                 vValid =   v[fA>minA]
-            print(v)
+            #print(v)
             for j in range(len(f)):
                 if v[j]<0.5:continue
                 V = v[j]
@@ -5013,7 +5172,59 @@ class One:
                 data += fA[j]*np.cos(-(timeL-t)*w)
         return data,fValid,vValid
 
-
+class OnePlus:
+    def __init__(self,vp=vp0,vs=vs0,z=z0,rho=[],a1=[],a2=[]):
+        if len(vp)==0:
+             vp = vs * 1.7
+        if len(rho)==0:
+            rho = vp * .32 + .77
+        if len(a1)==0:
+             a1 = vs * 0
+        if len(a2)==0:
+             a2 = vs * 0
+        thickness = z[1:]-z[:-1]
+        vp =0.5*(vp[1:]+vp[:-1])
+        vs =0.5*(vs[1:]+vs[:-1])
+        a1 =0.5*(a1[1:]+a1[:-1])
+        a2 =0.5*(a2[1:]+a2[:-1])
+        rho =0.5*(rho[1:]+rho[:-1])
+        self.vp = vp[thickness>1e-4]
+        self.vs = vs[thickness>1e-4]
+        self.rho = rho[thickness>1e-4]
+        self.a1 = a1[thickness>1e-4]
+        self.a2 = a2[thickness>1e-4]
+        self.thickness =thickness[thickness>1e-4]
+    def getDisp(self,f,wave='rayleigh', mode=1, velocity='phase', flat_earth=True,isRand=False,fv='',phi=-999):
+        randA =  self.vp*0+1
+        if not fv=='':
+            #print('no cal')
+            return fv(f)
+        if isRand:
+            I0 = np.random.rand()**1.5*len(self.thickness)
+            #I0=random.choice([0,1,2,3])
+            sigmaI = np.random.rand()**4*len(self.thickness)
+            A = (np.random.rand()*2-1)*0.1
+            randI = np.arange(len(self.thickness))
+            alpha=np.random.rand()**0.5
+            fA = np.exp(-(randI-I0)**2/sigmaI**2)*(np.random.rand(len(self.vp))*0.3+0.85)
+            randA = A*(
+                1.35-0.6*(I0/len(self.thickness))**0.5
+                )*(
+                    (1-alpha)**2*0.7*(2*np.random.rand()*2-1)+alpha*fA
+                    )+1
+            #print(I0,sigmaI,randA)
+        if phi==-999:
+            A12=1
+        else:
+            A12=1+(self.a1*np.cos(phi)+self.a2*np.sin(phi))/(self.vs*randA)
+        fMax = f.max()
+        fMin = f.min()
+        fL = fMin*(fMax/fMin)**np.arange(-0.0000000001,1.000001,1/59)
+        vL=surf96(self.thickness, self.vp*randA*A12, self.vs*randA*A12,self.rho*randA, 1/fL[::-1],mode=mode, velocity=velocity, flat_earth=flat_earth,wave=wave)[::-1]
+        if (vL>1).sum()<2:
+            return f*0
+        v = interpolate.interp1d(fL[vL>1],vL[vL>1],fill_value=0,bounds_error=False)(f)
+        return v
 
 def model2kernel(vp0,vs0,z,f,rho0=[],**kwags):
     v0 = model2disp(vp0,vs0,z,f,rho0,**kwags)
@@ -5047,7 +5258,7 @@ def genSharpW(omega,vp,vg,DOmega,x,phi,timeL):
     
 
 def corrSac(d, sac0, sac1, name0='', name1='', quakeName='', az=np.array([0, 0]), dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), dis=np.array([0, 0]), dep=10, modelFile='', srcSac='', isCut=False, maxCount=-1,fromT=0, **kwags):
-    corr = d.sacXcorr(sac0, sac1, isCut=isCut, maxCount=maxCount,fromT=fromT)
+    corr = d.sacXcorr(sac0, sac1, isCut=isCut, maxCount=maxCount,fromT=fromT,**kwags)
     corr.az = az
     corr.dura = dura
     corr.M = M

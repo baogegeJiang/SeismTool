@@ -28,10 +28,11 @@ import mathTool
 import os
 from tensorflow.keras.utils import plot_model
 import tensorflow as tf
-from numba import jit
 from .node_cell import ODELSTMR
 import gc
 from ..plotTool import figureSet
+from numba import jit
+import numexpr as ne
 K.set_floatx('float32')
 # this module is to construct deep learning network
 def defProcess():
@@ -154,7 +155,23 @@ class lossFuncSoft__:
                          (maxChannel*0.975+0.025)*maxSample,\
                                                                          )
 isUnlabel=1#1
-W0=0.08
+W0=0.2
+def getW(T,W0):
+    return W0
+    if T<20:
+        return W0*0.3
+    elif T<30:
+        return W0*0.6
+    elif T<60:
+        return W0
+    elif T<80:
+        return W0*0.8
+    elif T<100:
+        return W0*0.6
+    elif T<120:
+        return W0*0.4
+    else:
+        return W0*0.2
 class lossFuncSoft:
     def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=2048):
         self.__name__ = 'lossFuncSoft'
@@ -163,14 +180,7 @@ class lossFuncSoft:
         for i in range(len(TL)):
             i0 = int(TL[i]/disMaxR/delta*(1+randA))
             i1 = min(int(TL[i]/disRandA/delta*(1-randA)),maxCount)
-            if TL[i]<30:
-                w[0,:,0,i]=W0
-            elif TL[i]<60:
-                w[0,:,0,i]=W0
-            elif TL[i]<90:
-                w[0,:,0,i]=W0
-            else:
-                w[0,:,0,i]=W0
+            w[0,:,0,i]=getW(TL[i],W0)
             #self.w[0,:,0,i]=10/TL[i]
             w[0,:i0,0,i]=0
             w[0,i1:,0,i]=0
@@ -181,12 +191,12 @@ class lossFuncSoft:
         #yout0 = K.clip(yout0,1e-7,1)
         #yout1 = K.clip(yout1,1e-7,1)
         maxChannel  = (K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2
-        #maxSample   = K.max(maxChannel,axis=2, keepdims=True)
+        maxSample   = K.max(maxChannel,axis=3, keepdims=True)
         return -K.mean(\
                          (\
                              y0*K.log( K.clip(yout0,1e-7,1))+(1-y0)*K.log(K.clip(1-yout0,1e-7,1))\
                                                                      )*\
-                         (maxChannel*1+isUnlabel*self.w*(1-maxChannel)),\
+                         (maxChannel*1+isUnlabel*self.w*(1-maxChannel)*maxSample+(1-maxSample)),\
                                                                          )
 class lossFuncSoftNP__:
     # 当有标注的时候才计算权重
@@ -219,31 +229,61 @@ class lossFuncSoftNP:
         for i in range(len(TL)):
             i0 = int(TL[i]/disMaxR/delta*(1+randA))
             i1 = min(int(TL[i]/disRandA/delta*(1-randA)),maxCount)
-            if TL[i]<30:
-                w[0,:,0,i]=W0
-            elif TL[i]<60:
-                w[0,:,0,i]=W0
-            elif TL[i]<90:
-                w[0,:,0,i]=W0
-            else:
-                w[0,:,0,i]=W0
+            w[0,:,0,i]=getW(TL[i],W0)
             #self.w[0,:,0,i]=10/TL[i]
             w[0,:i0,0,i]=0
             w[0,i1:,0,i]=0
         self.w=w
     def __call__(self,y0,yout0):
+        return call(y0,yout0,self.w)
         K=np
         #y1 = 1-y0
         #yout1 = 1-yout0
         #yout0 = K.clip(yout0,1e-7,1)
         #yout1 = K.clip(yout1,1e-7,1)
         maxChannel  = ((K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2)
+        maxSample   = K.max(maxChannel,axis=3, keepdims=True)
         return -K.mean(\
                          (\
                              y0*K.log(K.clip(yout0,1e-7,1))+(1-y0)*K.log(K.clip(1-yout0,1e-7,1))\
                                                                      )*\
-                         (maxChannel*1+isUnlabel*self.w*(1-maxChannel)),\
-                                                                         )                                                                      
+                         (maxChannel*1+isUnlabel*self.w*(1-maxChannel)*maxSample+(1-maxSample)),\
+                                                                        )
+
+
+def call(y0,yout0,w,isUnlabel=isUnlabel):
+    K=np
+    #y1 = 1-y0
+    #yout1 = 1-yout0
+    #yout0 = K.clip(yout0,1e-7,1)
+    #yout1 = K.clip(yout1,1e-7,1)
+    maxChannel  = ((K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2)
+    maxSample   = K.max(maxChannel,axis=3, keepdims=True)
+    isUnlabel=np.array(isUnlabel,dtype=np.float32)
+    N = y0.size
+    return -ne.evaluate('( y0*log( where( yout0>1e-7, yout0,1e-7 )) + (1-y0)*log( where( (1-yout0)>1e-7, 1-yout0,1e-7 ) ) )*( maxChannel + isUnlabel*w*(1-maxChannel)*maxSample+(1-maxSample) )  ').mean()
+    return -K.mean(\
+                        (\
+                            y0*K.log(K.clip(yout0,1e-7,1))+(1-y0)*K.log(K.clip(1-yout0,1e-7,1))\
+                                                                    )*\
+                        (maxChannel*1+isUnlabel*w*(1-maxChannel)*maxSample+(1-maxSample)),\
+                                                                        )                                                           
+def call_(y0,yout0,w,isUnlabel=isUnlabel):
+    K=np
+    #y1 = 1-y0
+    #yout1 = 1-yout0
+    #yout0 = K.clip(yout0,1e-7,1)
+    #yout1 = K.clip(yout1,1e-7,1)
+    maxChannel  = ((K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2)
+    maxSample   = K.max(maxChannel,axis=3, keepdims=True)
+    isUnlabel=np.array(isUnlabel,dtype=np.float32)
+    return -K.mean(\
+                        (\
+                            y0*K.log(K.clip(yout0,1e-7,1))+(1-y0)*K.log(K.clip(1-yout0,1e-7,1))\
+                                                                    )*\
+                        (maxChannel*1+isUnlabel*w*(1-maxChannel)*maxSample+(1-maxSample)),\
+                                                                        )   
+
 class lossFuncSoftSq:
     # 当有标注的时候才计算权重
     # 这样可以保持结构的一致性
@@ -549,7 +589,7 @@ def inAndOutFuncNewNetUp(config, onlyLevel=-10000):
         outputs = outputsL[onlyLevel]
     return inputs,outputs
 def inAndOutFuncNewNetDenseUp(config, onlyLevel=-10000):
-    BatchNormalization =LayerNormalization
+    #BatchNormalization =LayerNormalization
     BNA = -1
     inputs  = Input(config.inputSize,name='inputs')
     depth   =  len(config.featureL)
@@ -1665,6 +1705,17 @@ class fcnConfig:
             self.featureL      = [50,40,30,20,10,5,320]
             self.featureL      = [50,35,25,15,8,4,320]
             self.featureL      = [50,40,30,25,20,10,320]
+            self.featureL      = [50,42,32,24,16,8,320]
+            self.featureL      = [50,36,24,18,12,8,320]
+            self.featureL      = [50,40,32,24,16,8,320]
+            self.featureL      = [50,50,50,50,50,50,320]
+            self.featureL      = [50,40,30,20,10,5,320]
+            self.featureL      = [50,42,36,24,16,8,320]
+            self.featureL      = [50,40,32,24,16,8,320]
+            self.featureL      = [50,40,35,30,25,20,320]
+            self.featureL      = [50,35,28,20,10,5,320]
+            self.featureL      = [50,36,24,16,8,4,320]
+            self.featureL      = [50,40,30,24,12,6,320]
             #self.featureL      = [50,50,75,75,100,100,125]
             #self.featureL      = [50,75,75,100,125,150,200]
             #self.featureL      = [75,75,75,75,75,75,75]
@@ -1694,8 +1745,8 @@ class fcnConfig:
             self.kernelL       = [(4,1),(4,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
             self.strideL       = [(3,1),(4,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
             self.kernelL       = [(6,1),(4,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
-            self.strideL       = [(6,1),(4,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
-            self.kernelL       = [(12,1),(8,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*2,1)]
+            self.strideL       = [(4,1),(6,1),(4,1),( 4,1),( 4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(8,1),(12,1),(8,1),( 8,1),( 8,1),(8,1),(1,mul*2),(up*4*2,1)]
             #self.kernelL       = [(6,1),(6,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
             #self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(16,1),(8,1),(1,mul*2),(up*3,1)]
             self.isBNL       = [True]*20
@@ -2222,7 +2273,7 @@ class modelUp(Model):
                 X = self.inx(x[i:min(i+maxN,NX)])
                 if len(X)>0:
                     Y.append(super().predict(X,batch_size=batch_size,**kwargs))
-            Y=np.concatenate(Y,axis=0).astype(np.float32)
+            Y=np.concatenate(Y,axis=0)
             return Y
         else:
             return super().predict(x,batch_size=batch_size,**kwargs).astype(np.float32)
@@ -2414,7 +2465,7 @@ class modelUp(Model):
         w0 = self.get_weights()
         resStr=''
         trainTestLoss = []
-        iL = random.sample(indexL,testN)
+        iL = random.sample(indexL,int(testN/3))
         xTrain, yTrain , t0LTrain = XYT(iL,mul=mul)
         print('training',xTrain.shape,len(iL))
         sampleTime=-1
@@ -2430,7 +2481,7 @@ class modelUp(Model):
             x, y , t0L = XYT(iL,mul=mul,N=mul)
             print('fromT:',np.array(t0L).mean())
             print('loop:',sampleDone.mean())
-            self.fit(x ,y,batchSize=batchSize)
+            self.fit(x ,y,batchSize=batchSize,)
             x=0
             y=0
             #print(self.layers[47].variables[-2][-10:],self.layers[47].variables[-1][-10:])
@@ -2448,7 +2499,6 @@ class modelUp(Model):
                     youtTest  = self.predict(xTest,batch_size=batchSize)
                     #print(youtTest.mean())
                     lossTrain = self.lossFunc(yTrain,youtTrain)
-                    #lossTrain = self.lossFunc(y,youtTrain)
                     lossTest    = self.lossFunc(yTest,youtTest)
                     #lossTrain = self.evaluate(self.inx(xTrain),yTrain)
                     #lossTest    = self.evaluate(self.inx(xTest),yTest)

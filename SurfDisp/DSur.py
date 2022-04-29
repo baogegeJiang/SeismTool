@@ -566,10 +566,6 @@ class Model(Model0):
                 outRef  = outR(vR,laRef,loRef)
         for i in range(self.nxyz[-1]):
             plt.close()
-            if len(R0)==0:
-                fig=plt.figure(figsize=[7.2,2.5*8/6])
-            else:
-                fig=plt.figure(figsize=[6,4])
             v = V[:,:,i]
             if vR!='':
                 #pass
@@ -590,14 +586,14 @@ class Model(Model0):
             la,lo,per=self.denseLaLoGrid(v.copy(),doDense=True,N=100,dIndex=1)
             #print(per)
             if isinstance(per,type(None)):
-                plt.close()
                 print('no enough data in depth:',z)
                 continue
             if (np.isnan(per)==False).sum()==0:
-                plt.close()
                 print('no enough data in depth:',z)
                 continue
-            m = mt.genBaseMap(R)
+            fig=plt.figure(figsize=[4,2.5])
+            plt.gca().set_position([0.2,0.2,0.5,0.5])
+            m = mt.genBaseMap(R) 
             x,y= m(lo,la)
             #X,Y=m(vR[:,1],vR[:,0])
             #m.plot(X,Y,'r')
@@ -662,6 +658,7 @@ class Model(Model0):
             headNew = head
             if isDiff:
                 headNew=head+'Diff'
+            #plt.tight_layout()
             plt.savefig('%s/%s_%f.%s'%(resDir,headNew,self.z[i],FORMAT),dpi=300)
             print('###################################',self.z[i])
             plt.close()
