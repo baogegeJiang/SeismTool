@@ -199,10 +199,10 @@ def readnetcdf(R,file='/media/jiangyr/MSSD/ETOPO1_Ice_g_gmt4.grd'):
     loI1 = min(np.abs(lo-R1[1]).argmin()+2,len(lo))
     z=nc.variables[zStr][:]
     return np.array(la[laI0:laI1]),np.array(lo[loI0:loI1]),np.array(z[laI0:laI1,loI0:loI1])
-def plotLaLoLine(m,dLa=10,dLo=10,**kwags):
-    parallels = np.arange(-90.,90,dLa)
+def plotLaLoLine(m,dLa=10,dLo=10,La0=-90,Lo0=0,**kwags):
+    parallels = np.arange(La0,90.01,dLa)
     m.drawparallels(parallels,labels=[1,0,0,1],**kwags)
-    meridians = np.arange(0.,360.,dLo)
+    meridians = np.arange(Lo0,360.01,dLo)
     plt.gca().yaxis.set_ticks_position('right')
     m.drawmeridians(meridians,labels=[True,False,False,True],**kwags)
 

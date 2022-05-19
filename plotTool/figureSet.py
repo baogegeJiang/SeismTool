@@ -30,7 +30,7 @@ def setColorbar(pc,label='',key='ZGKX',pos='bottom',isAppend=True,is3D=False,isS
     cax = ax
     if pos in ['bottom','top']:
         if isAppend:
-            cax = ax_divider.append_axes(pos, size="7%", pad="10%",)
+            cax = ax_divider.append_axes(pos, size="7%", pad="12%",)
         if pc!=None:
             cbar=plt.colorbar(pc, cax=cax, orientation="horizontal")
     elif pos in ['right','left']:

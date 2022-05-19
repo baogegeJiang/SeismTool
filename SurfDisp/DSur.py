@@ -352,10 +352,10 @@ class DS:
             self.GcRes = Model(self.config,mode='GC',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
             self.fast = Model(self.config,mode='fast',runPath=self.runPath,file='Gc_Gs_model.inv',vR =vR)
             self.fastP = Model(self.config,mode='fastP',runPath=self.runPath,file='period_Azm_tomo.inv',vR =vR)
-    def plotHJ(self,p2L=[],R=[],isCompare=False):
+    def plotHJ(self,p2L=[],R=[],isCompare=False,**kwags):
         vR = ''
         self.HJ = Model(self.config,mode='HJ',runPath=self.runPath,vR =vR,self1=self.modelRes)
-        self.HJ.plotByZ(self.runPath,vR=self.config.para['vR'],R=R,head='depth(USTC)')#,selfRef=self.modelRes
+        self.HJ.plotByZ(self.runPath,vR=self.config.para['vR'],R=R,head='depth(USTC)',**kwags)#,selfRef=self.modelRes
         if isCompare:
            self.modelResHJDiff = self.HJ.copy()
            self.modelResHJDiff.v = self.modelResHJDiff.v/self.modelRes.v-1
@@ -591,8 +591,8 @@ class Model(Model0):
             if (np.isnan(per)==False).sum()==0:
                 print('no enough data in depth:',z)
                 continue
-            fig=plt.figure(figsize=[4,2.5])
-            plt.gca().set_position([0.2,0.2,0.5,0.5])
+            fig=plt.figure(figsize=[2.5,1.5])
+            #plt.gca().set_position([0.2,0.2,0.5,0.5])
             m = mt.genBaseMap(R) 
             x,y= m(lo,la)
             #X,Y=m(vR[:,1],vR[:,0])
@@ -642,9 +642,9 @@ class Model(Model0):
                 color='k'
                 v1 = V1[:,:,i]
                 #printplt.arrow(x0+0.01*dx1,y0-0.05*dx1,0,0.03*dx1,color='b')
-                ac.plot([x0+0.01*dx1,x0+0.01*dx1],\
-                    [y0-0.05*dx1,y0-0.05*dx1+0.03*dx1],color=color,linewidth=0.75)
-                ac.text(x0+0.01*dx1,y0-0.05*dx1,'0.03',ha='left',va='top',color='k',size=10)
+                ac.plot([x0+0.05*dx1,x0+0.05*dx1],\
+                    [y0-0.05*dx1,y0-0.05*dx1+0.03*dx1],color=color,linewidth=0.6)
+                ac.text(x0+0.05*dx1,y0-0.052*dx1,'0.03',ha='left',va='top',color='k',size=7)
                 for ii in range(v1.shape[0]):
                     for jj in range(v1.shape[1]):
                         if vR!='':
@@ -653,7 +653,7 @@ class Model(Model0):
                         dX,dY=[np.imag(v1[ii,jj])*dx1,np.real(v1[ii,jj])*dx1]
                         #plt.arrow(x1[jj]-0.5*dX,y1[ii]-0.5*dY,dX,dY,color='b',)
                         ac.plot([x1[jj]-0.5*dX,x1[jj]+0.5*dX],\
-                            [y1[ii]-0.5*dY,y1[ii]+0.5*dY],color=color,linewidth=0.75)
+                            [y1[ii]-0.5*dY,y1[ii]+0.5*dY],color=color,linewidth=0.6)
             #fig.tight_layout()
             headNew = head
             if isDiff:
@@ -836,7 +836,7 @@ def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
     if isFault:
         for fault in faultL:
             if fault.inR(R):
-                fault.plot(m,markersize=0.3,color='dimgray',linewidth=0.5)
+                fault.plot(m,markersize=0.3,color='lightgray',linewidth=0.4)
     if isVol:
         vX,vY=m(mt.volcano[:,0],mt.volcano[:,1])
         m.plot(vX, vY,'^r')
@@ -847,8 +847,10 @@ def plotPlane(m,x,y,per,R,z,mean,vmin=-0.05,vmax=0.05,isFault=True,head='res'\
     if 'period' in head:
         plt.title('%s %.2f s %s: %.3f %s'%(head,z,midName,mean,meanLabel))
     dLa,dLo=mt.getDlaDlo(R)
-    mt.plotLaLoLine(m,dLa,dLo,dashes=[3,3],color='dimgrey',linewidth=0.5)
-    plt.gca().set_position([0.15,0.2,0.6,0.7])
+    dLa = 4
+    dLo = 6
+    mt.plotLaLoLine(m,dLa,dLo,La0=0,Lo0=0,dashes=[3,3],color='dimgrey',linewidth=0.5)
+    plt.gca().set_position([0.15,0.15,0.65,0.65])
     figureSet.setColorbar(pc,cLabel,pos='right')
     #cbar=plt.colorbar(fraction=0.035)
     #cbar.set_label(cLabel)

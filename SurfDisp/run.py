@@ -51,7 +51,7 @@ dConfig=d.config(originName='models/prem',srcSacDir=srcSacDir,\
 		isFlat=True,R=6371,flatM=-2,pog='p',calMode='gpdc',\
 		T=T,threshold=0.02,expnt=12,dk=0.05,\
 		fok='/k',order=0,minSNR=10,isCut=False,\
-		minDist=110*10,maxDist=110*170,minDDist=120,\
+		minDist=110*10,maxDist=110*170,minDDist=200,\
 		maxDDist=1800,para=para,isFromO=True,removeP=True,fromT=-384)
 def saveListStr(file,strL):
 	with open(file,'w+') as f:
@@ -69,9 +69,9 @@ def loadListStr(file):
 class runConfig:
 	def __init__(self,para={}):
 		sacPara = {#'pre_filt': (1/500, 1/350, 1/2, 1/1.5),\
-				   'output':'DISP','freq':[1/150,1/8],\
+				   'output':'DISP','freq':[1/160,1/10],\
 					#[1/250,1/8*0+1/6]
-					'delta0':0.25,
+					'delta0':0.2,
 				   'filterName':'bandpass',\
 				   'corners':4,'toDisp':False,\
 				   'zerophase':True,'maxA':1e15,'gaussianTail':800}
@@ -167,9 +167,9 @@ def output(M,S,file,isRand='T',method='SurfNet',isStd=True):
 				f.write('\hline\n')
 
 
-disRandA=1/16
+disRandA=1/15
 disMaxR =1
-delta   =0.25
+delta   =0.2
 up=2
 defaultTrainSetDir ='/media/jiangyr/1TSSD/trainSet/'
 defaultMatSaveDir ='/media/jiangyr/1TSSD/matDir/'
@@ -205,7 +205,7 @@ class run:
 			resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
 		if not isAll:
 			plt.close()
-			plt.figure(figsize=[4,3.2])
+			plt.figure(figsize=[3,2.2])
 			m        = mt.genBaseMap(R=R)
 			#https://ferret.pmel.noaa.gov/thredds/dodsC/data/PMEL/etopo5.nc
 			if R[0]<25:
@@ -226,7 +226,7 @@ class run:
 			if len(stations)>100:
 				markersize=1.2
 			else:
-				markersize=4
+				markersize=3
 			m.plot(stx,sty,'^b',label='station',markersize=markersize)
 			count=0
 			for pair in staPairStr.split():
@@ -240,18 +240,21 @@ class run:
 				else:
 					m.plot(stx0,sty0,'^r',markersize=markersize)
 				m.plot(stx1,sty1,'^r',markersize=markersize)
-				plt.text(stx0+0.2,sty0-0.4,Sta0,c='r',ha='center',va='top')
-				plt.text(stx1+0.2,sty1-0.4,Sta1,c='r',ha='center',va='top')
+				plt.text(stx0+0.2,sty0-0.4,Sta0.split('.')[-1],c='r',ha='center',va='top')
+				plt.text(stx1+0.2,sty1-0.4,Sta1.split('.')[-1],c='r',ha='center',va='top')
 				#m.plot([stx0,stx1],[sty0,sty1],'r',linewidth=0.5)
 				count+=1
 			#m.plot(vX, vY,'^r',label='volcano')
 			#m.drawcoastlines(linewidth=0.8, linestyle='dashdot', color='k')
 			#plt.legend()
 			dLa,dLo=mt.getDlaDlo(R)
-			mt.plotLaLoLine(m,dLa,dLo,dashes=[3,3],color='dimgrey',linewidth=0.75)
+			dLa=4
+			dLo=6
+			mt.plotLaLoLine(m,dLa,dLo,La0=0,Lo0=0,dashes=[3,3],color='dimgrey',linewidth=0.5)
+			plt.gca().set_position([0.15,0.25,0.7,0.75])
 			ax=plt.gca()
 			mt.fs.setColorbar(pc,'elevation(m)')
-			plt.savefig(resDir+'staDisWithTopo.pdf')
+			plt.savefig(resDir+'staDisWithTopo.eps')
 			for sta0 in self.stations:
 				Sta0 = sta0['net']+'.'+sta0['sta']
 				stx0,sty0=m(sta0['lo'],sta0['la'])
@@ -259,10 +262,10 @@ class run:
 				ax.text(stx0+0.2,sty0-0.4,Sta0,c='r',ha='center',va='top')
 				#m.plot([stx0,stx1],[sty0,sty1],'r',linewidth=0.5)
 				count+=1
-			plt.savefig(resDir+'staDisWithTopo_name.pdf')
+			plt.savefig(resDir+'staDisWithTopo_name.eps')
 		else:
 			plt.close()
-			plt.figure(figsize=[4,3.2])
+			plt.figure(figsize=[3,2.2])
 			Rall     = [-90,90,0,360]
 			m        = mt.genBaseMap(R=Rall)
 			if isAllQuake:
@@ -270,6 +273,7 @@ class run:
 				q.getL()
 			else:
 				q=self.quakes
+				q.getL()
 			qx,qy=m(q.loL%360,q.laL)
 			#https://ferret.pmel.noaa.gov/thredds/dodsC/data/PMEL/etopo5.nc
 			pc=mt.plotTopo(m,Rall,topo='data/etopo05.nc',isColorbar=False,cpt=mt.cmapETopo,vmin=-10000,vmax=10000,laN=2000,loN=2000)
@@ -284,17 +288,18 @@ class run:
 						haveOne=True
 			'''
 			stx,sty=m(*stations.loc()[-1::-1])
-			m.plot(qx,qy,'ok',label='earthquake',markersize=1)
+			m.plot(qx,qy,'ok',label='earthquake',markersize=0.5)
 			#vX,vY=m(mt.volcano[:,0],mt.volcano[:,1])
-			m.plot(stx,sty,'^b',label='station',markersize=1)
+			m.plot(stx,sty,'^b',label='station',markersize=0.5)
 			#m.plot(vX, vY,'^r',label='volcano')
 			#m.drawcoastlines(linewidth=0.8, linestyle='dashdot', color='k')
 			#plt.legend()
 			#dLa=[-60,-30,0,30,60]
 			#dLo=[-120,-60,0,60,120]
-			mt.plotLaLoLine(m,30,60,dashes=[3,3],color='dimgrey',linewidth=0.75)
+			mt.plotLaLoLine(m,30,60,Lo0=30,dashes=[3,3],color='dimgrey',linewidth=0.5)
+			plt.gca().set_position([0.15,0.25,0.7,0.75])
 			mt.fs.setColorbar(pc,'elevation(m)')
-			plt.savefig(resDir+'staDisWithTopoAll.pdf')
+			plt.savefig(resDir+'staDisWithTopoAll.eps')
 	def loadCorr(self,isLoad=True,isLoadFromMat=False,isGetAverage=True,isDisQC=False,isAll=True,isSave=False,isAllTrain=True,isControl=False,isHalf=False,isBad=False,isSyn=False,**kwags):
 		trainSetDir = self.config.para['trainMatDir']
 		config     = self.config
@@ -520,7 +525,7 @@ class run:
 							corrL1.append(corr)
 							if isSyn and np.random.rand()<0.4:
 								corrL1.append(corr.copy())
-								corrL1[-1].dDis = (1800/120)**(np.random.rand()**0.4)*120 #corrL1[-1].dDis*(1+(2*np.random.rand()-1)*0.1)
+								corrL1[-1].dDis = (1800/200)**(np.random.rand()**0.6)*200 #corrL1[-1].dDis*(1+(2*np.random.rand()-1)*0.1)
 								corrL1[-1].dis = np.array([corrL1[-1].dis[0],corrL1[-1].dis[0]+corrL1[-1].dDis])
 								corrL1[-1].isSyn=True
 						elif isBad and key in self.badL:
@@ -660,7 +665,7 @@ class run:
 		sigma[4*N_5:5*N_5]=3
 		self.config.sigma=sigma
 		fcn.trainAndTest(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
-                        outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=4e-3)#w0=3#4
+                        outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=1e-3)#w0=3#4
 		#fcn.trainAndTest(self.model,self.corrLTrain,self.corrLValid,self.corrLTest,\
 	   	#	outputDir=para['trainDir'],sigmaL=[1.5],tTrain=tTrain,perN=50,count0=200,w0=1.5)#w0=3
 	def Sigma(self):
@@ -694,12 +699,14 @@ class run:
 		sigma[8*N_10:9*N_10] = 3.6
 		sigma[9*N_10:10*N_10] = 4.2
 		sigma[9*N_10:10*N_10] = 4.5
-		s0 = 0.8
-		s1 = 9
+		s0 = 2
+		s1 = 3.2
+		#s0 = 4
+		#s1 = 16
 		k  = (s1-s0)/(np.log(T[-1])**8-np.log(T[0])**8)
 		sigma = k*(np.log(T)**8-np.log(T[0])**8)+s0
 		return sigma.astype(np.float32)
-	def trainMul(self,isRand=True,isShuffle=False,isAverage=False,isRun=True,isAll=False,**kwargs):
+	def trainMul(self,isRand=True,isShuffle=False,isAverage=False,isRun=True,isAll=False,isAllTrainSyn=False,**kwargs):
 		if isAll:
 			corrL = self.corrL
 		else:
@@ -764,15 +771,15 @@ class run:
 		sigma=self.Sigma()
 		self.config.sigma=sigma
 		self.corrLTrain.setTimeDis(fvD,tTrain,sigma=sigma,maxCount=para['maxCount'],\
-		byT=False,noiseMul=0.0,byA=False,rThreshold=4e-3,byAverage=False,\
+		byT=False,noiseMul=0.0,byA=False,rThreshold=1e-3,byAverage=False,\
 		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,isGuassianMove=isGuassianMove,\
-			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'],fvDSyn=self.fvDSynTrain,disRandA=disRandA,disMaxR=disMaxR,**kwargs)
+			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'],fvDSyn=self.fvDSynTrain,disRandA=disRandA,disMaxR=disMaxR,isAllSyn=isAllTrainSyn,**kwargs)
 		self.corrLTest.setTimeDis(fvD,tTrain,sigma=sigma,maxCount=para['maxCount'],\
-		byT=False,noiseMul=0.0,byA=False,rThreshold=4e-3,byAverage=False,\
+		byT=False,noiseMul=0.0,byA=False,rThreshold=1e-3,byAverage=False,\
 		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,isGuassianMove=isGuassianMove,\
 			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'],fvDSyn=self.fvDSynTest,disRandA=disRandA,disMaxR=disMaxR,**kwargs)
 		self.corrLValid.setTimeDis(fvD,tTrain,sigma=sigma,maxCount=para['maxCount'],\
-		byT=False,noiseMul=0.0,byA=False,rThreshold=4e-3,byAverage=False,\
+		byT=False,noiseMul=0.0,byA=False,rThreshold=1e-3,byAverage=False,\
 		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,isGuassianMove=isGuassianMove,\
 			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'],fvDSyn=self.fvDSynValid,disRandA=disRandA,disMaxR=disMaxR,**kwargs)
 		#self.loadModel()
@@ -788,7 +795,7 @@ class run:
 		
 		if isRun:
 			self.config.para['modelFile']=fcn.trainAndTestMul(self.model,self.corrDTrain,self.corrDValid,self.corrDTest,\
-							outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=4e-3,mul=para['mul'])#w0=3#4
+							outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=1e-3,mul=para['mul'])#w0=3#4
 		self.corrLTrain.clear()
 		self.corrLValid.clear()
 		self.corrLTest.clear()
@@ -1207,6 +1214,11 @@ class run:
 		#plt.xlim([1/self.config.para['T'].min()*1.1,1/self.config.para['T'].max()*0.9])
 		plt.semilogx()
 		plt.savefig(resDir+'sigmaDis.%s'%(format),dpi=300)
+		plt.ylabel('$w$(s)')
+		#plt.tight_layout()
+		#plt.xlim([1/self.config.para['T'].min()*1.1,1/self.config.para['T'].max()*0.9])
+		plt.semilogx()
+		plt.savefig(resDir+'wDis.%s'%(format),dpi=300)
 	def analyRes(self,thresholdSingle=0.02,thresholdAverage=0.01,format='eps',isAverage=False,isHalf=False,onlySingle=False):
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
 		if not os.path.exists(resDir):
@@ -1248,7 +1260,7 @@ class run:
 				if self.fvDAverageNewCount[key]>=self.config.para['minSta']*isHalf and key in fvDAverage:
 					fvValid.append(key)
 
-		fStrike=2
+		fStrike=5
 		if not onlySingle:
 			averageTrain=d.compareFVD(fvDAverage,self.fvAvGet,self.stations,resDir+'erroTrain_%.3f_%.3f.%s'%(thresholdAverage,self.config.para['threshold'],format),t=self.config.para['T'],keys=fvTrain,fStrike=fStrike,title='E. D. on Train',threshold=thresholdAverage,thresholdForGet=self.config.para['threshold'])
 		singleTrain=d.compareFVD(fvD,self.fvDGet,self.stations,resDir+'erroTrainSingle_%.3f_%.3f.%s'%(thresholdSingle,self.config.para['minP'],format),t=self.config.para['T'],keys=fvTrain,fStrike=fStrike,title='E. D. S. on Train',threshold=thresholdSingle,thresholdForGet=-self.config.para['minP'],isCount=False,plotRate=0.6,fvRef=self.fvDAverage['models/prem'])
@@ -1302,29 +1314,29 @@ class run:
 		z= para['z'];surPara= para['surPara'];DSConfig = DSur.config(para=surPara,z=z)
 		DS = DSur.DS(config=DSConfig,runPath=para['runDir'])
 		self.DS = DS
-		if not isByTrain:
-			fvAvGet=self.fvAvGet
-		else:
-			keyL = self.fvDAverage.keys()
-			print('by keyL')
-			fvAvGet={}
-			for key in keyL:
-				if '_' not in key:
-					continue
-				name0 = key
-				sta0,sta1 = key.split('_')
-				name1 = '%s_%s'%(sta1,sta0)
-				name = ''
-				if name0 in self.fvAvGet:
-					fvAvGet[name0]=self.fvAvGet[name0]
-					name = name0
-				if name1 in self.fvAvGet:
-					fvAvGet[name1]=self.fvAvGet[name1]
-					name=name1
-				if isSameFre and name in fvAvGet:
-					fvAvGet[name]=fvAvGet[name].copy()
-					fvAvGet[name].replaceF(self.fvDAverage[name].f)
 		if do:
+			if not isByTrain:
+				fvAvGet=self.fvAvGet
+			else:
+				keyL = self.fvDAverage.keys()
+				print('by keyL')
+				fvAvGet={}
+				for key in keyL:
+					if '_' not in key:
+						continue
+					name0 = key
+					sta0,sta1 = key.split('_')
+					name1 = '%s_%s'%(sta1,sta0)
+					name = ''
+					if name0 in self.fvAvGet:
+						fvAvGet[name0]=self.fvAvGet[name0]
+						name = name0
+					if name1 in self.fvAvGet:
+						fvAvGet[name1]=self.fvAvGet[name1]
+						name=name1
+					if isSameFre and name in fvAvGet:
+						fvAvGet[name]=fvAvGet[name].copy()
+						fvAvGet[name].replaceF(self.fvDAverage[name].f)
 			indexL,vL = d.fvD2fvL(fvAvGet,self.stations,1/tSur,threshold=threshold)
 			self.indexL = indexL
 			self.vL   = vL
@@ -1369,23 +1381,23 @@ class run:
 		DSConfig = DSur.config(para=surPara,z=z)
 		DS = DSur.DS(config=DSConfig,runPath=para['runDir']+'syn/',mode='syn')
 		self.DSSyn = DS
-		if not isByTrain:
-			fvAvGet=self.fvAvGet
-		else:
-			keyL = self.fvDAverage.keys()
-			print('by keyL')
-			fvAvGet={}
-			for key in keyL:
-				if '_' not in key:
-					continue
-				name0 = key
-				sta0,sta1 = key.split('_')
-				name1 = '%s_%s'%(sta1,sta0)
-				if name0 in self.fvAvGet:
-					fvAvGet[name0]=self.fvAvGet[name0]
-				if name1 in self.fvAvGet:
-					fvAvGet[name1]=self.fvAvGet[name1]
 		if do:
+			if not isByTrain:
+				fvAvGet=self.fvAvGet
+			else:
+				keyL = self.fvDAverage.keys()
+				print('by keyL')
+				fvAvGet={}
+				for key in keyL:
+					if '_' not in key:
+						continue
+					name0 = key
+					sta0,sta1 = key.split('_')
+					name1 = '%s_%s'%(sta1,sta0)
+					if name0 in self.fvAvGet:
+						fvAvGet[name0]=self.fvAvGet[name0]
+					if name1 in self.fvAvGet:
+						fvAvGet[name1]=self.fvAvGet[name1]
 			indexL,vL = d.fvD2fvL(fvAvGet,self.stations[-1::-1],1/tSur)
 			self.indexL = indexL
 			self.vL   = vL
@@ -1724,14 +1736,14 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220113-025122_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
-	'maxCount'    : 512*12,\
+	'maxCount'    : 512*15,\
 	'minSNRL'     : [3],\
 	'time0'       : obspy.UTCDateTime(2009,10,16).timestamp,\
 	'oRemoveL'    : [False],\
 	'trainMatDir'	  :'/media/jiangyr/1TSSD/',\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
 	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
-	'matH5'	  :'/media/jiangyr/1TSSD/trainTest4Hz_20220402_snrSTD3_noX01_V1200000.h5',#/media/jiangyr/1TSSD/trainTest2Hz_0_New8_snrSTD2.5V8.h5
+	'matH5'	  :'/media/jiangyr/1TSSD/trainTest5Hz_20220402_snrSTD3_noX01_V1800000.h5',#/media/jiangyr/1TSSD/trainTest2Hz_0_New8_snrSTD2.5V8.h5
 	'badFile' : 'data/badFVDV3',
 	'randA'       : 0.04,\
 	'disAmp'      : 1,\
@@ -1744,17 +1756,17 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'set2One'	  : False,
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
 	'synDir'      : 'predict/model/syn/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220413_it2_0.02_V40000/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220413_it2_0.02_V900000/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 20,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
-	'z'           :[0,2.5,5,10,15,20,25,30,35,40,45,50,60,70,80,100,120,150,180,220,300,380,500],#[0,4,8,12,16,20,25,30,35,40,45,50,60,70,80,100,120,150,180,220,300,380,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
-	'T'           : (14**np.arange(0,1.000001,1/N1))*10,\
-	'Tav'         : (14**np.arange(0-1/N1,1.000001+1/N1,1/N1))*10,\
-	'tSur'        : (14**np.arange(0,1.000001,1/N1))*10,\
+	'z'           :[0,5,10,15,20,25,30,35,40,45,50,60,70,80,100,120,150,180,220,300,380,500],#[0,4,8,12,16,20,25,30,35,40,45,50,60,70,80,100,120,150,180,220,300,380,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\
+	'T'           : (10**np.arange(0,1.000001,1/N1))*15,\
+	'Tav'         : (10**np.arange(0-1/N1,1.000001+1/N1,1/N1))*15,\
+	'tSur'        : (10**np.arange(0,1.000001,1/N1))*15,\
 	'surPara'     : { 'nxyz':[19,28,14], 'lalo':[55,110],#[40,60,0][55,108]\
 					'dlalo':[1,1], 'maxN':60,#[0.5,0.5]\
 					'kmaxRc':0,'rcPerid':[],'threshold':0.01,'sparsity': 0.3,\
-					'maxIT':15,'nBatch':1,'smoothDV':30,'smoothG':20,'vR':np.array([[53.5,122.1],[48,134.1],[42.1,131.1],[39.1,125],[39.9,115.1],[42,111.9],[45,111.9],[53.5,122.1]]),'perAGs':0.025,'perAGc':0.025,'perN':[3,3,6],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.03,'iso':'F',},\
+					'maxIT':20,'nBatch':1,'smoothDV':30,'smoothG':20,'vR':np.array([[53.5,122.1],[48,134.1],[42.1,131.1],[39.1,125],[39.9,115.1],[42,111.9],[45,111.9],[53.5,122.1]]),'perAGs':0.025,'perAGc':0.025,'perN':[3,3,6],'perNG':[6,6,5],'noiselevel':0.00,'perA':0.03,'iso':'F',},\
 	'runDir'      : '../DS/20220111_CEA160_TrainTest/',#_man/',\
 	'gpuIndex'    : 0,\
 	'gpuN'        : 1,\
@@ -1762,7 +1774,7 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'minThreshold':0.01,\
 	'thresholdTrain'   :0.015,\
 	'thresholdTrainDiff'   :0.02,
-	'threshold'   :0.025,\
+	'threshold'   :0.03,\
 	'qcThreshold': 0.957301, #2:0.82285,3:0.957301\
 	'minProb'     :0.5,\
 	'minP'        :0.5,\
@@ -1772,7 +1784,7 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'it'          :1,\
 	'noiseMul'    :4,\
 	'trainIt' :    0,\
-	'minCount':   10,\
+	'minCount':   8,\
 	'minSta'      : 5,\
 	'laL'         : [],\
 	'loL'         : [],\

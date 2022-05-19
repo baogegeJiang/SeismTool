@@ -502,35 +502,28 @@ class layer:
         self.zeta = self.getZeta()
         self.xi = self.getXi()
 
-    @jit
     def getLame(self):
         miu = self.vs ** 2 * self.rho
         lamb = self.vp ** 2 * self.rho - 2 * miu
         return (lamb, miu)
 
-    @jit
     def getZeta(self):
         return 1 / (self.lamb + 2 * self.miu)
 
-    @jit
     def getXi(self):
         zeta = self.getZeta()
         return 4 * self.miu * (self.lamb + self.miu) * zeta
 
-    @jit
     def getNu(self, k, omega):
         return (k ** 2 - (omega / self.vs.astype(np.complex)) ** 2) ** 0.5
 
-    @jit
     def getGamma(self, k, omega):
         return (k ** 2 - (omega / self.vp.astype(np.complex)) ** 2) ** 0.5
 
-    @jit
     def getChi(self, k, omega):
         nu = self.getNu(k, omega)
         return k ** 2 + nu ** 2
 
-    @jit
     def getEA(self, k, omega, z, mode='PSV'):
         nu = self.getNu(k, omega)
         gamma = self.getGamma(k, omega)
@@ -594,7 +587,6 @@ class surface:
         self.E = [None, None]
         self.A = [None, None]
 
-    @jit
     def submat(self, M):
         shape = M.shape
         lenth = int(shape[0] / 2)
@@ -602,7 +594,6 @@ class surface:
         newM = newM.transpose([0, 2, 1, 3])
         return newM
 
-    @jit
     def setTR(self, k, omega):
         E0, A0 = self.layer0.getEA(k, omega, self.z, self.mode)
         E1, A1 = self.layer1.getEA(k, omega, self.z, self.mode)
@@ -632,7 +623,6 @@ class surface:
             self.Td = self.Rud * 0
             self.Tu = self.Rud * 0
 
-    @jit
     def toMat(self, l):
         shape0 = len(l)
         shape1 = len(l[0])
@@ -653,7 +643,6 @@ class surface:
 
         return np.mat(M)
 
-    @jit
     def setTTRRD(self, surface1=0):
         if self.isBottom:
             RRdu1 = np.mat(self.Rdu * 0)
@@ -661,12 +650,10 @@ class surface:
             RRdu1 = surface1.RRdu
         self.TTd = (np.mat(np.eye(self.Rud.shape[0])) - np.mat(self.Rud) * np.mat(RRdu1)) ** (-1) * np.mat(self.Td)
         self.RRdu = np.mat(self.Rdu) + np.mat(self.Tu) * np.mat(RRdu1) * self.TTd
-
-    @jit
     def setTTRRU(self, surface0=0):
         if self.isTop:
             self.RRud = self.Rud
-            return 0
+            return
         self.TTu = (np.mat(np.eye(self.Rud.shape[0])) - np.mat(self.Rdu) * np.mat(surface0.RRud)) ** (-1) * np.mat(self.Tu)
         self.RRud = np.mat(self.Rud) + np.mat(self.Td) * np.mat(surface0.RRud) * self.TTu
 
@@ -674,13 +661,16 @@ class surface:
 class model:
     __doc__ = "\n    class for layered media model\n    modeFile is the media parameter model File, there are tow mods\n    if layerMode == 'norm':\n       '0    18  2.80  6.0 3.5'\n       layer's top depth, layer's bottom depth, density, p velocity, svelocity\n    if layerMode =='prem':\n        '0.00       5.800     3.350       2.800    1400.0     600.0'\n        depth,  p velocity, s velocity, density,    Qp,        Qs\n    mode is for PSV and SH\n    getMode is the way to get phase velocity:\n        norm is enough to get phase velocity\n        new is to get fundamental phase velocity for PSV\n    "
 
-    def __init__(self, modelFile, mode='PSV', getMode='norm', layerMode='prem', layerN=10000, isFlat=False, R=6371, flatM=-2, pog='p', gpdcExe=gpdcExe, doFlat=True, QMul=1):
+    def __init__(self, modelFile, mode='PSV', getMode='norm', layerMode='direct', layerN=10000, isFlat=False, R=6371, flatM=-2, pog='p', gpdcExe=gpdcExe, doFlat=True, QMul=1):
         self.modelFile = modelFile
         self.getMode = getMode
         self.isFlat = isFlat
         self.gpdcExe = gpdcExe
         self.mode = mode
-        data = np.loadtxt(modelFile)
+        if layerMode =='direct':
+            data = np.array(modelFile).transpose()
+        else:
+            data = np.loadtxt(modelFile)
         layerN = min(data.shape[0] + 1, layerN + 1)
         layerL = [None for i in range(layerN)]
         if layerMode == 'old':
@@ -728,6 +718,22 @@ class model:
                                 z, vp, vs, rho = flat(z, vp, vs, rho, m=flatM, R=R)
                                 print(vp, vs)
                         layerL[i] = layer(vp, vs, rho, z, Qp, Qs)
+                if layerMode == 'direct':
+                    layerL[0] = layer(0.85, 0.5, 0.0001, [-100, 0])
+                    for i in range(1, layerN):
+                        vp = data[(i - 1, 1)]
+                        vs = data[(i - 1, 2)]
+                        rho = data[(i - 1, 3)]
+                        Qp = 1200
+                        Qs = 600
+                        Qp *= QMul
+                        Qs *= QMul
+                        z = np.array([data[(i - 1, 0)], data[(min(i + 1 - 1, layerN - 2), 0)]])
+                        if isFlat:
+                            if doFlat:
+                                z, vp, vs, rho = flat(z, vp, vs, rho, m=flatM, R=R)
+                                print(vp, vs)
+                        layerL[i] = layer(vp, vs, rho, z, Qp, Qs)
 
         surfaceL = [None for i in range(layerN - 1)]
         for i in range(layerN - 1):
@@ -742,8 +748,6 @@ class model:
         self.layerL = layerL
         self.surfaceL = surfaceL
         self.layerN = layerN
-
-    @jit
     def set(self, k, omega):
         for s in self.surfaceL:
             s.setTR(k, omega)
@@ -761,8 +765,6 @@ class model:
                 s.setTTRRU(self.surfaceL[0])
             else:
                 s.setTTRRU(self.surfaceL[(i - 1)])
-
-    @jit
     def get(self, k, omega):
         self.set(k, omega)
         RRud0 = self.surfaceL[0].RRud
@@ -776,16 +778,12 @@ class model:
                 MA /= np.abs(MA).std()
                 return np.linalg.det(np.mat(MA))
         return np.linalg.det(M)
-
-    @jit
     def plot(self, omega, dv=0.01):
         v, k, det = self.calList(omega, dv)
         plt.plot(v, np.real(det), '-k')
         plt.plot(v, np.imag(det), '-.k')
         plt.plot(v, np.abs(det), 'r')
         plt.show()
-
-    @jit
     def calList(self, omega, dv=0.01):
         vs0 = self.layerL[1].vs
         vp0 = self.layerL[1].vp
@@ -797,8 +795,6 @@ class model:
 
         return (
          v, k, det)
-
-    @jit
     def __call__(self, omega, calMode='fast'):
         return self.calV(omega, order=0, dv=0.002, DV=0.008, calMode=calMode, threshold=0.1)
 
@@ -814,8 +810,6 @@ class model:
                 v0, det0 = self.calVFast(omega, order=order, dv=dv, DV=DV, threshold=threshold, vStart=vStart)
         return (
          v0, det0)
-
-    @jit
     def calVFast(self, omega, order=0, dv=0.01, DV=0.008, threshold=0.05, vStart=-1):
         if self.getMode == 'new':
             v = 2.7
@@ -875,7 +869,6 @@ class model:
         print(data)
         return (data[:, 0], 0.001 / data[:, -1])
 
-    @jit
     def calDispersion(self, order=0, calMode='norm', threshold=0.1, T=np.arange(1, 100, 5).astype(np.float), pog='p'):
         if calMode == 'gpdc':
             return self.calByGpdc(order, pog, T)
@@ -1581,24 +1574,24 @@ def plotFvDist(distL, vL, fL, filename, fStrike=1, title='', isCover=False, minD
     binD = np.arange(18) / 18 * 1800
     print(DISTL.max())
     plt.close()
-    plt.figure(figsize=[2.8, 1.6])
+    plt.figure(figsize=[2, 1.6])
     plt.hist2d(DISTL, FL, bins=(binD, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
     plt.gca().set_yscale('log')
     #plt.gca().set_position([0.15,0.2,0.6,0.7])
-    plt.gca().set_position([0.2,0.25,0.5,0.6])
+    plt.gca().set_position([0.26,0.25,0.5,0.6])
     ax=plt.gca()
     ax_divider = make_axes_locatable(plt.gca())
-    cax = ax_divider.append_axes('right', size="7%", pad="10%",)
+    cax = ax_divider.append_axes('right', size="7%", pad="7.5%",)
     plt.colorbar(cax=cax,label='count')
     if isCover:
-        ax.plot( minDis,fLDis, 'r',linewidth=0.5,label='cover')
-        ax.plot( maxDis, fLDis,'r',linewidth=0.5)
+        ax.plot( minDis,fLDis, color='limegreen',linewidth=1.5,label='cover')
+        ax.plot( maxDis, fLDis,color='limegreen',linewidth=1.5)
         #plt.plot( minDis * (1 - R), fLDis,'-.k',linewidth=0.5,label='control')
         #plt.plot( maxDis * (1 + R), fLDis,'-.k',linewidth=0.5)
-        ax.legend()
+        ax.legend(handlelength=1,handletextpad=0.15,columnspacing=0.3,borderaxespad=0.15,borderpad=0.15,loc='upper right')
     ax.set_xlabel('$D$(km)')
     ax.set_ylabel('$f$(Hz)')
-    ax.set_xlim([0,2500])
+    ax.set_xlim([0,2200])
     #plt.title(title)
     #plt.tight_layout()
     plt.savefig(filename, dpi=300)
@@ -1653,17 +1646,17 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
     binF.sort()
     binV = np.arange(1, 5, 0.01)
     plt.close()
-    plt.figure(figsize=[2.4, 1.6])
+    plt.figure(figsize=[2, 1.6])
     plt.hist2d(VL, FL, bins=(binV, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
     #plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('$v$(km/s)')
-    plt.xlim([1.5, 4.8])
+    plt.xlim([1.8, 4.6])
     plt.ylabel('$f$(Hz)')
-    plt.gca().set_position([0.2,0.25,0.6,0.6])
+    plt.gca().set_position([0.26,0.25,0.5,0.6])
     ax =plt.gca()
     ax_divider = make_axes_locatable(plt.gca())
-    cax = ax_divider.append_axes('right', size="7%", pad="10%",)
+    cax = ax_divider.append_axes('right', size="7%", pad="7.5%",)
     plt.colorbar(cax=cax,label='count')
     #plt.title(title)
     if isAverage:
@@ -1676,7 +1669,7 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
             else:
                 h1,=ax.plot(fvAverage.v[(fvAverage.v > 1)] + thres*fvAverage.std[(fvAverage.v > 1)], (fvAverage.f[(fvAverage.v > 1)]), '-.r', linewidth=linewidth,label='$\pm$%d std'%thres)
                 ax.plot(fvAverage.v[(fvAverage.v > 1)] - thres*fvAverage.std[(fvAverage.v > 1)], (fvAverage.f[(fvAverage.v > 1)]), '-.r', linewidth=linewidth)
-        ax.legend()
+        ax.legend(handlelength=1,handletextpad=0.15,columnspacing=0.3,borderaxespad=0.15,borderpad=0.15,loc='lower left')
     #plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close()
@@ -1722,14 +1715,14 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     if maxF >maxBinF:
         binF = binF+[binF[-1]**2/binF[-2]]
     binF =np.array(binF)
-    binDVR = np.arange(-0.05, 0.051, 0.001)
+    binDVR = np.arange(-0.05, 0.051, 0.002)
     binDis = np.arange(100,1700,60)
     binN = np.arange(0,20,1)
     TL = DISL / Vav
     THRESHOLD = delta / TL
     THRESHOLD[THRESHOLD <= threshold] = threshold
-    plt.figure(figsize=[4, 2.25])
-    plt.hist2d((dvR[((VL > 1) * (VLGet > 1))]), (FL[((VL > 1) * (VLGet > 1))]), bins=(binDVR, binF), rasterized=True, cmap='Greys',)#norm=(colors.LogNorm()))
+    plt.figure(figsize=[2.5, 2.6])
+    plt.hist2d((dvR[((VL > 1) * (VLGet > 1))]), (FL[((VL > 1) * (VLGet > 1))]), bins=(binDVR, binF), rasterized=True, cmap='hot',norm=(colors.LogNorm()))#
     plt.gca().set_yscale('log')
     plt.xlabel('$dv/v_0$')
     plt.ylabel('$f$(Hz)')
@@ -1737,13 +1730,13 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     #plt.title(title)
     #plt.tight_layout()
     #plt.text((binDVR[(-2)]), (binF[(-2)]), thresholdText, va='top', ha='right')
-    plt.gca().set_position([0.15,0.2,0.6,0.7])
+    plt.gca().set_position([0.22,0.2,0.6,0.75])
     ax_divider = make_axes_locatable(plt.gca())
-    cax = ax_divider.append_axes('right', size="7%", pad="10%",)
-    plt.colorbar(cax=cax,label='count')
+    cax = ax_divider.append_axes('bottom', size="7%", pad="28%",)
+    plt.colorbar(cax=cax,label='count',orientation="horizontal")
     plt.savefig(filename, dpi=300)
     plt.close()
-    plt.figure(figsize=[4, 2.25])
+    plt.figure(figsize=[2.5, 2.6])
     #plt.hist((FL[(VL > 1)]), bins=binF)
     #plt.hist((FL[((VL > 1) * (VLGet > 1))]), bins=binF)
     #plt.hist((FL[((VL > 1) * (VLGet > 1) * (np.abs(dvR) <= THRESHOLD))]), bins=binF)
@@ -1761,30 +1754,30 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     R =countP / countAll * 100
     P= countP / countR * 100
     F1 = 2/(1/R+1/P)
-    hR, = ax2.plot(binMid, R, '-d', markersize=2, linewidth=1,label='R',color='dimgray')
-    hP, = ax2.plot(binMid, P, 'o-', markersize=2, linewidth=1,label= 'P',color='seagreen')
+    hR, = ax2.plot(binMid, R, '-d', markersize=3, linewidth=1,label='R',color='dimgray')
+    hP, = ax2.plot(binMid, P, 'o-', markersize=2.5, linewidth=1,label= 'P',color='seagreen')
     hF1,= ax2.plot(binMid, F1, '.-', markersize=2, linewidth=1,label= 'F1',color='coral')
     #print((countP / countAll)[-2:])
     #plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc='lower left',ncol=3)
     #ax1.legend(loc='lower center',ncol=3)
     #ax2.legend(loc='upper left',ncol=3)bbox_to_anchor=(0.5, 0., 0.5, 0.5)
     #ax1.legend(loc='lower center',ncol=3,handlelength=1,handletextpad=0.2,columnspacing=0.4,borderaxespad=0.2)
-    ax1.legend(loc='upper right',ncol=3,handlelength=1,handletextpad=0.2,columnspacing=0.4,borderaxespad=0.2)
-    ax2.legend(loc='upper left',ncol=3,handlelength=1,handletextpad=0.2,columnspacing=0.4,borderaxespad=0.2)
+    ax1.legend(loc='lower center',ncol=3,handlelength=0.8,handletextpad=0.15,columnspacing=0.3,borderaxespad=0.15,borderpad=0.15)
+    ax2.legend(loc='upper left',ncol=3,handlelength=0.8,handletextpad=0.15,columnspacing=0.3,borderaxespad=0.15,borderpad=0.15)
     plt.gca().set_xscale('log')
     ax1.set_ylabel('count')
     ax1.set_xlabel('$f$(Hz)')
     ax2.set_ylabel('Rate(%)')
-    ax1.set_ylim([0, 1.45 * countR.max()])
+    ax1.set_ylim([0, 1.3 * countR.max()])
     #ax2.set_ylim([min(np.min(countP / countAll * 100) - 5, 50), 112])
-    ax2.set_ylim([50, 112])
+    ax2.set_ylim([50, 107])
     #ax2.text((binF[-1]*0.96), 110, thresholdText, va='top', ha='right')
     plt.xlim([binF.min()*0.95, binF.max()*1.05])
     plt.xticks([1/100,1/10])
     #plt.title(title)
     #plt.tight_layout()
-    ax1.set_position([0.15,0.2,0.6,0.7])
-    ax2.set_position([0.15,0.2,0.6,0.7])
+    ax1.set_position([0.22,0.2,0.6,0.75])
+    ax2.set_position([0.22,0.2,0.6,0.75])
     plt.savefig((filename[:-4] + 'FCount' + filename[-4:]), dpi=300)
     plt.close()
 
@@ -1792,7 +1785,7 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     label=DISL[(VL > 1)]
     pick=DISL[((VL > 1) * (VLGet > 1))]
     pickRight = DISL[((VL > 1) * (VLGet > 1) * (np.abs(dvR) <= THRESHOLD))]
-    plt.hist((label,pick,pickRight), bins=binDis,color=['cornflowerblue','yellowgreen','lightcoral'],label=['$T_P+F_N$','$T_P+F_P$','$T_P$'])#['$T_P+F_N$','$T_P+F_P$','$T_P$']
+    plt.hist((label,pick,pickRight), bins=binDis,color=['dimgray','cornflowerblue','lightcoral'],label=['$T_P+F_N$','$T_P+F_P$','$T_P$'])#['$T_P+F_N$','$T_P+F_P$','$T_P$']
     #plt.hist((pickRight,pick,label,), bins=binF,color=['lightcoral','yellowgreen','cornflowerblue',],label=['$T_P$','$T_P+F_P$','$T_P+F_N$',])
     countAll, a = np.histogram((DISL[(VL > 1)]), bins=binDis)
     countR, a = np.histogram((DISL[((VL > 1) * (VLGet > 1))]), bins=binDis)
@@ -2565,8 +2558,8 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1],th
     plt.close()
     hL = []
     lL = []
-    plt.figure(figsize=[4, 3])
-    plt.subplots_adjust(left=0.15,bottom=0.21,wspace=0.25)
+    plt.figure(figsize=[3, 2.4])
+    plt.subplots_adjust(left=0.175,bottom=0.21,wspace=0.15,hspace=0.25)
     plt.subplot(1, 2, 1)
     for fv in fvL:
         if isinstance(fvL, dict):
@@ -2581,20 +2574,21 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1],th
             h, = plt.plot(v, fL, 'k', linewidth=0.1, label='single')
     hL.append(h)
     lL.append('single')
-    for fv in fvLRef:
-        if isinstance(fvL, dict):
-            fv = fvL[fv]
-        if len(fv.f) > 2:
-            if len(fL0) > 0:
-                fL = fL0.copy()
-            else:
-                fL = fv.f
-            v = fv(fL)
-            v[v < 1] = np.nan
-            h, = plt.plot(v, fL, '--b', linewidth=0.1, label='manual')
+    if False:
+        for fv in fvLRef:
+            if isinstance(fvL, dict):
+                fv = fvL[fv]
+            if len(fv.f) > 2:
+                if len(fL0) > 0:
+                    fL = fL0.copy()
+                else:
+                    fL = fv.f
+                v = fv(fL)
+                v[v < 1] = np.nan
+                h, = plt.plot(v, fL, '--b', linewidth=0.1, label='manual')
 
-    hL.append(h)
-    lL.append('manual')
+        hL.append(h)
+        lL.append('manual')
     if fvMean != None:
         if len(fL0) > 0:
             fL = fL0.copy()
@@ -2614,7 +2608,7 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1],th
         hL.append(h1)
         lL.append('$\\pm$std')
     figSet()
-    plt.legend(hL, lL)
+    plt.legend(hL, lL,handlelength=0.75,handletextpad=0.2,columnspacing=0.15,borderaxespad=0.1,loc='lower left')
     if dist > 0:
         plt.suptitle('%s %.1f km' % (title, dist))
     else:
@@ -2622,7 +2616,7 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1],th
     plt.xlabel('$v$(km/s)')
     plt.ylabel('$f$(Hz)')
     plt.ylim([fL.min(), fL.max()])
-    plt.xlim([3, 5])
+    plt.xlim([3, 4.5])
     #plt.tight_layout()
     plt.subplot(1, 2, 2)
     if fvRef != None:
@@ -2636,15 +2630,17 @@ def plotFVL(fvL, fvMean=None, fvRef=None, filename='test.jpg', thresholdL=[1],th
             vRef[vRef < 1] = np.nan
             hRef, = plt.plot(vRef, f, 'b', linewidth=0.3, label='manual')
             hGet, = plt.plot(v, f, 'r', linewidth=0.3, label='predict')
-            hD, = plt.plot((vRef * 0.985), f, '-.b', linewidth=0.3, label='$\\pm$ %.1f %%'%(threshold*100))
+            hD, = plt.plot((vRef * 0.985), f, '-.b', linewidth=0.3, label='$\\pm$ %.1f%%'%(threshold*100))
             plt.plot((vRef * 1.015), f, '-.b', linewidth=0.3)
-            plt.legend()
+            plt.legend(handlelength=0.75,handletextpad=0.2,columnspacing=0.15,borderaxespad=0.1,loc='lower left')
             plt.gca().set_yscale('log')
+            plt.gca().set_yticklabels([])
             plt.ylim([f.min(), f.max()])
-            plt.xlim([3, 5])
+            plt.xlim([3, 4.5])
             plt.xlabel('$v$(km/s)')
     #plt.tight_layout()
     plt.savefig(filename, dpi=300)
+    plt.subplots_adjust(left=0.15,bottom=0.21,wspace=0.25,hspace=0.25)
     plt.close()
 
 
@@ -3016,7 +3012,7 @@ class corr:
          (
           'quakeName', h5Str, 1)])
         return corrType
-    def outputTimeDis(self, FV, T=np.array([5, 10, 20, 30, 50, 80, 100, 150, 200, 250, 300]), sigma=2, byT=False, byA=False, rThreshold=4e-3, set2One=False, move2Int=False, noY=False, randMove=False,dtG=[],disRandA=1/15,disMaxR=1,**kwargs):
+    def outputTimeDis(self, FV, T=np.array([5, 10, 20, 30, 50, 80, 100, 150, 200, 250, 300]), sigma=2, byT=False, byA=False, rThreshold=1e-3, set2One=False, move2Int=False, noY=False, randMove=False,dtG=[],disRandA=1/15,disMaxR=1,**kwargs):
         self.T = T
         f = 1 / T
         t0 = self.timeLOut[0]
@@ -3059,6 +3055,8 @@ class corr:
                 tmpSigma[tmpSigma > 4 * sigma] = 4 * sigma
             tmpSigma = tmpSigma.reshape([1, -1])
             timeDis = ne.evaluate('exp(-((timeL - t) / tmpSigma) ** 2)')
+            #timeDis = ne.evaluate('where( abs(timeL-t)<tmpSigma,1-abs(timeL-t)/tmpSigma,0)')#(1-(np.abs(timeL-t))/tmpSigma)
+            #timeDis[timeDis<0]=0
             halfV = np.exp(-(delta * 0.5 / tmpSigma) ** 2)
             if set2One:
                 timeDis[timeDis > halfV] = 1
@@ -3069,19 +3067,19 @@ class corr:
                 timeDis[:, aF < rThreshold] = 0
             return (
              timeDis, t0)
-    def synthetic(self,FV,rThreshold=4e-3,isFv=False,F=[],disRandA=1/15,disMaxR=1,isNoise=False,**kwargs):
+    def synthetic(self,FV,rThreshold=1e-3,isFv=False,F=[],disRandA=1/15,disMaxR=1,isNoise=False,**kwargs):
         #tiqian suanhao 
         FF = F
         FVFV = FV
         fL = np.fft.fftfreq(len(self.xx),self.timeL[1]-self.timeL[0]).astype(np.float32)
-        fL=fL[fL>=1/150]
-        fL=fL[fL<=1/8]
+        fL=fL[fL>=1/160]
+        fL=fL[fL<=1/10]
         v = FV(fL)
         dt=(self.dDis / v).astype(np.float32)
         if len(self.af)==0:
             self.af =np.abs(self.getA(fL).reshape([1,-1])).astype(np.float32)/fL**0.5
         timeL = self.timeL.reshape([-1,1])
-        maxF = fL[self.af.argmax()]*(0.8+np.random.rand()*0.4)
+        maxF = fL[self.af.argmax()]
         sigma =np.exp(
             (
                 (
@@ -3091,13 +3089,14 @@ class corr:
                 ).sum()/self.af.sum()
             )**0.5
             )*(0.75*np.random.rand()+0.5)*0.5
+        maxF *= np.exp((2*np.random.rand()-1)*0.5)
         af = np.exp(
             -(np.log(fL)-np.log(maxF)
             )**2/sigma**2
             )*fL**0.5*(
-                0.85+np.random.rand(
+                0.9+np.random.rand(
                     len(fL)
-                    )*0.3
+                    )*0.2
                 )
         dt = dt.reshape([1,-1])
         fL = fL.reshape([1,-1])
@@ -3113,24 +3112,32 @@ class corr:
             
         if isNoise and np.random.rand()<0.75:
             TRef = self.dDis / 4
-            FValid=F[aF > rThreshold*0.9]
+            FValid=F[(aF > rThreshold*0.9)*(DT>1/F/disMaxR)*(DT<1/F/disRandA)]
             if len(FValid)>0:
                 fMin=FValid.min()
             else:
-                fMin=1/140
+                fMin=1/150
             minDT = 1/fMin*1.5
             A = (np.random.rand()-0.5)*0.20
             dt=0
             if np.random.rand()>0.5:
-                dt = TRef*(0.15+np.random.rand()*0.7)
+                dt = TRef*(0.1+np.random.rand()*0.0)
                 dt = max(minDT,dt)
                 dIndex =int(dt/(self.timeL[1]-self.timeL[0]))
-                data[:-dIndex]+=data[dIndex:]*A
+                #data[:-dIndex]+=data[dIndex:]*A
+                data += data[(\
+                    np.arange(len(data))+dIndex)\
+                        %len(data)\
+                             ]*A
             else:
-                dt = TRef*(0.15+np.random.rand()*0.7)
+                dt = TRef*(0.1+np.random.rand()*0.8)
                 dt = max(minDT,dt)
                 dIndex =int(dt/(self.timeL[1]-self.timeL[0]))
-                data[dIndex:]+=data[:-dIndex]*A
+                #data[dIndex:]+=data[:-dIndex]*A
+                data += data[(\
+                    np.arange(len(data))-dIndex)\
+                        %len(data)\
+                             ]*A
             if np.random.rand()<0.0005:
                 print('Noise',A,'minDT',minDT,'sigma',sigma,'maxT',1/maxF,'dt',dt)
         if isFv:
@@ -3144,7 +3151,7 @@ class corr:
         else:
             return data
 
-    def outputTimeDisNew(self, FV, sigma=2, byT=False, byA=False, rThreshold=4e-3, set2One=False, move2Int=False, noY=False, T=[]):
+    def outputTimeDisNew(self, FV, sigma=2, byT=False, byA=False, rThreshold=1e-3, set2One=False, move2Int=False, noY=False, T=[]):
         t0 = self.timeLOut[0]
         delta = self.timeLOut[1] - self.timeLOut[0]
         halfV = np.exp(-(delta * 0.5 / sigma) ** 2)
@@ -3948,7 +3955,7 @@ class corrL(list):
     def __str__(self):
         return '%d %s' % (len(self), str(self.timeDisKwarg))
 
-    def getTimeDis(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=4e-3, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, randA=0.03, midV=4, randR=0.5, mul=1,isGuassianMove=False,disAmp=1,fromT=0,fvDSyn={},**kwags):
+    def getTimeDis(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=1e-3, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, randA=0.03, midV=4, randR=0.5, mul=1,isGuassianMove=False,disAmp=1,fromT=0,fvDSyn={},isAllSyn=False,**kwags):
         if len(iL) == 0:
             iL = np.arange(len(self))
         if not isinstance(iL, np.ndarray):
@@ -3982,7 +3989,10 @@ class corrL(list):
             delta0 = self[i].timeL[1] - self[i].timeL[0]
             fL0 = np.fft.fftfreq(maxCount0)/delta0
             maxCount = min(maxCount0, self[i].xx.shape[0])
-            if self[i].isSyn==False or len(fvDSyn)==0:
+            if self[i].isSyn or isAllSyn:
+                self[i].dDis = (1800/200)**(np.random.rand()**0.6)*200 #corrL1[-1].dDis*(1+(2*np.random.rand()-1)*0.1)
+                self[i].dis = np.array([self[i].dis[0],self[i].dis[0]+self[i].dDis])
+            if (self[i].isSyn==False and isAllSyn==False) or len(fvDSyn)==0:
                 if modelNameO == '':
                     modelName = self[i].modelFile
                     if byAverage:
@@ -4016,7 +4026,7 @@ class corrL(list):
             else:
                 dtGFV=fLFV*0
 
-            if not self[i].isSyn:
+            if not (self[i].isSyn or isAllSyn):
                 xx=self[i].xx
             else:
                 xx,fv=self[i].synthetic(fv,isFv=True,F=fLFV,**kwags)
@@ -4094,7 +4104,7 @@ class corrL(list):
         self.t0L=0
         self.iL=np.arange(0)
         gc.collect()
-    def getTimeDisNew(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=4e-3, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, up=1):
+    def getTimeDisNew(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=1e-3, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, up=1):
         if len(iL) == 0:
             iL = np.arange(len(self))
         if not isinstance(iL, np.ndarray):
@@ -4866,7 +4876,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             #axL.append(fig.add_subplot(projection='3d'))
             axL.append(plt.gca())
             figL.append(fig)
-            plt.gca().set_position([0.15,0.32,0.7,0.58])
+            plt.gca().set_position([0.16,0.32,0.7,0.58])
             ax_divider = make_axes_locatable(axL[-1])
             caxL.append(ax_divider.append_axes('bottom', size="10%", pad="70%",))
         for j in range(1):
@@ -4875,9 +4885,11 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             if j==0:
                 sta0,sta1 = corrL[index].modelFile.split('_')[-2:]
                 head = sta0+'_'+sta1
+            corr     = corrL[index]
             timeL    = corrL[index].timeL.copy()#-corrL[index].timeL[0]#+t[i,j]
             timeLOut = corrL[index].timeLOut.copy()#-corrL[index].timeLOut[0]#+t[i,j]
-            xlim=[timeL.min(),timeL.max()]
+            xlim=[0,800]#[timeL.min(),timeL.max()]
+            xlim=[corr.dDis/6-50,corr.dDis/1.8+50]
             ylim=[-6,6]
             tmpy0=y0[i,:,j,:]
             tmpy=y[i,:,j,:]
@@ -4922,7 +4934,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             axL[1].set_xlabel('time(s)')
             axL[1].set_yscale('log')
             axL[1].set_xlim(xlim)
-            axL[1].set_yticks([1/100,1/10])
+            #axL[1].set_yticks([1/100,1/10])
             #axL[1].set_ylim(ylim)
             #caxL[1].axis('off')
             #figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[1])
@@ -4932,13 +4944,14 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             if number==3:
                 #pc=plt.pcolormesh(timeLOut,f,tmpy.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
                 axL[2].pcolormesh(timeLOut[timeLOut<xlim[1]],f,tmpy[timeLOut<xlim[1]].transpose(),vmin=0,vmax=1,cmap='bwr',rasterized=True)
-                axL[2].plot(timeLOutL0,f,'--k',linewidth=0.25)
+                #axL[2].plot(timeLOutL0,f,'-k',linewidth=3.5,alpha=0.4)
+                axL[2].fill_betweenx(f,timeLOutL0-10,timeLOutL0+10,fc='k',alpha=0.4,ec='None')
                 axL[2].set_ylabel('$f$(Hz)')
                 axL[2].set_xlabel('time(s)')
                 axL[2].set_yscale('log')
                 #axL[2].set_zticks([f.max(),f.min()])
                 axL[2].set_xlim(xlim)
-                axL[2].set_yticks([1/100,1/10])
+                #axL[2].set_yticks([1/100,1/10])
                 #axL[2].set_ylim(ylim)
                 #pc =cm.ScalarMappable(norm=norm, cmap=cmap)
                 #caxL[2].axis('off')
@@ -4954,7 +4967,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             if number==2:
                 tail = 'without'
                 kind = ['wave','label'][nn]
-            figL[nn].savefig('%s/%s_%s_%s.eps'%(outputDir,head,kind,tail),dpi=500)
+            figL[nn].savefig('%s/%s_%s_%s.pdf'%(outputDir,head,kind,tail),dpi=500)
         for nn in range(number):
             plt.close()
 
@@ -5033,7 +5046,7 @@ class Litho:
         z,vs = np.loadtxt(refVs).transpose()
         self.refVs=vs
         self.zMax=zMax
-    def __call__(self,la,lo,keyL=['upper_sediments','middle_sediments','lower_sediments','upper_crust','middle_crust','lower_crust','lid','asthenospheric_mantle']):
+    def __call__(self,la,lo,keyL=['water','ice','upper_sediments','middle_sediments','lower_sediments','upper_crust','middle_crust','lower_crust','lid','asthenospheric_mantle']):
         la=la%180
         lo=lo%360
         litho=self.litho
@@ -5091,10 +5104,16 @@ class Litho:
                         print('next find',keyBottom,zTop,zBottom)
                 else:
                     print('find',keyBottom,zTop,zBottom)
-            z+=[zTop,0.75*zTop+0.25*zBottom,0.5*zTop+0.5*zBottom,0.25*zTop+0.75*zBottom,1*zBottom]
-            vp+=[vpTop,0.75*vpTop+0.25*vpBottom,0.5*vpTop+0.5*vpBottom,0.25*vpTop+0.75*vpBottom,1*vpBottom]
-            vs+=[vsTop,0.75*vsTop+0.25*vsBottom,0.5*vsTop+0.5*vsBottom,0.25*vsTop+0.75*vsBottom,1*vsBottom]
-            rho+=[rhoTop,0.75*rhoTop+0.25*rhoBottom,0.5*rhoTop+0.5*rhoBottom,0.25*rhoTop+0.75*rhoBottom,1*rhoBottom]
+            if key not in ['water','ice']:
+                z+=[zTop,0.75*zTop+0.25*zBottom,0.5*zTop+0.5*zBottom,0.25*zTop+0.75*zBottom,1*zBottom]
+                vp+=[vpTop,0.75*vpTop+0.25*vpBottom,0.5*vpTop+0.5*vpBottom,0.25*vpTop+0.75*vpBottom,1*vpBottom]
+                vs+=[vsTop,0.75*vsTop+0.25*vsBottom,0.5*vsTop+0.5*vsBottom,0.25*vsTop+0.75*vsBottom,1*vsBottom]
+                rho+=[rhoTop,0.75*rhoTop+0.25*rhoBottom,0.5*rhoTop+0.5*rhoBottom,0.25*rhoTop+0.75*rhoBottom,1*rhoBottom]
+            else:
+                z+=[zTop,1*zBottom]
+                vp+=[vpTop,1*vpBottom]
+                vs+=[vsTop,1*vsBottom]
+                rho+=[rhoTop,1*rhoBottom]
         laNew = vsDeeper.variables['latitude'][:]%180
         loNew = vsDeeper.variables['longitude'][:]%360
         i = np.abs(laNew-la).argmin()
@@ -5216,7 +5235,7 @@ class OnePlus:
         if phi==-999:
             A12=1
         else:
-            A12=1+(self.a1*np.cos(phi)+self.a2*np.sin(phi))/(self.vs*randA)
+            A12=1+(self.a1*np.cos(phi*2)+self.a2*np.sin(phi*2))/(self.vs*randA)
         fMax = f.max()
         fMin = f.min()
         fL = fMin*(fMax/fMin)**np.arange(-0.0000000001,1.000001,1/59)
