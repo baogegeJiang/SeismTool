@@ -48,8 +48,8 @@ with open(logFile,'w+') as f:
                                 if staName not in staD:
                                     posStr = ref.stats['reftek130']['position']
                                     #['N 3928.461E10726.466+01385']
-                                    la = float(posStr[1:10])/100
-                                    lo = float(posStr[11:20])/100
+                                    la =float(posStr[1:4])+ float(posStr[4:10])/60
+                                    lo =float(posStr[11:14])+ float(posStr[14:20])/60
                                     dep =  float(posStr[-6:])
                                     if posStr[0]=='S':
                                         la*=-1

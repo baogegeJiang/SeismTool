@@ -7,11 +7,11 @@ from distutils.extension import Extension
 from Cython.Distutils import build_ext  
 # 必须部分
 
-ext_modules = [Extension("torchDispV3", ["torchDispV3.pyx"], include_dirs=[np.get_include()]),]
+ext_modules = [Extension("cyDisp", ["cyDisp.pyx"], include_dirs=[np.get_include()]),extra_compile_args=['-o3']]
 # filename就是你的.pyx文件前面的名字，注意后面中括号和这里的名字“最好”一致，不然有些时候会报错。
 # 调用numpy就添加include_dirs参数，不然可以去掉
 
-setup(name="torchDispV3", cmdclass={"build_ext": build_ext}, ext_modules=ext_modules)
+setup(name="cyDisp", cmdclass={"build_ext": build_ext}, ext_modules=ext_modules)
 # 这个name随便写，其他的格式不能变
 # （更新一下，python3.8的时候这个名字要和上面的filename一样）
 

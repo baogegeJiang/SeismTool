@@ -3,7 +3,6 @@ import numpy as np
 import os 
 from scipy import interpolate,stats
 from matplotlib import pyplot as plt
-import pycpt
 from netCDF4 import Dataset
 from ..mapTool import mapTool as mt
 from ..mapTool.mapTool import getDlaDlo
@@ -11,11 +10,9 @@ from ..mathTool.distaz import DistAz
 from ..mathTool.mathFunc_bak import Model as Model0,outR
 #import cmath
 
-#cmap = pycpt.load.gmtColormap('cpt/temperatureInv')
-cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/temperatureInv')
-cmap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/seis.cpt')
+#cmap = mt.gmtColormap('cpt/temperatureInv')
 cmap = 'jet_r'
-diffMap = pycpt.load.gmtColormap(os.path.dirname(__file__)+'/../data/seismicNew.cpt')
+diffMap = mt.gmtColormap(os.path.dirname(__file__)+'/../data/seismicNew.cpt')
 ##程序中又控制的大bug
 ##必须按顺序(period source)
 faultL = mt.readFault(os.path.dirname(__file__)+'/../data/Chinafault_fromcjw.dat')

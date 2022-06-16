@@ -26,7 +26,8 @@ from matplotlib import colors,cm
 import h5py
 from ..plotTool import figureSet
 from mathTool import mathFunc
-from pysurf96 import surf96
+#from pysurf96 import surf96
+from dispCal.disp import calDisp as surf96
 figureSet.init()
 gpdcExe = '/home/jiangyr/program/geopsy/bin/gpdc'
 Vav = -1
@@ -383,7 +384,7 @@ class config:
     def loadQuakeNEFV(self, stations, quakeFvDir='models/QuakeNEFV', quakeD=seism.QuakeL(), isGetQuake=True,**kwags):
         fvD = {}
         for i in range(len(stations)):
-            print('do for %d in %d' % (i + 1, len(stations)))
+            print('do for %d in %d %d' % (i + 1, len(stations),len(fvD)))
             for j in range(len(stations)):
                 file = glob('%s/%s.%s/*_%s.%s/Rayleigh/pvt_sel.dat' % (quakeFvDir,
                  stations[i]['net'], stations[i]['sta'], stations[j]['net'], stations[j]['sta']))
@@ -1169,9 +1170,9 @@ class fv:
             self.f = np.array([1, 2])
             self.v = np.array([1e-13, 1e-13])
             self.std = np.array([99, 99])
-        self.f = self.f[(self.v > 2)]
-        self.std = self.std[(self.v > 2)]
-        self.v = self.v[(self.v > 2)]
+        self.f = self.f[(self.v > 0.1)]
+        self.std = self.std[(self.v > 0.1)]
+        self.v = self.v[(self.v > 0.1)]
         if len(self.f) < 2:
             self.f = np.array([1, 2])
             self.v = np.array([1e-13, 1e-13])
@@ -1192,7 +1193,7 @@ class fv:
             return interpolate.interp1d((self.f), (self.v), kind='linear', bounds_error=False,
               fill_value='extrapolate')
 
-    def __call__(self, f, dist0=0, dist1=0, threshold=0.08, N=1000, randA=0.1):
+    def __call__(self, f, dist0=0, dist1=0, threshold=0.06, N=1000, randA=0.1):
         shape0 = f.shape
         f = f.reshape([-1])
         if self.mode == 'fileP':
@@ -1644,14 +1645,14 @@ def plotFV(vL, fL, filename, fStrike=1, title='', isAverage=True, thresL=[0.01, 
 
     binF = fL[::fStrike]
     binF.sort()
-    binV = np.arange(1, 5, 0.01)
+    binV = np.arange(0, 5, 0.01)
     plt.close()
     plt.figure(figsize=[2, 1.6])
     plt.hist2d(VL, FL, bins=(binV, binF), rasterized=True, cmap=disMap, norm=(colors.LogNorm()))
     #plt.colorbar(label='count')
     plt.gca().set_yscale('log')
     plt.xlabel('$v$(km/s)')
-    plt.xlim([1.8, 4.6])
+    plt.xlim([2.1, 5])
     plt.ylabel('$f$(Hz)')
     plt.gca().set_position([0.26,0.25,0.5,0.6])
     ax =plt.gca()
@@ -1722,7 +1723,7 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     THRESHOLD = delta / TL
     THRESHOLD[THRESHOLD <= threshold] = threshold
     plt.figure(figsize=[2.5, 2.6])
-    plt.hist2d((dvR[((VL > 1) * (VLGet > 1))]), (FL[((VL > 1) * (VLGet > 1))]), bins=(binDVR, binF), rasterized=True, cmap='hot',norm=(colors.LogNorm()))#
+    plt.hist2d((dvR[((VL > 1) * (VLGet > 1))]), (FL[((VL > 1) * (VLGet > 1))]), bins=(binDVR, binF), rasterized=True, cmap='gray_r',norm=(colors.LogNorm()))#
     plt.gca().set_yscale('log')
     plt.xlabel('$dv/v_0$')
     plt.ylabel('$f$(Hz)')
@@ -1762,7 +1763,7 @@ def compareFVD(fvD, fvDGet, stations, filename, t=12 ** np.arange(0, 1.000001, 0
     #ax1.legend(loc='lower center',ncol=3)
     #ax2.legend(loc='upper left',ncol=3)bbox_to_anchor=(0.5, 0., 0.5, 0.5)
     #ax1.legend(loc='lower center',ncol=3,handlelength=1,handletextpad=0.2,columnspacing=0.4,borderaxespad=0.2)
-    ax1.legend(loc='lower center',ncol=3,handlelength=0.8,handletextpad=0.15,columnspacing=0.3,borderaxespad=0.15,borderpad=0.15)
+    ax1.legend(loc='lower right',ncol=3,handlelength=0.8,handletextpad=0.15,columnspacing=0.3,borderaxespad=0.15,borderpad=0.15)
     ax2.legend(loc='upper left',ncol=3,handlelength=0.8,handletextpad=0.15,columnspacing=0.3,borderaxespad=0.15,borderpad=0.15)
     plt.gca().set_xscale('log')
     ax1.set_ylabel('count')
@@ -2876,6 +2877,76 @@ h5Str = h5py.special_dtype(vlen=str)
 
 
 corrType=np.float16
+
+class Gather:
+    def __init__(self,t0=-1,dt=1/200,DT=16,dx = 0.01,DX  = 2,modeN=1,TL = 10**np.arange(0,1.0001,1/10)):
+        self.t0=t0
+        self.dt= dt
+        self.DT = DT
+        self.dx = dx
+        self.DX = DX
+        self.modeN = modeN
+        self.TL = TL
+        self.fL = 1/TL
+        self.NT = int(DT/dt)
+        self.timeL = np.arange(self.NT)*dt+t0
+        FL = np.fft.fftfreq(self.NT*8,dt)[::-1]
+        FL=FL[FL<=2/1]
+        FL=FL[FL>=1/20]
+        self.FL = FL
+        self.NX = int(DX/dx)
+        self.xL   = np.arange(self.NX)*dx
+    def __call__(self,N=10,**kwargs):
+        return [self.generate(**kwargs) for i in range(N)]
+    def generate(self,layerN=10,modeIndex=0):
+        calDisp = surf96
+        sigmaL = (0.2+1*np.random.rand(layerN))*0.2
+        midL    = np.random.rand(layerN)*2
+        aL =  np.random.rand(layerN)*0.6
+        thicknessL = np.arange(1,layerN+1).reshape([1,-1])*\
+            (1+aL.reshape([1,-1])*np.exp(-(self.xL.reshape([-1,1])-midL.reshape([1,-1]))**2/sigmaL.reshape([1,-1])**2))
+        vs = (np.arange(layerN)*0.1+0.2)*(0.8+np.random.rand(layerN)*0.4)
+        vp = vs*1.7
+        rho = vs*2
+        depL  = np.cumsum(thicknessL,axis=1)-0.5*thicknessL 
+
+        DISPM = np.array([[calDisp(thicknessL[i], vp, vs,rho, 1/self.FL,mode=j+1, velocity='phase', flat_earth=True,wave='rayleigh') for i in range(self.NX)]for j in range(self.modeN)])
+
+        DTM = self.dx/DISPM
+        TM = np.cumsum(DTM,axis=1)-DTM[:,0:1,:]
+
+        dispM = np.array([[calDisp(thicknessL[i], vp, vs,rho, 1/self.fL,mode=j+1, velocity='phase', flat_earth=True,wave='rayleigh') for i in range(self.NX)]for j in range(self.modeN)])
+
+        dtM =self.dx/dispM
+        tM = np.cumsum(dtM,axis=1)-dtM[:,0:1,:]
+        modeIndex=0
+        #exit()
+        plt.close()
+        for i in range(8):
+            plt.plot(self.xL,depL[:,i])
+        plt.savefig('predict/test.jpg',dpi=300)
+        AL = np.array([1,0.2,0.1,0.05,0.01])*(1+0.3*np.random.rand(5))
+        data= np.zeros([self.NT,self.NX])
+        timeM = self.timeL.reshape([-1,1])
+        for i in range(len(self.FL)):
+            F = self.FL[i]
+            af = F**0.5
+            for modeIndex in range(self.modeN):
+                DT=TM[modeIndex:modeIndex+1,:,i]
+                A = AL[modeIndex]
+                pi=np.pi
+                data+=A*ne.evaluate('cos(-pi*2*(timeM-DT)*F)*af')
+        y= np.zeros([self.NT,self.NX,len(self.fL)])
+        sigma=0.02
+        for i in range(len(self.fL)):
+            F = self.fL[i]
+            dt=tM[modeIndex:modeIndex+1,:,i]
+            pi=np.pi
+            y[:,:,i]=A*ne.evaluate('exp(-(timeM-dt)**2/sigma**2)')
+        return data,y
+
+
+
 class corr:
     sigCount = 1
 
@@ -3012,7 +3083,7 @@ class corr:
          (
           'quakeName', h5Str, 1)])
         return corrType
-    def outputTimeDis(self, FV, T=np.array([5, 10, 20, 30, 50, 80, 100, 150, 200, 250, 300]), sigma=2, byT=False, byA=False, rThreshold=1e-3, set2One=False, move2Int=False, noY=False, randMove=False,dtG=[],disRandA=1/15,disMaxR=1,**kwargs):
+    def outputTimeDis(self, FV, T=np.array([5, 10, 20, 30, 50, 80, 100, 150, 200, 250, 300]), sigma=2, byT=False, byA=False, rThreshold=5e-4, set2One=False, move2Int=False, noY=False, randMove=False,dtG=[],disRandA=1/15,disMaxR=1,**kwargs):
         self.T = T
         f = 1 / T
         t0 = self.timeLOut[0]
@@ -3067,13 +3138,13 @@ class corr:
                 timeDis[:, aF < rThreshold] = 0
             return (
              timeDis, t0)
-    def synthetic(self,FV,rThreshold=1e-3,isFv=False,F=[],disRandA=1/15,disMaxR=1,isNoise=False,**kwargs):
+    def synthetic(self,FV,rThreshold=5e-4,isFv=False,F=[],disRandA=1/15,disMaxR=1,isNoise=False,**kwargs):
         #tiqian suanhao 
         FF = F
         FVFV = FV
-        fL = np.fft.fftfreq(len(self.xx),self.timeL[1]-self.timeL[0]).astype(np.float32)
+        fL = np.fft.fftfreq(len(self.xx)*1,self.timeL[1]-self.timeL[0]).astype(np.float32)
         fL=fL[fL>=1/160]
-        fL=fL[fL<=1/10]
+        fL=fL[fL<=1/8]
         v = FV(fL)
         dt=(self.dDis / v).astype(np.float32)
         if len(self.af)==0:
@@ -3110,14 +3181,14 @@ class corr:
             V = FV(F).astype(np.float32)
             DT=self.dDis / V
             
-        if isNoise and np.random.rand()<0.75:
+        if isNoise and np.random.rand()<0.5:
             TRef = self.dDis / 4
             FValid=F[(aF > rThreshold*0.9)*(DT>1/F/disMaxR)*(DT<1/F/disRandA)]
             if len(FValid)>0:
                 fMin=FValid.min()
             else:
                 fMin=1/150
-            minDT = 1/fMin*1.5
+            minDT = 1/fMin*2
             A = (np.random.rand()-0.5)*0.20
             dt=0
             if np.random.rand()>0.5:
@@ -3151,7 +3222,7 @@ class corr:
         else:
             return data
 
-    def outputTimeDisNew(self, FV, sigma=2, byT=False, byA=False, rThreshold=1e-3, set2One=False, move2Int=False, noY=False, T=[]):
+    def outputTimeDisNew(self, FV, sigma=2, byT=False, byA=False, rThreshold=5e-4, set2One=False, move2Int=False, noY=False, T=[]):
         t0 = self.timeLOut[0]
         delta = self.timeLOut[1] - self.timeLOut[0]
         halfV = np.exp(-(delta * 0.5 / sigma) ** 2)
@@ -3252,12 +3323,14 @@ class corr:
 
     def getA(self,f,xx=[]):
         t0 = self.dDis/6-160
-        t1 = self.dDis/2+160
+        t1 = self.dDis/0.5+160
         i0 =int((t0-self.timeL[0])/(self.timeL[1]-self.timeL[0])) 
         i1 =int((t1-self.timeL[0])/(self.timeL[1]-self.timeL[0]))
         if len(xx)==0:
+            i1 = min(i1,len(self.xx))
             xx = self.xx[i0:i1]
         else:
+            i1 = min(i1,len(xx))
             xx = xx[i0:i1]
         return calSpec(xx/xx.std()/len(xx),self.timeL[i0:i1],f)
     def show(self, d, FV):
@@ -3332,7 +3405,10 @@ class corr:
             self.M = mat['M']
             self.dis = mat['dis']
             self.dep = mat['dep']
-            self.modelFile = str(mat['modelFile'])
+            modelFile = str(mat['modelFile'])
+            if modelFile[0]=='b':
+                modelFile = modelFile[2:-1]
+            self.modelFile = modelFile
             self.name0 = str(mat['name0'])
             self.name1 = str(mat['name1'])
             self.srcSac = str(mat['srcSac'])
@@ -3641,7 +3717,7 @@ def compareList(i0, i1):
 
 class corrL(list):
 
-    def __init__(self, *argv, **kwargs):
+    def __init__(self, *argv,vmax=5.0,vmin=1.5, **kwargs):
         super().__init__()
         if len(argv) > 0:
             for tmp in argv[0]:
@@ -3670,6 +3746,8 @@ class corrL(list):
         self.iL = np.arange(0)
         self.timeDisArgv = ()
         self.timeDisKwarg = {}
+        self.vmax=vmax
+        self.vmin=vmin
 
     def reSetUp(self, up=1):
         for corr in self:
@@ -3955,7 +4033,7 @@ class corrL(list):
     def __str__(self):
         return '%d %s' % (len(self), str(self.timeDisKwarg))
 
-    def getTimeDis(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=1e-3, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, randA=0.03, midV=4, randR=0.5, mul=1,isGuassianMove=False,disAmp=1,fromT=0,fvDSyn={},isAllSyn=False,**kwags):
+    def getTimeDis(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=5e-4, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, randA=0.03, midV=4, randR=0.5, mul=1,isGuassianMove=False,disAmp=1,fromT=0,fvDSyn={},isAllSyn=False,**kwags):
         if len(iL) == 0:
             iL = np.arange(len(self))
         if not isinstance(iL, np.ndarray):
@@ -3990,7 +4068,7 @@ class corrL(list):
             fL0 = np.fft.fftfreq(maxCount0)/delta0
             maxCount = min(maxCount0, self[i].xx.shape[0])
             if self[i].isSyn or isAllSyn:
-                self[i].dDis = (1800/200)**(np.random.rand()**0.6)*200 #corrL1[-1].dDis*(1+(2*np.random.rand()-1)*0.1)
+                self[i].dDis = (1800/150)**(np.random.rand()**0.6)*150 #corrL1[-1].dDis*(1+(2*np.random.rand()-1)*0.1)
                 self[i].dis = np.array([self[i].dis[0],self[i].dis[0]+self[i].dDis])
             if (self[i].isSyn==False and isAllSyn==False) or len(fvDSyn)==0:
                 if modelNameO == '':
@@ -4056,8 +4134,8 @@ class corrL(list):
                         print('mul', mul)
                         print('******* rand1:', rand1)
                     dDis = dDis * rand1
-            timeMin = dDis / 5.0-fromT
-            timeMax = dDis / 2.0-fromT
+            timeMin = dDis / self.vmax-fromT
+            timeMax = dDis / self.vmin-fromT
             I0 = int(np.round(timeMin / delta0).astype(np.int))
             I1 = int(np.round(timeMax / delta0).astype(np.int))
             x[ii, I0:I1, 0, 1] = disAmp
@@ -4104,7 +4182,7 @@ class corrL(list):
         self.t0L=0
         self.iL=np.arange(0)
         gc.collect()
-    def getTimeDisNew(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=1e-3, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, up=1):
+    def getTimeDisNew(self, iL, fvD={}, T=[], sigma=2, maxCount=512, noiseMul=0, byT=False, byA=False, rThreshold=5e-4, byAverage=False, set2One=False, move2Int=False, modelNameO='', noY=False, randMove=False, up=1):
         if len(iL) == 0:
             iL = np.arange(len(self))
         if not isinstance(iL, np.ndarray):
@@ -4188,10 +4266,6 @@ class corrL(list):
         self.fL = np.array(fL)
     def getV(self, yout, isSimple=True, D=0.1, isLimit=False, isFit=False,maxN=10):
         if isSimple:
-            maxDis = self.dDisL.max()
-            minDis = self.dDisL.min()
-            tmin = minDis / 6 - 5
-            tmax = maxDis / 2 + 10
             i0 = 0# int(max(1, tmin / self.deltaL[0]))
             i1 = yout.shape[1]-1#int(min(yout.shape[1] - 1, tmax / self.deltaL[0]))
             #pos,prob = yout[:, i0:i1, 0, :].argmax(axis=1) + i0
@@ -4644,7 +4718,16 @@ class corrL(list):
 
     def copy(self):
         return corrL(self)
-
+    def y2v(self,y,vL):
+        #y=self.y
+        vNew = np.zeros([y.shape[0],len(vL),1,y.shape[-1]])
+        for i in range(y.shape[0]):
+            index = self.iL[i]
+            dDis = self[index].dDis
+            timeL = dDis/vL
+            indexL = (timeL-self.t0L[i])/(self[i].timeL[1]-self[i].timeL[0])
+            vNew[i,:,0,:]=y[i,np.round(indexL).astype(np.int),0,:]
+        return vNew
 
 class corrD(dict):
 
@@ -4889,7 +4972,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             timeL    = corrL[index].timeL.copy()#-corrL[index].timeL[0]#+t[i,j]
             timeLOut = corrL[index].timeLOut.copy()#-corrL[index].timeLOut[0]#+t[i,j]
             xlim=[0,800]#[timeL.min(),timeL.max()]
-            xlim=[corr.dDis/6-50,corr.dDis/1.8+50]
+            xlim=[corr.dDis/6-50,corr.dDis/1.5+100]
             ylim=[-6,6]
             tmpy0=y0[i,:,j,:]
             tmpy=y[i,:,j,:]
@@ -4908,7 +4991,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             #axL[0].title('%s%d'%(outputDir,i))
             legend = ['r s','i s',\
             'r h','i h']
-            for k in range(2):
+            for k in [1,0]:
                 if k==1:
                     c= 'k'
                 else:
@@ -4934,7 +5017,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             axL[1].set_xlabel('time(s)')
             axL[1].set_yscale('log')
             axL[1].set_xlim(xlim)
-            #axL[1].set_yticks([1/100,1/10])
+            axL[1].set_yticks([1/100,1/10])
             #axL[1].set_ylim(ylim)
             #caxL[1].axis('off')
             #figureSet.setColorbar(pc,label='Probability',pos='bottom',isAppend=False,ax=caxL[1])
@@ -4951,7 +5034,7 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
                 axL[2].set_yscale('log')
                 #axL[2].set_zticks([f.max(),f.min()])
                 axL[2].set_xlim(xlim)
-                #axL[2].set_yticks([1/100,1/10])
+                axL[2].set_yticks([1/100,1/10])
                 #axL[2].set_ylim(ylim)
                 #pc =cm.ScalarMappable(norm=norm, cmap=cmap)
                 #caxL[2].axis('off')
@@ -5133,6 +5216,28 @@ class Litho:
             )(zNew)
         #vsNew=vs0*(1+0.01*perVs)
         return np.array(z+zNew.tolist()),np.array(vp+(1.71*vsNew).tolist()),np.array(vs+(1*vsNew).tolist()),np.array(rho+(0.8*vsNew).tolist())
+class GLAD:
+    def __init__(self,vp='predict/model/glad-m25-vp-0.0-n4.nc',vs='predict/model/glad-m25-vs-0.0-n4.nc',zMax=800):
+        VS=Dataset(vs)
+        VP=Dataset(vp)
+        self.zMax=zMax
+        self.laL = VS.variables['latitude'][:]%180
+        self.loL = VS.variables['longitude'][:]%360
+        self.dep = VS.variables['depth'][:]
+        self.vsv  = VS['vsv'][:]
+        self.vpv  = VP['vpv'][:]
+    def __call__(self,la,lo,):
+        la=la%180
+        lo=lo%360  
+        i = np.abs(self.laL-la).argmin()
+        j = np.abs(self.loL-lo).argmin()
+        if np.random.rand()<0.0001:
+            print('finding',self.laL[i],self.loL[j])
+        vsv = self.vsv[self.dep<=self.zMax,i,j]
+        vpv = self.vpv[self.dep<=self.zMax,i,j]
+        dep = self.dep[self.dep<=self.zMax]
+        rho = vpv/3
+        return np.array(dep[vsv>0]).astype(np.float64),np.array(vpv[vsv>0]).astype(np.float64),np.array(vsv[vsv>0]).astype(np.float64),np.array(rho[vsv>0]).astype(np.float64)
 class One:
     def __init__(self,vp=vp0,vs=vs0,z=z0,rho=[]):
         if len(rho)==0:
@@ -5164,13 +5269,13 @@ class One:
                     (1-alpha)**2*0.7*(2*np.random.rand()*2-1)+alpha*fA
                     )+1
             #print(I0,sigmaI,randA)
-        fMax = f.max()
-        fMin = f.min()
-        fL = fMin*(fMax/fMin)**np.arange(-0.0000000001,1.000001,1/59)
-        vL=surf96(self.thickness, self.vp*randA, self.vs*randA,self.rho*randA, 1/fL[::-1],mode=mode, velocity=velocity, flat_earth=flat_earth,wave=wave)[::-1]
-        if (vL>1).sum()<2:
+        #fMax = f.max()
+        #fMin = f.min()
+        #fL = f.copy()#fMin*(fMax/fMin)**np.arange(-0.0000000001,1.000001,1/59)
+        v=surf96(self.thickness, self.vp*randA, self.vs*randA,self.rho*randA, 1/f,mode=mode, velocity=velocity, flat_earth=flat_earth,wave=wave)
+        if (v>1).sum()<2:
             return f*0
-        v = interpolate.interp1d(fL[vL>1],vL[vL>1],fill_value=0,bounds_error=False)(f)
+        #v = interpolate.interp1d(fL[vL>1],vL[vL>1],fill_value=0,bounds_error=False)(f)
         return v
     def synthetic(self,d,f0,f,sigmaF,AL,timeL,minA=0.05,**kwags):
         data = timeL.astype(np.float64)*0
@@ -5297,13 +5402,14 @@ def IASP91(dep,deg):
     if deg > 95:
         tStart = deg*111.19 / 5.5
     return tStart
-
+'''
 vMax = 6
 vMin = 2.0
 VMax = 6.0
-VMin = 2.0
+VMin = 1.5
 tailT = 300
-def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), dep=10, modelFile='', srcSac='', minSNR=5, isCut=False, maxDist=100000000.0, minDist=0, maxDDist=100000000.0, minDDist=0, isFromO=False, removeP=False, isLoadFv=False, fvD={}, quakeName='', isByQuake=False, specN=40, specThreshold=0.1, isDisp=False, maxCount=-1,plotDir='',isIqual=False,fromT=0, **kwags):
+'''
+def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), dep=10, modelFile='', srcSac='', minSNR=5, isCut=False, maxDist=100000000.0, minDist=0, maxDDist=100000000.0, minDDist=0, isFromO=False, removeP=False, isLoadFv=False, fvD={}, quakeName='', isByQuake=False, specN=40, specThreshold=0.1, isDisp=False, maxCount=-1,plotDir='',isIqual=False,fromT=0,vMax = 6,vMin = 2.0,VMax = 6.0,VMin = 1.5,tailT = 300,thetaE = 10,theta01 = 10, **kwags):
     modelFileO = modelFile
     if len(plotDir)!=0:
         plt.close()
@@ -5474,10 +5580,10 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
                                         maxTheta = 10
                                         if np.random.rand() < 0.01:
                                             pass
-                                        thetaE = max(10, disDegree(minDis, maxD=maxD, maxTheta=maxTheta))
-                                        theta01 = max(10, disDegree(dis01, maxD=maxD, maxTheta=maxTheta))
-                                        thetaE = 10
-                                        theta01 = 10
+                                        #thetaE = max(10, disDegree(minDis, maxD=maxD, maxTheta=maxTheta))
+                                        #theta01 = max(10, disDegree(dis01, maxD=maxD, maxTheta=maxTheta))
+                                        #thetaE = 10
+                                        #theta01 = 10
                                         if np.abs((az[0] - az[1] + thetaE) % 360) > 2 * thetaE:
                                             pass
                                         else:
@@ -5512,7 +5618,6 @@ def corrSacsL(d, sacsL, sacNamesL, dura=0, M=np.array([0, 0, 0, 0, 0, 0, 0]), de
             plt.savefig(plotDir+quakeName+'.jpg',dpi=300)
             plt.close()
         return corrL
-
 class fkcorr:
 
     def __init__(self, config=config()):

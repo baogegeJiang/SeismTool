@@ -1,7 +1,4 @@
 #coding=utf
-from re import M
-from pkg_resources import safe_version
-from numpy.lib.npyio import save
 import obspy 
 import numpy as np
 from obspy import UTCDateTime,read,Trace,Stream
@@ -13,7 +10,6 @@ import time
 from time import ctime
 from glob import glob
 from numba import jit
-from tensorflow.python.ops.variable_scope import enable_resource_variables
 from ..mathTool.distaz import DistAz
 from .dataLib import filePath
 from ..mathTool.mathFunc import rotate,getDetec

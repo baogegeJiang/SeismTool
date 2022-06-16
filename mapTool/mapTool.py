@@ -5,9 +5,9 @@ from netCDF4 import Dataset
 import os
 from scipy import interpolate as interp
 from matplotlib import cm
-from lxml import etree
+#from lxml import etree
 #from pykml.factory import KML_ElementMaker as KML
-from pycpt.load import gmtColormap as cpt2cm
+#from pycpt.load import gmtColormap as cpt2cm
 from ..mathTool.distaz import DistAz
 from ..mathTool.mathFunc_bak import R as mathR
 from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
@@ -143,6 +143,7 @@ def gmtColormap(cptfile, name=None):
     """
     with open(cptfile, 'r') as cptf:
         return gmtColormap_openfile(cptf, name=name)
+cpt2cm = gmtColormap
 cmap = cpt2cm(os.path.dirname(__file__)+'/../data/temperatureInv')
 cmapNoGreen = cpt2cm(os.path.dirname(__file__)+'/../data/no_green.cpt').reversed()
 cmapTemp = cpt2cm(os.path.dirname(__file__)+'/../data/temperature')

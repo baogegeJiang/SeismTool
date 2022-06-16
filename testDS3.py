@@ -1,13 +1,11 @@
-from tkinter import TRUE
-
-from sklearn.manifold import trustworthiness
-from numpy import False_, True_
-from matplotlib import colors,cm
+from matplotlib import colors
 from SeismTool.plotTool import figureSet
-
+from SeismTool.SurfDisp.src.disp import calDisp as surf96
+from time import time
 figureSet.init('ZGKX')
-staPairStr='HL.BEL_HL.NEH HL.DNI_NM.JIN HE.KAB_JL.CBT HL.NZN_NM.BAC'
-isCheckSignal= True
+staPairStr='HL.FUY_HL.XUK HE.LOH_NM.BAC LN.DDO_NM.MDG HL.FUY_LN.FKU'
+onlySta=False
+isCheckSignal= False
 isGenerate = False
 findBad = False
 isCheckBad=False
@@ -27,12 +25,13 @@ N=3
 isHalf=2
 isRePick=False
 doRePick=False
-thresholdSingle=0.020
-thresholdAverage=0.015
-thresholdSingle_syn=0.015
+thresholdSingle=0.015
+thresholdAverage=0.010
+thresholdSingle_syn=0.010
 isSyn=True
 isTestSyn=True
 isRunSyn=True
+isRunMFT = True
 isNoise=True
 isTestMFT=True
 isAverage=False
@@ -46,18 +45,19 @@ if False:
     isAn= True
     isSurfNet = True
     isConv=  False
-    doL=[1]
-    isPredict= True
+    doL=[1,2]
+    isPredict= False
     isCheck=True
     isStaCheck = False
     N=1
     isHalf= False
     isRePick=False
     doRePick=False
-    isTestSyn=False
+    isTestSyn=True
     isRunSyn=False
     isNoise=True
     isTestMFT=False
+    isRunMFT = False
 if False:
     isCheckSignal=False
     isGenerate = False
@@ -174,8 +174,8 @@ if isCheckSignal:
     validCount = 0
     getCount =0
     fvCount=0
-    rThreshold=1e-3
-    F0 = 1/((10**np.arange(0,1.00001,1/49))*15)
+    rThreshold=5e-4
+    F0 = 1/((14**np.arange(0,1.00001,1/49))*10)
     for corr in corrL:
         xx = corr.xx
         modelFile = corr.modelFile
@@ -189,7 +189,7 @@ if isCheckSignal:
             MAXT  = travel*3
             f =f[f>1/MAXT]
             f =f[f>=1/160]
-            f =f[f<=1/10]
+            f =f[f<=1/8]
             #A=np.abs(corr.getA(f))/f**0.5
             #f = f[A>rThreshold]
             if len(f)==0:
@@ -207,13 +207,13 @@ if isCheckSignal:
                 continue
             getCount+=1
             print(validCount/allCount,getCount/fvCount,fvCount/len(fvd))
-    saveDir='../models/New/Pairs_pvtsel_5Hz_-384-1152-6-2-V9000/'
+    saveDir='../models/New/Pairs_pvtsel_5Hz_-384-1152-6-2-V60000/'
     run.d.saveFVD(fvDGet,sta,q,saveDir,'pair',isOverwrite=True)
     #exit()
 
 if findBad:
     minCount=4
-    rThreshold=1e-3
+    rThreshold=5e-4
     T = 10**np.arange(0,1.000001,1/49)*15
     print('checking')
     R = run.run(run.runConfig(run.paraTrainTest))
@@ -357,23 +357,39 @@ if isCheckBad:
     exit()
 
 if isGenerate:
-    litho = d.Litho()
+    glad = d.GLAD()
     f = 1/((200/6)**np.arange(0,1.0001,1/119)*6)
+    f = 1/( 
+        14**np.arange(-0.1,1.06,1/49)*10
+     )
     #print(1/f)
     #f.sort()
     fvD={}
     count=0
+    allTime =0
     for i in range(0,180,1):
         for j in range(0,360,1):
-            z,vp,vs,rho=litho(i,j)
-            one=d.One(z=z,vp=vp,vs=vs,rho=rho)
-            v = one.getDisp(f,isRand=False)
-            fvD[str(count)]=d.fv([f.copy(),v])
+            z,vp,vs,rho=glad(i,j)
+            ar = 6370-z[0]
+            #one=d.One(z=z,vp=vp,vs=vs,rho=rho)
+            thickness= z[1:]-z[:-1]
+            vp = (vp[1:]+vp[:-1])/2
+            vs = (vs[1:]+vs[:-1])/2
+            rho = (rho[1:]+rho[:-1])/2
+            vp = vp[thickness>0.01]
+            vs = vs[thickness>0.01]
+            rho = rho[thickness>0.01]
+            thickness = thickness[thickness>0.01]
+            sTime = time()
+            v = surf96(thickness, vp, vs,rho, 1/f,mode=1, velocity='phase', flat_earth=True,wave='rayleigh',ar=ar)
+            #F = f.copy()
+            allTime += time()-sTime
+            fvD[str(count)]=d.fv([f[v>0],v[v>0]])
             if count==0:
                 print(1/f,'\n',v)
             count+=1
             if count%100==0:
-                print('############',count,i,j)
+                print('############',count,i,j,allTime/count)
                 #print(v)
             if count%1000==0:
                 print(v[(1/f>9)*(1/f<15)])
@@ -392,15 +408,25 @@ resDir = R.config.para['resDir']
 R.config.para['resDir']=resDir
 
 if isNew:
-    R.config.para['pairDirL'][0]='../models/New/Pairs_pvtsel_5Hz_-384-1152-6-2-V9000/'
+    R.config.para['pairDirL'][0]='../models/New/Pairs_pvtsel_5Hz_-384-1152-6-2-V60000/'
 if not os.path.exists(R.config.para['matH5']):
     R.calCorrOneByOne()
 
 #R.calCorrOneByOne()
+#R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=True,isDisQC=False,isAll=True,isSave=False,isAllTrain=False,isControl=True,isCheck=True,isHalf=True,isBad=True,isSyn=False)#True
+
 R.loadCorr(isLoad=True,isLoadFromMat=True,isGetAverage=True,isDisQC=isDisQC,isAll=True,isSave=(isSave and isSurfNet),isAllTrain=False,isControl=isControl,isCheck=isCheck,isHalf=isHalf,isBad=isBad,isSyn=isSyn)#True
 R.getDisCover()
-specDis=True
-stdDis =True
+if onlySta:
+    resDir=resDir0[:-1]+('_%d/'%0)
+    R.config.para['resDir']=resDir
+    run.run.trainMul(R,isAverage=isAverage,isRand=True,isShuffle=True,isRun=False,isAll=isAll,isNoise=isNoise,isAllTrainSyn=False)
+    R.plotStaDis(staPairStr=staPairStr)
+    R.plotStaDis(isAll=True,isAllQuake=True)
+    R.plotTrainDis(isSyn=isSyn)
+    exit()
+specDis=False
+stdDis =False
 if specDis:
     f=1/R.config.para['T']
     specA=[]
@@ -447,7 +473,7 @@ if stdDis:
     plt.savefig('predict/stdA.jpg',dpi=300)
     #exit()
 
-    
+para = R.config.para    
 resDirSynSave = 'predict/'+resDir0.split('/')[-2]+'/fvAllSynV3/'
 resDirSynH5 = 'predict/'+resDir0.split('/')[-2]+'/corrLSynV8.h5'
 if isTestSyn:
@@ -464,7 +490,7 @@ if isTestSyn:
                 corr.isSyn=False
                 corrLSyn.append(corr)
                 key = random.choice(synKeys) 
-                corr.xx,fv = corr.synthetic(R.fvDSynTest[key],rThreshold=1e-3,isFv=True,F=1/R.config.para['T'],disRandA=run.disRandA,disMaxR=run.disMaxR,isNoise=isNoise)
+                corr.xx,fv = corr.synthetic(R.fvDSynTest[key],rThreshold=5e-4,isFv=True,F=1/R.config.para['T'],disRandA=run.disRandA,disMaxR=run.disMaxR,isNoise=isNoise)
                 corr.af=[]
                 fvDSyn[corr.modelFile]=fv
                 count+=1
@@ -501,15 +527,15 @@ if isSurfNet:
                 fvD0    = R.fvD0
                 resDir=R.config.para['resDir']
                 R.config.para['resDir']=resDir[:-1]+'_syn/'
-                fvTest = R.fvTest
                 if isRunSyn:
                     R.corrL = corrLSyn
                     R.calFromCorrL(isRand=False)
                 R.fvD0 = fvDSyn
                 run.run.loadRes(R,isCoverQC=isCoverQC)
-                #R.fvTest = R.fvTest+R.fvValid+R.fvTrain
+                fvTest = R.fvTest
+                R.fvTest = R.fvTest+R.fvValid+R.fvTrain
                 run.run.analyRes(R,thresholdAverage=thresholdAverage, thresholdSingle=thresholdSingle_syn,format='eps',onlySingle=True,isAverage=False)
-                #R.fvTest = fvTest
+                R.fvTest = fvTest
                 R.corrL = corrLOri
                 R.fvD0  = fvD0
                 #corrLSyn = 0
@@ -588,13 +614,15 @@ if isSurfNet:
                 fvD0    = R.fvD0
                 resDir=R.config.para['resDir']
                 R.config.para['resDir']=resDir[:-1]+'_syn/'
-                fvTest = R.fvTest
                 if isRunSyn:
                     R.corrL = corrLSyn
                     R.calFromCorrL(isRand=False)
                 R.fvD0 = fvDSyn
                 run.run.loadRes(R,isCoverQC=isCoverQC)
+                fvTest = R.fvTest
+                R.fvTest = R.fvTest+R.fvValid+R.fvTrain
                 run.run.analyRes(R,thresholdAverage=thresholdAverage, thresholdSingle=thresholdSingle_syn,format='eps',onlySingle=True,isAverage=False)
+                R.fvTest = fvTest
                 R.corrL = corrLOri
                 R.fvD0  = fvD0
                 gc.collect()
@@ -761,12 +789,11 @@ if isTestMFT:
         corrLOri = R.corrL
         fvD0    = R.fvD0
         R.config.para['resDir']=resDir0[:-1]+'_tra_syn/'
-        fvTest = R.fvTest
         para = R.config.para
         f = 1/para['T']
         fvGetSyn={}
         fvRef = R.fvDAverage['models/prem']
-        if isRunSyn:
+        if isRunMFT:
             R.corrL = corrLSyn
             count=0
             for corr in R.corrL:
@@ -779,6 +806,7 @@ if isTestMFT:
             run.d.saveFVD(fvGetSyn,R.stations,R.quakes,R.config.para['resDir'],'pair',isOverwrite=True)
         R.fvD0 = fvDSyn
         run.run.loadRes(R,isCoverQC=isCoverQC)
+        fvTest = R.fvTest
         R.fvTest = R.fvTest+R.fvValid+R.fvTrain
         run.run.analyRes(R,thresholdAverage=thresholdAverage, thresholdSingle=thresholdSingle_syn,format='eps',onlySingle=True,isAverage=False)
         R.fvTest = fvTest
@@ -819,9 +847,9 @@ if isConv:
     if isHalf!=False:
         M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_?_tra_rand_half/resOnTrainTestValid_%.3f'%thresholdAverage)] )
         run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_tra_rand_half',method='conventional_rand_half',isStd=False,isRand='F')
+if isTestMFT:
     M,S=run.calData([run.loadResData(file) for file in glob(saveDir+'_tra_syn/resOnTrainTestValid_%.3f'%thresholdAverage)] )
     run.output(M,S,saveDir+'_0/resOnTrainTestValid_surfNet_tra_syn',method='conventional_rand',isStd=False,isRand='F')
-
 import obspy
 from glob import glob
 from SeismTool.io import seism
