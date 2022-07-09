@@ -191,7 +191,7 @@ def getDetec(x, minValue=0.2, minDelta=200):
 def matTime2UTC(matTime,time0=719529):
     return (matTime-time0)*86400
 
-@jit(int64(float32[:],float32,int64,int64,float32[:]))
+@jit#(int64(float32[:],float32,int64,int64,float32[:]))
 def cmax(a,tmin,winL,laout,aM):
     i=0 
     while i<laout:

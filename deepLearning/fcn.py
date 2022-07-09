@@ -1,10 +1,12 @@
 from posixpath import dirname
 from re import X
+
+from torch import dtype, where
 from tensorflow import keras
 from tensorflow.keras import  Model
 from tensorflow.keras.layers import Input, MaxPooling2D,\
   AveragePooling2D,Conv2D,Conv2DTranspose,concatenate,\
-  Dropout, Dense,Softmax,Conv1D,Reshape,DenseFeatures,LayerNormalization,UpSampling2D,UpSampling1D,Multiply,SeparableConv2D,SeparableConv1D,DepthwiseConv2D,Permute
+  Dropout, Dense,Softmax,Conv1D,Reshape,DenseFeatures,LayerNormalization,UpSampling2D,UpSampling1D,Multiply,SeparableConv2D,SeparableConv1D,DepthwiseConv2D,Permute,Flatten
 from tensorflow.keras.layers import BatchNormalization
 from.layer import MBatchNormalization
 from tensorflow.python.keras.layers import Layer, Lambda
@@ -35,7 +37,221 @@ import gc
 from ..plotTool import figureSet
 from numba import jit
 import numexpr as ne
+from tensorflow.keras import mixed_precision
+from tensorflow import signal as TS
+import tensorflow as tf
+from tensorflow.python.keras import initializers
+def complex_initializer(base_initializer):
+    f = base_initializer()
+
+    def initializer(*args, dtype=tf.complex64, **kwargs):
+        real = f(*args, **kwargs)
+        imag = f(*args, **kwargs)
+        return tf.complex(real, imag)
+
+    return initializer
+#complex_initializer(tf.random_normal_initializer)
+class FFTConv2D(tf.keras.layers.Layer):
+    def __init__(self,depth_multiplier=1,axis=1,initializer='glorot_uniform',**kwargs):
+        super(FFTConv2D,self).__init__(**kwargs)
+        self.depth_multiplier = depth_multiplier
+        self.axis=axis
+        self.initializer = initializers.get(initializer)
+    def build(self,input_shape):
+        w_lenth=int(input_shape[self.axis] / 2 + 1)
+        shape=[1,1,1,1]
+        CN = input_shape[-1]*self.depth_multiplier
+        shape[self.axis]=CN
+        shape[-1]=w_lenth
+        shape[-1]=input_shape[self.axis]
+        self.kernel = self.add_weight(
+        shape=shape,
+        initializer=self.initializer,
+        name='depthwise_kernel')
+        '''
+        self.kernelR = self.add_weight(
+        shape=shape,
+        initializer=self.initializer,
+        name='depthwise_kernelR')
+        #self.kernelI = self.add_weight(
+        shape=shape,
+        initializer=self.initializer,
+        name='depthwise_kernelI')
+        '''
+    def call(self,inputs,training=None):
+        iL=[0,1,2,3]
+        iL[self.axis]=3
+        iL[-1]=self.axis
+        inputs = tf.transpose(inputs,iL)
+        #spec =  TS.rfft(inputs)
+        #spec =  TS.rfft(inputs)
+        spec =  TS.rfft(inputs)*TS.rfft(self.kernel)#spec*(self.kernelR+1j*self.kernelI)
+        output = TS.irfft(spec)
+        return tf.transpose(output,iL)
+    def get_config(self):
+        config = super(FFTConv2D, self).get_config()
+        config['depth_multiplier'] = self.depth_multiplier
+        config['initializer'] = initializers.serialize(self.initializer)
+        config['axis'] = self.axis
+        return config
+
+class FFTConv2DRI(tf.keras.layers.Layer):
+    def __init__(self,depth_multiplier=1,axis=1,initializer='glorot_uniform',**kwargs):
+        super(FFTConv2DRI,self).__init__(**kwargs)
+        self.depth_multiplier = depth_multiplier
+        self.axis=1
+        self.initializer =initializers.get(initializer)   
+    def build(self,input_shape):
+        w_lenth=int(input_shape[self.axis] / 2 + 1)
+        shape=[1,1,1,1,1]
+        #CN = input_shape[-1]*self.depth_multiplier
+        shape[self.axis]=input_shape[-1]
+        shape[self.axis+1]=self.depth_multiplier
+        shape[-1]=w_lenth
+        self.kernelR = self.add_weight(
+        shape=shape,
+        initializer=self.initializer,
+        name='depthwise_kernelR')
+        self.kernelI = self.add_weight(
+        shape=shape,
+        initializer=self.initializer,
+        name='depthwise_kernelI')
+    def call(self,inputs,training=None):
+        iL=[0,1,2,3]
+        iL[self.axis]=3
+        iL[-1]=self.axis
+        inputs = tf.transpose(inputs,iL)
+        #spec =  TS.rfft(inputs)
+        #spec =  TS.rfft(inputs)
+        spec = TS.rfft(inputs)
+        spec =  tf.reshape(spec,[-1,spec.shape[1],1,spec.shape[2],spec.shape[3]])*tf.complex(self.kernelR, self.kernelI) #spec*(self.kernelR+1j*self.kernelI)
+        output = TS.irfft(spec)
+        #print(output.shape)
+        return tf.transpose(tf.reshape(output,[-1,output.shape[1]*output.shape[2],output.shape[3],output.shape[-1]]),iL)
+    def get_config(self):
+        config = super(FFTConv2DRI, self).get_config()
+        config['depth_multiplier'] = self.depth_multiplier
+        config['initializer'] = initializers.serialize(self.initializer)
+        config['axis'] = self.axis
+        return config
+
+class FFTConv2DFS(tf.keras.layers.Layer):
+    def __init__(self,depth_multiplier=1,axis=1,initializer='glorot_uniform',**kwargs):
+        super(FFTConv2DFS,self).__init__(**kwargs)
+        self.depth_multiplier = depth_multiplier
+        self.axis=1
+        self.initializer =initializers.get(initializer)   
+    def build(self,input_shape):
+        w_length=int(input_shape[self.axis] / 2 + 1)
+        shape=[1,1,1,1,1]
+        #CN = input_shape[-1]*self.depth_multiplier
+        shape[self.axis]=1
+        shape[self.axis+1]=1
+        shape[-1]=w_length
+        shapeP=[1,1,1,1,1]
+        #CN = input_shape[-1]*self.depth_multiplier
+        shapeP[self.axis]=input_shape[-1]
+        shapeP[self.axis+1]=self.depth_multiplier
+        shapeP[-1]=1
+        mul=2000
+        self.FR = self.add_weight(
+        shape=shapeP,
+        initializer= tf.keras.initializers.RandomUniform(0,0.1*mul),#RandomUniform(0, 0.5),
+        constraint=tf.keras.constraints.NonNeg(),
+        name='depthwise_FR')
+        self.SR = self.add_weight(
+        shape=shapeP,
+        initializer=tf.keras.initializers.RandomUniform(0,0.1*mul),
+        constraint=tf.keras.constraints.NonNeg(),
+        name='depthwise_SR')
+        self.freqL = self.add_weight(trainable=False,shape=shape,name='freqL') #
+        #self.freqL. #
+        K.set_value(self.freqL,(np.arange(w_length)/w_length*0.5).reshape(shape)*mul)
+    def call(self,inputs,training=None):
+        iL=[0,1,2,3]
+        iL[self.axis]=3
+        iL[-1]=self.axis
+        inputs = tf.transpose(inputs,iL)
+        #spec =  TS.rfft(inputs)
+        #spec =  TS.rfft(inputs)
+        spec = TS.rfft(inputs)
+        spec =  tf.reshape(spec,[-1,spec.shape[1],1,spec.shape[2],spec.shape[3]])*tf.complex(K.exp(-(self.freqL-self.FR)**2/(self.SR**2+1e-7)),0. ) #spec*(self.kernelR+1j*self.kernelI)
+        output = TS.irfft(spec)
+        #print(output.shape)
+        return tf.transpose(tf.reshape(output,[-1,output.shape[1]*output.shape[2],output.shape[3],output.shape[-1]]),iL)
+    def get_config(self):
+        config = super(FFTConv2DFS, self).get_config()
+        config['depth_multiplier'] = self.depth_multiplier
+        config['initializer'] = initializers.serialize(self.initializer)
+        config['axis'] = self.axis
+        return config
+
+class FFTConv2DFS_(tf.keras.layers.Layer):
+    def __init__(self,depth_multiplier=1,axis=1,initializer='glorot_uniform',**kwargs):
+        super(FFTConv2DFS,self).__init__(**kwargs)
+        self.depth_multiplier = depth_multiplier
+        self.axis=1
+        self.initializer =initializers.get(initializer)   
+    def build(self,input_shape):
+        w_length=int(input_shape[self.axis] / 2 + 1)
+        shape=[1,1,1,1,1]
+        #CN = input_shape[-1]*self.depth_multiplier
+        shape[self.axis]=1
+        shape[self.axis+1]=1
+        shape[-1]=w_length
+        shapeP=[1,1,1,1,1]
+        #CN = input_shape[-1]*self.depth_multiplier
+        shapeP[self.axis]=input_shape[-1]
+        shapeP[self.axis+1]=self.depth_multiplier
+        shapeP[-1]=1
+        self.FR = self.add_weight(
+        shape=shapeP,
+        initializer= tf.keras.initializers.RandomUniform(0,0.5),#RandomUniform(0, 0.5),
+        constraint=tf.keras.constraints.NonNeg(),
+        name='depthwise_FR')
+        self.SR = self.add_weight(
+        shape=shapeP,
+        initializer=tf.keras.initializers.RandomUniform(0,0.5),
+        constraint=tf.keras.constraints.NonNeg(),
+        name='depthwise_SR')
+        self.FI = self.add_weight(
+        shape=shapeP,
+        initializer= tf.keras.initializers.RandomUniform(0,0.5),#RandomUniform(0, 0.5),
+        constraint=tf.keras.constraints.NonNeg(),
+        name='depthwise_FI')
+        self.SI = self.add_weight(
+        shape=shapeP,
+        initializer=tf.keras.initializers.RandomUniform(0,0.5),
+        constraint=tf.keras.constraints.NonNeg(),
+        name='depthwise_SI')
+        self.freqL = self.add_weight(trainable=False,shape=shape,name='freqL') #
+        #self.freqL. #
+        K.set_value(self.freqL,(np.arange(w_length)/w_length*0.5).reshape(shape))
+    def call(self,inputs,training=None):
+        iL=[0,1,2,3]
+        iL[self.axis]=3
+        iL[-1]=self.axis
+        inputs = tf.transpose(inputs,iL)
+        #spec =  TS.rfft(inputs)
+        #spec =  TS.rfft(inputs)
+        spec = TS.rfft(inputs)
+        spec =  tf.reshape(spec,[-1,spec.shape[1],1,spec.shape[2],spec.shape[3]])*tf.complex(K.exp(-(self.freqL-self.FR)**2/(self.SR**2+1e-7)), K.exp(-(self.freqL-self.FI)**2/(self.SI**2+1e-7))) #spec*(self.kernelR+1j*self.kernelI)
+        output = TS.irfft(spec)
+        #print(output.shape)
+        return tf.transpose(tf.reshape(output,[-1,output.shape[1]*output.shape[2],output.shape[3],output.shape[-1]]),iL)
+    def get_config(self):
+        config = super(FFTConv2DFS, self).get_config()
+        config['depth_multiplier'] = self.depth_multiplier
+        config['initializer'] = initializers.serialize(self.initializer)
+        config['axis'] = self.axis
+        return config
+
+
+
+
 K.set_floatx('float32')
+#policy = mixed_precision.Policy('mixed_float16')
+#mixed_precision.set_global_policy(policy)
 # this module is to construct deep learning network
     
 def defProcess():
@@ -157,7 +373,8 @@ class lossFuncSoft__:
                          (maxChannel*0.975+0.025)*maxSample,\
                                                                          )
 isUnlabel=1#1
-W0=0.04
+W0=0.05
+W0FT=0.02
 def getW(T,W0):
     return W0
     if T<20:
@@ -201,9 +418,27 @@ class lossFuncSoft:
                          (maxChannel*1+isUnlabel*self.w*(1-maxChannel)*maxSample+(1-maxSample)),\
                                                                          )
 
+class lossFuncMSEMul:
+    def __init__(self,N=10):
+        self.__name__ = 'lossFuncSoft'
+        self.N=10
+    def __call__(self,y0,yout0):
+        #y1 = 1-y0
+        #yout1 = 1-yout0
+        #yout0 = K.clip(yout0,1e-7,1)
+        #yout1 = K.clip(yout1,1e-7,1)
+        return K.mean(\
+                         (\
+                             (y0-yout0[:,])**2
+                                                                     )
+                                                                         )
+
 class lossFuncMSE:
     def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=2048):
         self.__name__ = 'lossFuncSoft'
+        #disRandA=1/15
+        #disMaxR=1
+        self.focusChannel=-1
         self.w = K.ones([1,maxCount,1,len(TL)])
         w = np.ones([1,maxCount,1,len(TL)])*0.05
         for i in range(len(TL)):
@@ -222,13 +457,131 @@ class lossFuncMSE:
         maxChannel  = (K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2
         maxSample   = K.max(maxChannel,axis=3, keepdims=True)
         return K.mean(\
-                         (\
-                             (y0-yout0)**2
-                                                                     )*\
-                         (maxChannel*1+isUnlabel*self.w*(1-maxChannel)*maxSample+(1-maxSample)),\
-                                                                         )
+            (
+                        (\
+                            (y0-yout0)**2
+                                                                    )*\
+                        (maxChannel*1+isUnlabel*self.w*(1-maxChannel)*maxSample+(1-maxSample))\
+                                                                        )
+                                                                        )
+        if self.focusChannel == -1:
+            return K.mean(\
+                (
+                            (\
+                                (y0-yout0)**2
+                                                                        )*\
+                            (maxChannel*1+isUnlabel*self.w*(1-maxChannel)*maxSample+(1-maxSample))\
+                                                                            )
+                                                                            )
+        else:
+            return K.mean(\
+                (
+                            (\
+                                (y0-yout0)**2
+                                                                        )*\
+                            (maxChannel*1+isUnlabel*self.w*(1-maxChannel)*maxSample+(1-maxSample))\
+                                                                            )[:,:,:,self.focusChannel:self.focusChannel+1]
+                                                                            )                                     
+
+class lossFuncMSEFT:
+    def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=2048):
+        self.__name__ = 'lossFuncSoft'
+        #disRandA=1/15
+        #disMaxR=1
+        #K.set_value(self.w,w)
+    def __call__(self,y0,yout0):
+        #y1 = 1-y0
+        #yout1 = 1-yout0
+        #yout0 = K.clip(yout0,1e-7,1)
+        #yout1 = K.clip(yout1,1e-7,1)
+        maxChannel  = (K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2
+        maxSample   = K.max(maxChannel,axis=2, keepdims=True)
+        return K.mean(\
+            (
+                        (\
+                            (y0*(K.sign(y0+0.01)+1)/2-yout0)**2
+                                                                    )*\
+                        (maxChannel*1+isUnlabel*W0FT*(1-maxChannel)*maxSample*(K.sign(y0+0.01)+1)/2+(1-maxSample))\
+                                                                        )                                                                     )
+class lossFuncMSEFTNP:
+    def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=2048):
+        self.__name__ = 'lossFuncSoft'
+        #disRandA=1/15
+        #disMaxR=1
+        #K.set_value(self.w,w)
+    def __call__(self,y0,yout0):
+        #y1 = 1-y0
+        #yout1 = 1-yout0
+        #yout0 = K.clip(yout0,1e-7,1)
+        #yout1 = K.clip(yout1,1e-7,1)
+        return callMSEFT(y0,yout0)
+class lossFuncSoftFT:
+    def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=2048):
+        self.__name__ = 'lossFuncSoft'
+        #disRandA=1/15
+        #disMaxR=1
+        #K.set_value(self.w,w)
+    def __call__(self,y0,yout0):
+        #y1 = 1-y0
+        #yout1 = 1-yout0
+        #yout0 = K.clip(yout0,1e-7,1)
+        #yout1 = K.clip(yout1,1e-7,1)
+        maxChannel  = (K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2
+        maxSample   = K.max(maxChannel,axis=2, keepdims=True)
+        Y0 = y0*(K.sign(y0+0.01)+1)/2
+        return K.mean(\
+            (
+                        (\
+                            -Y0*K.log(1e-7+yout0)-(1-Y0)*K.log(1e-7+1-yout0)
+                                                                    )*\
+                        (maxChannel*1+isUnlabel*W0FT*(1-maxChannel)*maxSample*(K.sign(y0+0.01)+1)/2+(1-maxSample))\
+                                                                        )                                                                     )
+class lossFuncSoftFTNP:
+    def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=2048):
+        self.__name__ = 'lossFuncSoft'
+        #disRandA=1/15
+        #disMaxR=1
+        #K.set_value(self.w,w)
+    def __call__(self,y0,yout0):
+        #y1 = 1-y0
+        #yout1 = 1-yout0
+        #yout0 = K.clip(yout0,1e-7,1)
+        #yout1 = K.clip(yout1,1e-7,1)
+        return callSoftFT(y0,yout0)
+class lossFuncMSE_:
+    def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=2048):
+        self.__name__ = 'lossFuncSoft'
+        #disRandA=1/15
+        #disMaxR=1
+        self.w = K.ones([1,maxCount,1,len(TL)])
+        w = np.ones([1,maxCount,1,len(TL)])*0.05
+        for i in range(len(TL)):
+            i0 = int(TL[i]/disMaxR/delta*(1+randA))
+            i1 = min(int(TL[i]/disRandA/delta*(1-randA)),maxCount)
+            w[0,:,0,i]=getW(TL[i],W0)
+            #self.w[0,:,0,i]=10/TL[i]
+            w[0,:i0,0,i]=0
+            w[0,i1:,0,i]=0
+        K.set_value(self.w,w)
+    def __call__(self,y0,yout0):
+        #y1 = 1-y0
+        #yout1 = 1-yout0
+        #yout0 = K.clip(yout0,1e-7,1)
+        #yout1 = K.clip(yout1,1e-7,1)
+        CW=yout0[1]
+        yout0     =yout0[0]
+        maxChannel  = (K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2
+        maxSample   = K.max(maxChannel,axis=3, keepdims=True)
+        return K.mean(\
+                (
+                            (\
+                                (y0-yout0)**2
+                                                                        )*\
+                            (maxChannel*1+isUnlabel*self.w*(1-maxChannel)*maxSample+(1-maxSample))\
+                                                                            )*CW
+                                                                            )        
 class lossFuncMSEO:
-    def __init__(self,):
+    def __init__(self,**kwags):
         self.__name__ = 'lossFuncSoft'
     def __call__(self,y0,yout0):
         #y1 = 1-y0
@@ -237,7 +590,7 @@ class lossFuncMSEO:
         #yout1 = K.clip(yout1,1e-7,1)
         return K.mean((y0-yout0)**2)
 class lossFuncMSENPO:
-    def __init__(self,):
+    def __init__(self,**kwags):
         self.__name__ = 'lossFuncSoft'
     def __call__(self,y0,yout0):
         #y1 = 1-y0
@@ -249,6 +602,8 @@ class lossFuncMSENP:
     def __init__(self,w=1,randA=0.05,disRandA=1/12,disMaxR=4,TL=[],delta=1,maxCount=2048):
         K=np
         self.__name__ = 'lossFuncSoft'
+        #disRandA=1/15
+        #disMaxR=1
         self.w = K.ones([1,maxCount,1,len(TL)])
         w = np.ones([1,maxCount,1,len(TL)])*0.05
         for i in range(len(TL)):
@@ -355,6 +710,29 @@ def callMSE(y0,yout0,w,isUnlabel=isUnlabel):
     isUnlabel=np.array(isUnlabel,dtype=np.float32)
     return ne.evaluate('(y0-yout0)**2*(maxChannel + isUnlabel*w*(1-maxChannel)*maxSample+(1-maxSample) )').mean()
 
+def callSoftFT(y0,yout0,isUnlabel=isUnlabel):
+    K=np
+    #y1 = 1-y0
+    #yout1 = 1-yout0
+    #yout0 = K.clip(yout0,1e-7,1)
+    #yout1 = K.clip(yout1,1e-7,1)
+    maxChannel  = ((K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2)
+    maxSample   = K.max(maxChannel,axis=2, keepdims=True)
+    isUnlabel=np.array(isUnlabel,dtype=np.float32)
+    Y0 = np.where(y0>-0.01,y0,0)
+    return ne.evaluate('(-Y0*log(1e-7+yout0)-(1-Y0)*log(1e-7+1-yout0))*(maxChannel + where(y0>-0.01,1,0)*isUnlabel*W0FT*(1-maxChannel)*maxSample+(1-maxSample) )').mean()
+
+def callMSEFT(y0,yout0,isUnlabel=isUnlabel):
+    K=np
+    #y1 = 1-y0
+    #yout1 = 1-yout0
+    #yout0 = K.clip(yout0,1e-7,1)
+    #yout1 = K.clip(yout1,1e-7,1)
+    maxChannel  = ((K.sign(K.max(y0,axis=1, keepdims=True)-0.1)+1)/2)
+    maxSample   = K.max(maxChannel,axis=2, keepdims=True)
+    isUnlabel=np.array(isUnlabel,dtype=np.float32)
+    return ne.evaluate('(where(y0>-0.01,y0,0)-yout0)**2*(maxChannel + where(y0>-0.01,1,0)*isUnlabel*W0FT*(1-maxChannel)*maxSample+(1-maxSample) )').mean()
+
 
 def call_(y0,yout0,w,isUnlabel=isUnlabel):
     K=np
@@ -401,7 +779,7 @@ def hitRate(yin,yout,maxD=10):
     return hitCount/count
 
 up=-1
-def rateNp(yinPos,youtPos,yinMax,youtMax,maxD=0.03,K=np,minP=0.5,fromI=-384*4):
+def rateNp(yinPos,youtPos,yinMax,youtMax,maxD=0.03,K=np,minP=0.5,fromI=-384*2):
     threshold = (yinPos+fromI)*maxD
     threshold[threshold<up]=up
     d0      = youtPos-yinPos
@@ -446,7 +824,7 @@ def printRes_old_(yin, yout,resL=globalFL,isUpdate=False):
         strL+='\n'+('-'*len(tmpStr))
     print(strL)
     return strL
-def printRes_old(yin, yout,resL=globalFL,isUpdate=False,N=10):
+def printRes_old(yin, yout,resL=globalFL,isUpdate=False,N=10,**kwags):
     #       0.01  0.8  0.36600 0.9996350
     strL   = 'maxD   minP hitRate rightRate F mean  std old'
     strfmt = '\n%5.3f&%3.1f&%7.5f&%7.5f&%7.5f&%7.3f&%7.3f'
@@ -455,7 +833,7 @@ def printRes_old(yin, yout,resL=globalFL,isUpdate=False,N=10):
     for maxD in [0.03,0.015,0.01]:
         for minP in [0.5,0.6,0.8]:
             hitRate,rightRate,F,mean,std = rateNp(\
-                yinPos,youtPos,yinMax,youtMax,maxD=maxD,minP=minP)
+                yinPos,youtPos,yinMax,youtMax,maxD=maxD,minP=minP,**kwags)
             tmpStr=strfmt%(maxD, minP, hitRate, rightRate,F,mean*100,std*100)
             strL += tmpStr
             if maxD == 0.015 and minP==0.5 and (not np.isnan(F)) and isUpdate:
@@ -1679,8 +2057,8 @@ def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV2(config, onlyLevel=-10
     dConvL  = [None for i in range(depth+1)]
     last    = inputs
     upL  = [None for i in range(depth+1)]
-    momentum=0.995
-    renorm_momentum=0.995
+    momentum=0.95
+    renorm_momentum=0.95
     renorm = False
     for i in range(depth-1):
         name = 'CONV'
@@ -1732,6 +2110,591 @@ def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV2(config, onlyLevel=-10
     if onlyLevel>-100:
         outputs = outputsL[onlyLevel]
     return inputs,outputs
+def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    BNA = -1
+    inputs  = Input(config.inputSize,name='inputs')
+
+    depth   =  len(config.featureL)
+    convL   = [None for i in range(depth+1)]
+    dConvL  = [None for i in range(depth+1)]
+    last    = inputs
+    upL  = [None for i in range(depth+1)]
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        if i >0:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=2)(last)
+        else:
+            #last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=50)(last)
+            wave = DepthwiseConv2D(kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'_wave_0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=50)(last[:,:,:,:1])
+            last = K.concatenate([wave,last[:,:,:,1:]],axis=-1)
+            last = Conv2D(config.featureL[i],kernel_size=(1,1),strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i])(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        convL[i] =last
+        stride= config.strideL[i]
+        if stride[0]>1:
+            last = last[:,::stride[0]]
+        if stride[1]>1:
+            last = last[:,:,::stride[1]]
+    i=depth-1
+    dConvL[i] = last
+    outputsL =[]
+    for i in range(depth-2,-1,-1):
+        name = 'DCONV'
+        for j in range(i,i+1):
+            layerStr='_%d_%d'%(i,j)
+            dConvL[j]  = UpSampling2D(size=config.strideL[j],interpolation="bilinear")(dConvL[j+1])
+            dConvL[j] = SeparableConv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=(1,1),padding='same',name=name+layerStr+'_sc_0',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j],depth_multiplier=1)(dConvL[j])
+            if config.isBNL[j]:
+                dConvL[j] = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN_'+layerStr+'0')(dConvL[j],training=training)
+            dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
+            if i <config.deepLevel and j==0:
+                outputsL.append(SeparableConv2D(config.outputSize[-1],kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name='con_out_1_%d'%i,kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j],activation='sigmoid',depth_multiplier=1)(dConvL[0]))
+    if len(outputsL)>1:
+        outputs = concatenate(outputsL,axis=2,name='lastConc')
+    else:
+        outputs = outputsL[-1]
+        if config.mode == 'p' or config.mode == 's'or config.mode == 'ps':
+            if config.outputSize[-1]>1:
+                outputs = Softmax(axis=3)(outputs) 
+    if onlyLevel>-100:
+        outputs = outputsL[onlyLevel]
+    return inputs,outputs
+def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3MFT(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    BNA = -1
+    inputs  = Input(config.inputSize,name='inputs')
+
+    depth   =  len(config.featureL)
+    convL   = [None for i in range(depth+1)]
+    dConvL  = [None for i in range(depth+1)]
+    last    = inputs
+    upL  = [None for i in range(depth+1)]
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        if i >0:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=2)(last)
+        else:
+            wave = last[:,:,:,:1]
+            dist = last[:,:,:,1:]
+            #last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=50)(last)
+            last = K.concatenate([DepthwiseConv2D(kernel_size=(config.kernelFirstL[j],1),strides=(1,1),padding='same',name=name+layerStr+'_wave_0_%d'%j,kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=1)(wave) for j in range(config.outputSize[-1])]+[dist],axis=-1)
+            last = Conv2D(config.featureL[i],kernel_size=(1,1),strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i])(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        convL[i] =last
+        last=config.poolL[i](pool_size=config.strideL[i],\
+                strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+    i=depth-1
+    dConvL[i] = last
+    outputsL =[]
+    for i in range(depth-2,-1,-1):
+        name = 'DCONV'
+        for j in range(i,i+1):
+            layerStr='_%d_%d'%(i,j)
+            dConvL[j]  = UpSampling2D(size=config.strideL[j],interpolation="bilinear")(dConvL[j+1])
+            dConvL[j] = SeparableConv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=(1,1),padding='same',name=name+layerStr+'_sc_0',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j],depth_multiplier=1)(dConvL[j])
+            if config.isBNL[j]:
+                dConvL[j] = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN_'+layerStr+'0')(dConvL[j],training=training)
+            dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
+            if i <config.deepLevel and j==0:
+                outputsL.append(SeparableConv2D(config.outputSize[-1],kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name='con_out_1_%d'%i,kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j],activation='sigmoid',depth_multiplier=1)(dConvL[0]))
+    if len(outputsL)>1:
+        outputs = concatenate(outputsL,axis=2,name='lastConc')
+    else:
+        outputs = outputsL[-1]
+        if config.mode == 'p' or config.mode == 's'or config.mode == 'ps':
+            if config.outputSize[-1]>1:
+                outputs = Softmax(axis=3)(outputs) 
+    if onlyLevel>-100:
+        outputs = outputsL[onlyLevel]
+    return inputs,outputs
+def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3MFT_norm_(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    BNA = -1
+    K.set_image_data_format(config.data_format)
+    inputs  = Input(config.inputSize,name='inputs')
+    last    = inputs
+    CA = -1
+    TA = 1
+    if config.data_format=='channels_first':
+        last=Permute([3,1,2])(last)
+        CA=1
+        TA=2
+    depth   =  len(config.featureL)
+    convL   = [None for i in range(depth+1)]
+    dConvL  = [None for i in range(depth+1)]
+    last    = inputs
+    upL  = [None for i in range(depth+1)]
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        if i >0:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=2)(last)
+        else:
+            if config.data_format=='channels_first':
+                wave = last[:,:1,:,:]
+                dist = last[:,1:,:,:]
+            else:
+                wave = last[:,:,:,:1]
+                dist = last[:,:,:,1:]
+            #last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=50)(last)
+            wave = K.concatenate([DepthwiseConv2D(kernel_size=(config.kernelFirstL[j],1),strides=(1,1),padding='same',name=name+layerStr+'_wave_0_%d'%j,kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=1)(wave) for j in range(config.outputSize[-1])],axis=CA)
+            wave = wave/(K.std(wave,axis=TA,keepdims=True)+1e-8)
+            last = K.concatenate([wave]+[dist],axis=CA)
+            last = Conv2D(config.featureL[i],kernel_size=(1,1),strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i])(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=CA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        convL[i] =last
+        last=config.poolL[i](pool_size=config.strideL[i],\
+                strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+    i=depth-1
+    dConvL[i] = last
+    outputsL =[]
+    for i in range(depth-2,-1,-1):
+        name = 'DCONV'
+        for j in range(i,i+1):
+            print(i)
+            layerStr='_%d_%d'%(i,j)
+            dConvL[j]  = UpSampling2D(size=config.strideL[j],interpolation="bilinear")(dConvL[j+1])
+            dConvL[j] = SeparableConv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=(1,1),padding='same',name=name+layerStr+'_sc_0',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j],depth_multiplier=1)(dConvL[j])
+            if config.isBNL[j]:
+                dConvL[j] = BatchNormalization(axis=CA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN_'+layerStr+'0')(dConvL[j],training=training)
+            dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=CA,name='conc_'+layerStr+'0')
+            if i <config.deepLevel and j==0:
+                outputsL.append(SeparableConv2D(config.outputSize[-1],kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name='con_out_1_%d'%i,kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j],activation='sigmoid',depth_multiplier=1)(dConvL[0]))
+    if len(outputsL)>1:
+        outputs = concatenate(outputsL,axis=TA+1,name='lastConc')
+    else:
+        outputs = outputsL[-1]
+        if config.mode == 'p' or config.mode == 's'or config.mode == 'ps':
+            if config.outputSize[-1]>1:
+                outputs = Softmax(axis=CA)(outputs) 
+    if onlyLevel>-100:
+        outputs = outputsL[onlyLevel]
+    if config.data_format=='channels_first':
+        outputs = Permute([2,3,1])(outputs)
+    return inputs,outputs
+
+def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3MFT_norm(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    
+    K.set_image_data_format(config.data_format)
+    inputs  = Input(config.inputSize,name='inputs')
+    last    = inputs
+    CA = -1
+    TA=1
+    if config.data_format=='channels_first':
+        last=Permute([3,1,2])(last)
+        CA=1
+        TA =2
+    BNA =CA
+    depth   =  len(config.featureL)
+    convL   = [None for i in range(depth+1)]
+    dConvL  = [None for i in range(depth+1)]
+    upL  = [None for i in range(depth+1)]
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        if i >0:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=2,data_format=config.data_format)(last)
+        else:
+            if config.data_format=='channels_first':
+                wave = last[:,:1,:,:]
+                dist = last[:,1:,:,:]
+            else:
+                wave = last[:,:,:,:1]
+                dist = last[:,:,:,1:]
+            #last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=50)(last)
+            wave = K.concatenate([DepthwiseConv2D(kernel_size=(config.kernelFirstL[j],1),strides=(1,1),padding='same',name=name+layerStr+'_wave_0_%d'%j,kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=1)(wave) for j in range(config.outputSize[-1])],axis=CA)
+            #wave = wave/(K.max(K.abs(wave),axis=TA,keepdims=True)+1e-8)
+            wave = wave/(K.std((wave),axis=TA,keepdims=True)+1e-8)
+            last = K.concatenate([wave]+[dist],axis=CA)
+            last = Conv2D(config.featureL[i],kernel_size=(1,1),strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],data_format=config.data_format)(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        convL[i] =last
+        last=config.poolL[i](pool_size=config.strideL[i],\
+                strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+    i=depth-1
+    dConvL[i] = last
+    outputsL =[]
+    for i in range(depth-2,-1,-1):
+        name = 'DCONV'
+        for j in range(i,i+1):
+            print(i)
+            layerStr='_%d_%d'%(i,j)
+            dConvL[j]  = UpSampling2D(size=config.strideL[j],interpolation="bilinear")(dConvL[j+1])
+            dConvL[j] = SeparableConv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=(1,1),padding='same',name=name+layerStr+'_sc_0',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j],depth_multiplier=1)(dConvL[j])
+            if config.isBNL[j]:
+                dConvL[j] = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN_'+layerStr+'0')(dConvL[j],training=training)
+            dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
+            if i <config.deepLevel and j==0:
+                outputsL.append(SeparableConv2D(config.outputSize[-1],kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name='con_out_1_%d'%i,kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j],activation='sigmoid',depth_multiplier=1)(dConvL[0]))
+    if len(outputsL)>1:
+        outputs = concatenate(outputsL,axis=2,name='lastConc')
+    else:
+        outputs = outputsL[-1]
+        if config.mode == 'p' or config.mode == 's'or config.mode == 'ps':
+            if config.outputSize[-1]>1:
+                outputs = Softmax(axis=3)(outputs) 
+    if onlyLevel>-100:
+        outputs = outputsL[onlyLevel]
+    if config.data_format=='channels_first':
+        outputs = Permute([2,3,1])(outputs)
+    return inputs,outputs
+def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3LK_norm(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    
+    K.set_image_data_format(config.data_format)
+    inputs  = Input(config.inputSize,name='inputs')
+    inputs
+    last    = inputs
+    CA = -1
+    TA=1
+    if config.data_format=='channels_first':
+        last=Permute([3,1,2])(last)
+        CA=1
+        TA =2
+    BNA =CA
+    depth   =  len(config.featureL)
+    convL   = [None for i in range(depth+1)]
+    dConvL  = [None for i in range(depth+1)]
+    upL  = [None for i in range(depth+1)]
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        if i >0:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=2,data_format=config.data_format)(last)
+        else:
+            if config.data_format=='channels_first':
+                wave = last[:,:1,:,:]
+                dist = last[:,1:,:,:]
+            else:
+                wave = last[:,:,:,:1]
+                dist = last[:,:,:,1:]
+            #last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=50)(last)
+            wave = DepthwiseConv2D(kernel_size=(config.kernelFirstL[-1],1),strides=(1,1),padding='same',name=name+layerStr+'_wave_0_%d'%config.outputSize[-1],kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=config.outputSize[-1])(wave)
+            #dist = dist+0
+            dist = DepthwiseConv2D(kernel_size=(1,1),strides=(1,1),padding='same',name=name+layerStr+'_dist_0_%d'%config.outputSize[-1],kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=1)(dist)
+            #wave = wave/(K.max(K.abs(wave),axis=TA,keepdims=True)+1e-8)
+            wave = wave/(K.std((wave),axis=TA,keepdims=True)+1e-8)
+            last = K.concatenate([wave]+[dist],axis=CA)
+            last = Conv2D(config.featureL[i],kernel_size=(1,1),strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],data_format=config.data_format)(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        convL[i] =last
+        last=config.poolL[i](pool_size=config.strideL[i],\
+                strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+    i=depth-1
+    dConvL[i] = last
+    outputsL =[]
+    for i in range(depth-2,-1,-1):
+        name = 'DCONV'
+        for j in range(i,i+1):
+            print(i)
+            layerStr='_%d_%d'%(i,j)
+            dConvL[j]  = UpSampling2D(size=config.strideL[j],interpolation="bilinear")(dConvL[j+1])
+            dConvL[j] = SeparableConv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=(1,1),padding='same',name=name+layerStr+'_sc_0',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j],depth_multiplier=1)(dConvL[j])
+            if config.isBNL[j]:
+                dConvL[j] = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN_'+layerStr+'0')(dConvL[j],training=training)
+            dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
+            if i <config.deepLevel and j==0:
+                outputsL.append(SeparableConv2D(config.outputSize[-1],kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name='con_out_1_%d'%i,kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j],activation='sigmoid',depth_multiplier=1)(dConvL[0]))
+    if len(outputsL)>1:
+        outputs = concatenate(outputsL,axis=2,name='lastConc')
+    else:
+        outputs = outputsL[-1]
+        if config.mode == 'p' or config.mode == 's'or config.mode == 'ps':
+            if config.outputSize[-1]>1:
+                outputs = Softmax(axis=3)(outputs) 
+    if onlyLevel>-100:
+        outputs = outputsL[onlyLevel]
+    if config.data_format=='channels_first':
+        outputs = Permute([2,3,1])(outputs)
+    return inputs,outputs
+
+def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3FFT_norm(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    
+    K.set_image_data_format(config.data_format)
+    inputs  = Input(config.inputSize,name='inputs')
+    inputs
+    last    = inputs
+    CA = -1
+    TA=1
+    if config.data_format=='channels_first':
+        last=Permute([3,1,2])(last)
+        CA=1
+        TA =2
+    BNA =CA
+    depth   =  len(config.featureL)
+    convL   = [None for i in range(depth+1)]
+    dConvL  = [None for i in range(depth+1)]
+    upL  = [None for i in range(depth+1)]
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        if i >0:
+            if i >0:
+                last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=2,data_format=config.data_format)(last)
+            else:
+                last = FFTConv2DRI(name=name+layerStr+'_fft_0_%d'%i,depth_multiplier=2)(last)
+                last = Dense(config.featureL[i])(last)
+        else:
+            if config.data_format=='channels_first':
+                wave = last[:,:1,:,:]
+                dist = last[:,1:,:,:]
+            else:
+                wave = last[:,:,:,:1]
+                dist = last[:,:,:,1:]
+            #last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=50)(last)
+            #wave = DepthwiseConv2D(kernel_size=(config.kernelFirstL[-1],1),strides=(1,1),padding='same',name=name+layerStr+'_wave_0_%d'%config.outputSize[-1],kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],depth_multiplier=config.outputSize[-1])(wave)
+            wave = FFTConv2DFS(name=name+layerStr+'_wave_0_%d'%config.outputSize[-1],depth_multiplier=int(config.outputSize[-1]*2))(wave)
+            #dist = dist+0
+            #wave = wave/(K.max(K.abs(wave),axis=TA,keepdims=True)+1e-8)
+            wave = wave/(K.std((wave),axis=TA,keepdims=True)+1e-8)
+            last = K.concatenate([wave]+[dist],axis=CA)
+            last = Conv2D(config.featureL[i],kernel_size=(1,1),strides=(1,1),padding='same',name=name+layerStr+'0',kernel_initializer=config.initializerL[i],bias_initializer=config.bias_initializerL[i],data_format=config.data_format)(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        convL[i] =last
+        last=config.poolL[i](pool_size=config.strideL[i],\
+                strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+    i=depth-1
+    dConvL[i] = last
+    outputsL =[]
+    for i in range(depth-2,-1,-1):
+        name = 'DCONV'
+        for j in range(i,i+1):
+            print(i)
+            layerStr='_%d_%d'%(i,j)
+            dConvL[j]  = UpSampling2D(size=config.strideL[j],interpolation="bilinear")(dConvL[j+1])
+            dConvL[j] = SeparableConv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=(1,1),padding='same',name=name+layerStr+'_sc_0',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j],depth_multiplier=1)(dConvL[j])
+            if config.isBNL[j]:
+                dConvL[j] = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN_'+layerStr+'0')(dConvL[j],training=training)
+            dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
+            if i <config.deepLevel and j==0:
+                outputsL.append(SeparableConv2D(config.outputSize[-1],kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name='con_out_1_%d'%i,kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j],activation='sigmoid',depth_multiplier=1)(dConvL[0]))
+    if len(outputsL)>1:
+        outputs = concatenate(outputsL,axis=2,name='lastConc')
+    else:
+        outputs = outputsL[-1]
+        if config.mode == 'p' or config.mode == 's'or config.mode == 'ps':
+            if config.outputSize[-1]>1:
+                outputs = Softmax(axis=3)(outputs) 
+    if onlyLevel>-100:
+        outputs = outputsL[onlyLevel]
+    if config.data_format=='channels_first':
+        outputs = Permute([2,3,1])(outputs)
+    return inputs,outputs
+
+def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3MFT_norm_FC(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    K.set_image_data_format(config.data_format)
+    inputs  = Input(config.inputSize,name='inputs')
+    last    = inputs
+    CA = -1
+    TA=1
+    if config.data_format=='channels_first':
+        last=Permute([3,1,2])(last)
+        CA=1
+        TA =2
+    BNA =CA
+    depth   =  len(config.featureL)
+    convL   = [None for i in range(depth+1)]
+    dConvL  = [None for i in range(depth+1)]
+    upL  = [None for i in range(depth+1)]
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    last = inputs
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+            strides=(1,1),padding='same',name=name+layerStr+'0',\
+            kernel_initializer=config.initializerL[i],\
+            bias_initializer=config.bias_initializerL[i],depth_multiplier=2,data_format=config.data_format)(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        convL[i] =last
+        last=config.poolL[i](pool_size=config.strideL[i],\
+                strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+    i=depth-1
+    dConvL[i] = last
+    outputsL =[]
+    for i in range(depth-2,-1,-1):
+        name = 'DCONV'
+        for j in range(i,i+1):
+            print(i)
+            layerStr='_%d_%d'%(i,j)
+            dConvL[j]  = UpSampling2D(size=config.strideL[j],interpolation="bilinear")(dConvL[j+1])
+            dConvL[j] = SeparableConv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=(1,1),padding='same',name=name+layerStr+'_sc_0',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j],depth_multiplier=1)(dConvL[j])
+            if config.isBNL[j]:
+                dConvL[j] = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN_'+layerStr+'0')(dConvL[j],training=training)
+            dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
+            if i <config.deepLevel and j==0:
+                outputsL.append(SeparableConv2D(config.outputSize[-1],kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name='con_out_1_%d'%i,kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j],activation='sigmoid',depth_multiplier=1)(dConvL[0]))
+    if len(outputsL)>1:
+        outputs = concatenate(outputsL,axis=2,name='lastConc')
+    else:
+        outputs = outputsL[-1]
+        if config.mode == 'p' or config.mode == 's'or config.mode == 'ps':
+            if config.outputSize[-1]>1:
+                outputs = Softmax(axis=3)(outputs) 
+    if onlyLevel>-100:
+        outputs = outputsL[onlyLevel]
+    if config.data_format=='channels_first':
+        outputs = Permute([2,3,1])(outputs)
+    return inputs,outputs
+def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3MFT_FT(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    
+    K.set_image_data_format(config.data_format)
+    inputs  = Input(config.inputSize,name='inputs')
+    last    = inputs
+    CA = -1
+    TA=1
+    if config.data_format=='channels_first':
+        last=Permute([3,1,2])(last)
+        CA=1
+        TA =2
+    BNA =CA
+    depth   =  len(config.featureL)
+    convL   = [None for i in range(depth+1)]
+    dConvL  = [None for i in range(depth+1)]
+    upL  = [None for i in range(depth+1)]
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        last = Conv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+            strides=(1,1),padding='same',name=name+layerStr+'0',\
+            kernel_initializer=config.initializerL[i],\
+            bias_initializer=config.bias_initializerL[i],data_format=config.data_format)(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        convL[i] =last
+        last=config.poolL[i](pool_size=config.strideL[i],\
+                strides=config.strideL[i],padding='same',name='PL'+layerStr+'0')(last)
+    i=depth-1
+    dConvL[i] = last
+    outputsL =[]
+    for i in range(depth-2,-1,-1):
+        name = 'DCONV'
+        for j in range(i,i+1):
+            print(i)
+            layerStr='_%d_%d'%(i,j)
+            dConvL[j]  = UpSampling2D(size=config.strideL[j],interpolation="bilinear")(dConvL[j+1])
+            dConvL[j] = Conv2D(config.featureL[j],kernel_size=config.kernelL[j],\
+                strides=(1,1),padding='same',name=name+layerStr+'_sc_0',\
+                kernel_initializer=config.initializerL[j],\
+                bias_initializer=config.bias_initializerL[j])(dConvL[j])
+            if config.isBNL[j]:
+                dConvL[j] = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN_'+layerStr+'0')(dConvL[j],training=training)
+            dConvL[j]  = Activation(config.activationL[j],name='Ac_'+layerStr+'0')(dConvL[j])
+            dConvL[j]  = concatenate([dConvL[j],convL[j]],axis=BNA,name='conc_'+layerStr+'0')
+            if i <config.deepLevel and j==0:
+                last= Conv2D(2,kernel_size=config.kernelL[-1],strides=config.strideL[-1],padding='same',name='con_out_1_%d'%i,kernel_initializer=config.initializerL[j],bias_initializer=config.bias_initializerL[j])(dConvL[0])
+    outputs = Softmax(axis=3)(last)
+    return inputs,outputs[:,:,:,:1]
 def inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV2Group(config, onlyLevel=-10000,training=None):
     #BatchNormalization =LayerNormalization
     BatchNormalization=MBatchNormalization
@@ -3758,7 +4721,164 @@ def inAndOutFuncODELSTMRSimple(config):
     output_states = rnn((pixel_input, time_input))
     y = dense_layer(output_states)
     return inputs,[y]
-
+def inAndOutFuncMul(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    BNA = -1
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    inputs  = Input(config.inputSize,name='waveform')
+    rInterval  = Input(config.inputSizeI,name='interval')
+    #rInterval = Reshape(config.inputSizeI+[1])(rInterval)
+    mask    = Input(config.inputSizeI[0],name='mask')
+    depth   =  len(config.featureL)
+    last = inputs
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        if i >0:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=2)(last)
+        else:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=50)(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        #last = AveragePooling2D(pool_size=config.strideL[i],strides=config.strideL[i],padding='same')(last)
+        stride= config.strideL[i]
+        if stride[0]>1:
+            last = last[:,::stride[0]]
+        if stride[1]>1:
+            last = last[:,:,::stride[1]]
+    last = Reshape((last.shape[1],last.shape[3]))(last)
+    y=K.mean(last,axis=1,keepdims=True)
+    y2=K.mean(last*last,axis=1,keepdims=True)
+    x = K.mean(rInterval,axis=1,keepdims=True)
+    x2 = K.mean(rInterval*rInterval,axis=1,keepdims=True)
+    xy = K.mean(rInterval*last,axis=1,keepdims=True)
+    k =(xy-x*y)/(x2-x*x)
+    r = (xy)/K.sqrt(x2-x*x)/K.clip(K.sqrt(y2-y*y),1e9,1e-3)
+    i=-1
+    last = K.concatenate([k,r,y],axis=-1)
+    last = Dense(config.outputSize[-1]*6)(last)
+    last=Activation(config.activationL[i],name='out'+layerStr+'0')(last)
+    last = Dense(config.outputSize[-1]*3)(last)
+    last=Activation(config.activationL[i],name='out'+layerStr+'1')(last)
+    if False:
+        last = Dense(config.outputSize[-1]*4)(last)
+        last=Activation(config.activationL[i],name='out'+layerStr+'2')(last)
+        last = Dense(config.outputSize[-1]*3)(last)
+        last=Activation(config.activationL[i],name='out'+layerStr+'3')(last)
+        last = Dense(config.outputSize[-1]*2)(last)
+        last=Activation(config.activationL[i],name='out'+layerStr+'4')(last)
+    output = Dense(config.outputSize[-1])(last)
+    return [inputs,rInterval],output
+def inAndOutFuncMulTMean(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    BNA = -1
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    inputs  = Input(config.inputSize,name='waveform')
+    rInterval  = Input(config.inputSizeI,name='interval')
+    #rInterval = Reshape(config.inputSizeI+[1])(rInterval)
+    mask    = Input(config.inputSizeI[0],name='mask')
+    depth   =  len(config.featureL)
+    last = inputs
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        if i >0:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=2)(last)
+        else:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=50)(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        #last = AveragePooling2D(pool_size=config.strideL[i],strides=config.strideL[i],padding='same')(last)
+        stride= config.strideL[i]
+        if stride[0]>1:
+            last = last[:,::stride[0]]
+        if stride[1]>1:
+            last = last[:,:,::stride[1]]
+    last = Reshape((last.shape[1],last.shape[3]))(last)
+    w = last[:,:,1::2]
+    last = last[:,:,::2]
+    y=K.mean(last*w,axis=1,keepdims=True)
+    y2=K.mean(last*last*w,axis=1,keepdims=True)
+    x = K.mean(rInterval*w,axis=1,keepdims=True)
+    x2 = K.mean(rInterval*rInterval*w,axis=1,keepdims=True)
+    xy = K.mean(rInterval*last*w,axis=1,keepdims=True)
+    k =(xy-x*y)/K.clip(x2-x*x,1e9,1e-5)
+    r = (xy)/K.sqrt(x2-x*x)/K.clip(K.sqrt(y2-y*y),1e9,1e-5)
+    i=-1
+    last = K.concatenate([k,r,y],axis=-1)
+    last = Dense(config.outputSize[-1]*6)(last)
+    last=Activation(config.activationL[i],name='out'+layerStr+'0')(last)
+    last = Dense(config.outputSize[-1]*3)(last)
+    last=Activation(config.activationL[i],name='out'+layerStr+'1')(last)
+    if True:
+        last = Dense(config.outputSize[-1]*4)(last)
+        last=Activation(config.activationL[i],name='out'+layerStr+'2')(last)
+        last = Dense(config.outputSize[-1]*3)(last)
+        last=Activation(config.activationL[i],name='out'+layerStr+'3')(last)
+        last = Dense(config.outputSize[-1]*2)(last)
+        last=Activation(config.activationL[i],name='out'+layerStr+'4')(last)
+    output = Dense(config.outputSize[-1])(last)
+    return [inputs,rInterval],output
+def inAndOutFuncMul_(config, onlyLevel=-10000,training=None):
+    #BatchNormalization =LayerNormalization
+    BatchNormalization=MBatchNormalization
+    #Conv2D = SeparableConv2D
+    BNA = -1
+    momentum=0.95
+    renorm_momentum=0.95
+    renorm = False
+    inputs  = Input(config.inputSize,name='waveform')
+    rInterval  = Input(config.inputSizeI,name='interval')
+    mask    = Input(config.inputSizeI[0],name='mask')
+    depth   =  len(config.featureL)
+    last = inputs
+    for i in range(depth-1):
+        name = 'CONV'
+        layerStr='_%d_'%i
+        if i >0:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=2)(last)
+        else:
+            last = SeparableConv2D(config.featureL[i],kernel_size=config.kernelL[i],\
+                strides=(1,1),padding='same',name=name+layerStr+'0',\
+                kernel_initializer=config.initializerL[i],\
+                bias_initializer=config.bias_initializerL[i],depth_multiplier=50)(last)
+        if config.isBNL[i]:
+            last = BatchNormalization(axis=BNA,momentum=momentum,renorm=renorm,renorm_momentum=renorm_momentum,name='BN'+layerStr+'0')(last,training=training)
+        last = Activation(config.activationL[i],name='AC'+layerStr+'0')(last)
+        last = AveragePooling2D(pool_size=config.strideL[i],strides=config.strideL[i],padding='same')(last)
+    last = Reshape((last.shape[1],last.shape[3]))(last)
+    rnn0 = tf.keras.layers.RNN(ODELSTMR(units=200),time_major=False,return_sequences=True,go_backwards=True)
+    rnn1 = tf.keras.layers.RNN(ODELSTMR(units=200),time_major=False,return_sequences=True,go_backwards=True)
+    #print(last,rInterval)
+    last = rnn0((last, rInterval))
+    last = rnn1((last, rInterval))
+    output = Dense(config.outputSize[-1])(last)
+    return [inputs,rInterval],output
 def inAndOutFuncODELSTMRConv(config):
     pixel_input = tf.keras.Input(shape=(config.padSize, config.channelSize), name="pixel")
     time_input = tf.keras.Input(shape=(config.padSize,config.outSize ), name="time")
@@ -4043,7 +5163,7 @@ def trainAndTest(model,corrLTrain,corrLValid,corrLTest,outputDir='predict/',tTra
         model.show(xTest[iL],yTest[iL],time0L=tTest[iL],delta=1.0,\
         T=tTrain,outputDir=tmpOutputDir,level=level)
 def trainAndTestMul(model,corrDTrain,corrDValid,corrDTest,outputDir='predict/',tTrain=tTrain,\
-    sigmaL=[4,3,2,1.5],count0=3,perN=200,w0=4,k0=-1,mul=1):
+    sigmaL=[4,3,2,1.5],count0=3,perN=200,w0=4,k0=-1,mul=1,FT=False,FC=False,isOrigin=True):
     '''
     依次提高精度要求，加大到时附近权重，以在保证收敛的同时逐步提高精度
     '''
@@ -4075,23 +5195,29 @@ def trainAndTestMul(model,corrDTrain,corrDValid,corrDTest,outputDir='predict/',t
         corrDTrain.corrL.iL=np.array([])
         corrDTest.corrL.iL=np.array([])
         model.compile(loss=model.config.lossFunc, optimizer='Nadam')
-        xTest, yTest, tTest =corrDValid(mul=mul)
-        resStrTmp, trainTestLoss=model.trainByXYTNewMul(corrDTrain,xTest=xTest,yTest=yTest, count0=count0, perN=perN,N=20000,k0=k0,mul=mul,testN=len(corrDValid))
+        xTest, yTest, tTest =corrDValid(mul=mul,FT=FT,FC=FC,isOrigin=isOrigin)
+        resStrTmp, trainTestLoss=model.trainByXYTNewMul(corrDTrain,xTest=xTest,yTest=yTest, count0=count0, perN=perN,N=20000,k0=k0,mul=mul,testN=len(corrDValid),FC=FC,isOrigin=isOrigin)
         resStr += resStrTmp
         trainTestLossL.append(trainTestLoss)
    # xTest, yTest, tTest =corrLValid(np.arange(len(corrLValid)))
-    yout=model.predict(xTest)  
+    yout=model.predict(xTest)
     resStr += '\n valid part\n'
-    resStr+= printRes_old(yTest, yout)+'\n'
+    if FT:
+        resStr+= printRes_old(yTest, yout,fromI=200)+'\n'
+    else:
+        resStr+= printRes_old(yTest, yout)+'\n'
     xTest=None
     yTest=None
     tTest=None
     corrDTrain.corrL.clear()
     corrDValid.corrL.clear()
     #corrDValid.corrL.clear()
-    xTest, yTest, tTest =corrDTest(mul=mul)
+    xTest, yTest, tTest =corrDTest(mul=mul,FT=FT,FC=FC,isOrigin=isOrigin)
     yout=model.predict(xTest)
-    resStr+= printRes_old(yTest, yout)+'\n'
+    if FT:
+        resStr+= printRes_old(yTest, yout,fromI=200)+'\n'
+    else:
+        resStr+= printRes_old(yTest, yout)+'\n'
     head = outputDir+'resStr_'+\
         obspy.UTCDateTime(time.time()).strftime('%y%m%d-%H%M%S')
     with open(head+'.log','w') as f:
@@ -4311,53 +5437,24 @@ class fcnConfig:
             self.deepLevel = 1
         if mode=='surfUp':
             self.mul           = mul
+            self.data_format = 'channels_last'
             self.inputSize     = [512*2,mul,4]
             self.outputSize    = [512*2*up,mul,50]
             self.inputSize     = [512*12,mul,4]
             self.outputSize    = [512*12*up,mul,50]
-            self.featureL      = [60,80,80,100,100,120,120,150]
-            self.featureL      = [75,90,120,150,160,160,320]
-            self.featureL      = [100,125,150,175,200,250,320]
-            self.featureL      = [100,125,150,175,200,250,320]
-            self.featureL      = [100,200,250,300,400,500,320]
-            self.featureL      = [100,200,250,400,500,600,320]
-            self.featureL      = [100,200,300,400,500,600,800,320]
-            self.featureL      = [100,200,300,400,400,600,600,320]
-            self.featureL      = [100,150,200,300,400,500,600,320]
-            self.featureL      = [100,150,200,300,400,600,800,320]
-            self.featureL      = [100,150,200,300,400,500,600,800,320]
-            self.featureL      = [150,200,300,400,500,600,700,800,320]
-            self.featureL      = [75,150,200,250,300,350,400,500,320]
-            self.featureL      = [75,150,200,250,300,350,400,500,320]
-            self.featureL      = [75,100,125,150,175,200,250,300,320]
-            self.featureL      = [60,80,100,120,160,180,200,240,320]
-            self.featureL      = [75,75,100,100,125,150,200,250,320]
-            self.featureL      = [100,150,200,250,300,400,500,600,320]
-            self.featureL      = [100,150,200,250,300,400,500,600,320]
-            self.featureL      = [100,150,200,250,300,350,400,500,600,320]
-            self.featureL      = [100,150,200,250,300,350,400,500,600,320]
-            self.featureL      = [150,200,200,250,250,300,400,400,500,320]
-            self.featureL      = [150,200,300,400,600,800,1000,1200,1500,320]
-            self.featureL      = [100,150,200,300,400,600,800,1000,1200,320]
-            self.featureL      = [120,160,200,240,320,360,400,500,320]
-            self.featureL      = [150,200,250,300,400,500,600,800,320]
-            self.featureL      = [120,240,320,360,420,560,640,800,320]
-            self.featureL      = [120,160,240,320,420,480,520,640,320]
-            self.featureL      = [100,120,160,200,240,320,360,400,320]
-            self.featureL      = [150,250,300,400,500,600,800,1000,320]
-            self.featureL      = [200,280,360,420,480,640,720,800,320]
-            self.featureL      = [120,200,280,400,560,720,960,1080,320]
-            self.featureL      = [80 ,160,320,560,640,960,1080,1200,320]
-            self.featureL      = [60 ,120,160,240,360,480,560,640,320]
-            self.featureL      = [60 ,120,240,480,640,960,1080,1200,320]
-            self.featureL      = [75 ,150,300,400,500,600,800,1000,320]
-            self.featureL      = [80 ,160,320,480,640,960,1080,1240,320]
-            self.featureL      = [80 ,160,240,360,480,640,720,1080,320]
-            self.featureL      = [80 ,160,240,360,480,640,720,1080,1200,320]
-            self.featureL      = [60 ,120,240,480,960,1080,1440,320]
-            self.featureL      = [75 ,125,250,300,400,1080,1440,320]
-            self.featureL      = [80 ,160,240,360,480,640,720,1080,1200,320]
-            self.featureL      = [75 ,150,300,400,500,600,700,800,1000,1200,320]
+            self.inputSize     = [512*6,mul,4]
+            self.outputSize    = [512*6*up,mul,50]
+            self.featureL      = [75 ,125,175,250,350,500,600,320]
+            self.featureL      = [60 ,120,160,240,300,400,500,320]
+            self.featureL      = [60 ,100,150,200,250,350,400,320]
+            self.featureL      = [60 ,120,160,240,300,400,500,320]
+            self.featureL      = [60 ,100,150,200,250,350,400,320]
+            self.featureL      = [60 ,80,120,180,240,320,360,320]
+            self.featureL      = [60 ,90,150,210,270,360,420,320]
+            self.featureL      = [60 ,80,160,200,240,320,400,320]
+            self.featureL      = [80 ,100,120,160,200,240,320,320]
+            #self.featureL      = [60 ,120,160,240,300,400,500,320]
+            self.kernelFirstL  = ((14**np.arange(0,1,1/49)*10)*6).astype(np.int)
             #self.featureL      = [75 ,100,125,150,200,250,720]
             #self.AGSizeL        = [100,75,50,50,50,50,320]
             #self.featureL      = [10,10,15,20,25,50,320]
@@ -4368,19 +5465,150 @@ class fcnConfig:
             #self.featureL      = [10,15,20,30,40,60,80,100,120]
             #self.featureL      = [10,15,20,30,50,80,100,120,160]
             #self.featureL      = [12,16,24,32,64,128,256,512,512]
-            self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1), (8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
-            self.strideL       = [(2,1), (2,1), (2,1), (3,1), (4,1), (4,1), (4,1),(4,1),(1,mul)  ,(up,1)]
-            self.kernelL       = [(8,1), (8,1), (8,1), (12,1),(16,1),(16,1),(8,1),(8,1),(1,mul*2),(up*8,1)]
-            self.strideL       = [(2,1), (2,1), (2,1), (3,1), (4,1), (4,1), (4,1),(4,1),(1,mul)  ,(up,1)]
-            self.kernelL       = [(12,1), (12,1), (12,1), (18,1),(16,1),(16,1),(8,1),(8,1),(1,mul*2),(up*6,1)]
-            self.strideL       = [(2,1), (2,1), (2,1), (3,1), (4,1), (4,1), (4,1),(4,1),(1,mul)  ,(up,1)]
-            self.kernelL       = [(6,1), (6,1), (6,1), (9,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*6,1)]
-            self.strideL       = [(2,1), (2,1), (2,1), (3,1), (4,1), (4,1), (4,1),(4,1),(1,mul)  ,(up,1)]
-            self.kernelL       = [(12,1), (12,1), (12,1), (12,1),(16,1),(8,1),(8,1),(8,1),(1,mul*2),(up*12,1)]
-            self.strideL       = [(4,1) ,(4,1),  (4,1), (4,1),(4,1),(3,1), (2,1),(1,mul)  ,(up,1)]
-            self.kernelL       = [(16,1),(16,1),(8,1),  (8,1),(8,1),(6,1), (4,1),(8,1),(8,1),(1,mul*2),(up*16,1)]
-            self.strideL       = [(2,1), (2,1), (2,1), (2,1), (2,1),(2,1),(2,1),   (3,1), (4,1),(4,1),(1,mul)  ,(up,1)]
-            self.kernelL       = [(12,1),(12,1),(12,1),(12,1),(12,1),(12,1),(12,1),(6,1),(8,1),(8,1),(1,mul*2),(up*12,1)]
+            self.strideL       = [(2,1),  (2,1), (3,1), (4,1), (4,1),  (4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(int(160*2*1.5),1),(12,1),(12,1),(12,1),(12,1), (8,1),(8,1),(1,mul*2),(up*12,1)]
+            #self.dilation_rate = [(1,1), (4,1), (16,1), (32,1),(128,1),(768,1),(768,1),(512,1),(up,1)]
+            #self.kernelL       = [(8,1),(8,1),(8,1),(8,1), (8,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*8,1)]
+            #self.kernelL       = [(6,1),(6,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
+            #self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(16,1),(8,1),(1,mul*2),(up*3,1)]
+            self.isBNL       = [True]*20
+            self.doubleConv    = [True]*20
+            #self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(4,1),(4,1)]
+            self.initializerL  = ['truncated_normal' for i in range(20)]
+            self.initializerL  = ['he_normal' for i in range(20)]
+            self.bias_initializerL = ['random_normal' for i in range(20)]
+            self.bias_initializerL = ['he_normal' for i in range(20)]
+            self.dropOutL     =[]# [0,1,2]#[5,6,7]#[1,3,5,7]#[1,3,5,7]
+            self.dropOutRateL = []#[0.2,0.2,0.2]#[0.2,0.2,0.2]
+            #self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
+            #self.activationL  = ['relu','relu']+['swish' for i in range(5)]+['relu','relu']
+            self.activationL  = ['relu']*10
+            self.activationL  = ['selu']*10
+            self.activationL  = ['relu']*10
+            self.poolL        = [MaxPooling2D,MaxPooling2D,MaxPooling2D,\
+            MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,\
+            MaxPooling2D,MaxPooling2D,MaxPooling2D]
+            #self.poolL        = [MaxPooling2D]*20
+            self.poolL        = [MaxPooling2D]*20
+            #self.poolL        = [AveragePooling2D]*20
+            self.lossFunc     = lossFuncMSE(**kwags)#1lossFuncSoft(**kwags)#0
+            self.inAndOutFunc = inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3FFT_norm#inAndOutFuncNewUp
+            self.lossFuncNP     = lossFuncMSENP(**kwags)#lossFuncSoftNP(**kwags)#
+            self.deepLevel = 1
+        if mode=='surfFC':
+            self.mul           = mul
+            self.data_format = 'channels_last'
+            self.inputSize     = [512*6,mul,52]
+            self.outputSize    = [512*6*up,mul,50]
+            self.featureL      = [75 ,125,175,250,350,500,600,320]
+            self.featureL      = [60 ,120,160,240,300,400,500,320]
+            self.featureL      = [60 ,100,150,200,250,350,400,320]
+            self.featureL      = [60 ,120,160,240,300,400,500,320]
+            self.featureL      = [60 ,100,150,200,250,350,400,320]
+            self.featureL      = [60 ,80,120,180,240,320,360,320]
+            self.featureL      = [60 ,90,150,210,270,360,420,320]
+            self.featureL      = [60 ,80,160,200,240,320,400,320]
+            #self.featureL      = [60 ,120,160,240,300,400,500,320]
+            #self.featureL      = [75 ,100,125,150,200,250,720]
+            #self.AGSizeL        = [100,75,50,50,50,50,320]
+            #self.featureL      = [10,10,15,20,25,50,320]
+            #self.featureL      = [50,50,75,75,100,100,125]
+            #self.featureL      = [50,75,75,100,125,150,200]
+            #self.featureL      = [75,75,75,75,75,75,75]
+            #self.featureL      = [8,12,16,32,48,64,96,128,160]
+            #self.featureL      = [10,15,20,30,40,60,80,100,120]
+            #self.featureL      = [10,15,20,30,50,80,100,120,160]
+            #self.featureL      = [12,16,24,32,64,128,256,512,512]
+            self.strideL       = [(2,1),  (2,1), (3,1), (4,1), (4,1),  (4,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(4,1),  (6,1),(6,1),(8,1),(8,1), (8,1),(8,1),(1,mul*2),(up*4,1)]
+            #self.dilation_rate = [(1,1), (4,1), (16,1), (32,1),(128,1),(768,1),(768,1),(512,1),(up,1)]
+            #self.kernelL       = [(8,1),(8,1),(8,1),(8,1), (8,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*8,1)]
+            #self.kernelL       = [(6,1),(6,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
+            #self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(16,1),(8,1),(1,mul*2),(up*3,1)]
+            self.isBNL       = [True]*20
+            self.doubleConv    = [True]*20
+            #self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(4,1),(4,1)]
+            self.initializerL  = ['truncated_normal' for i in range(20)]
+            self.initializerL  = ['he_normal' for i in range(20)]
+            self.bias_initializerL = ['random_normal' for i in range(20)]
+            self.bias_initializerL = ['he_normal' for i in range(20)]
+            self.dropOutL     =[]# [0,1,2]#[5,6,7]#[1,3,5,7]#[1,3,5,7]
+            self.dropOutRateL = []#[0.2,0.2,0.2]#[0.2,0.2,0.2]
+            #self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
+            #self.activationL  = ['relu','relu']+['swish' for i in range(5)]+['relu','relu']
+            self.activationL  = ['relu']*10
+            self.activationL  = ['selu']*10
+            self.activationL  = ['relu']*10
+            self.poolL        = [MaxPooling2D,MaxPooling2D,MaxPooling2D,\
+            MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,\
+            MaxPooling2D,MaxPooling2D,MaxPooling2D]
+            #self.poolL        = [MaxPooling2D]*20
+            self.poolL        = [MaxPooling2D]*20
+            #self.poolL        = [AveragePooling2D]*20
+            self.lossFunc     = lossFuncMSE(**kwags)#1lossFuncSoft(**kwags)#0
+            self.inAndOutFunc = inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3MFT_norm_FC#inAndOutFuncNewUp
+            self.lossFuncNP     = lossFuncMSENP(**kwags)#lossFuncSoftNP(**kwags)#
+            self.deepLevel = 1
+        if mode=='surfFT':
+            self.mul           = mul
+            self.data_format = 'channels_last'
+            self.inputSize     = [800,50,1]
+            self.outputSize    = [800,50,1]
+            self.featureL      = [8,16,32,128,256,512]
+            self.featureL      = [4,8,16,32,128,256]
+            self.featureL      = [8,16,32,128,256,512]
+            self.strideL       = [(4,1), (2,2), (1, 5), (4, 5), (5,1),  (5,1),(4,1),(1,mul)  ,(up,1)]
+            self.kernelL       = [(8,4), (4,2), (4,10),(8,10), (10,1), (10,1),(4,1),(1,mul*2),(4,4)]
+            #self.dilation_rate = [(1,1), (4,1), (16,1), (32,1),(128,1),(768,1),(768,1),(512,1),(up,1)]
+            #self.kernelL       = [(8,1),(8,1),(8,1),(8,1), (8,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*8,1)]
+            #self.kernelL       = [(6,1),(6,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
+            #self.kernelL       = [(6,1),(9,1),(12,1),(12,1),(16,1),(8,1),(1,mul*2),(up*3,1)]
+            self.isBNL       = [True]*20
+            self.doubleConv    = [True]*20
+            #self.kernelL       = [(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(6,1),(4,1),(4,1)]
+            self.initializerL  = ['truncated_normal' for i in range(20)]
+            self.initializerL  = ['he_normal' for i in range(20)]
+            self.bias_initializerL = ['random_normal' for i in range(20)]
+            self.bias_initializerL = ['he_normal' for i in range(20)]
+            self.dropOutL     =[]# [0,1,2]#[5,6,7]#[1,3,5,7]#[1,3,5,7]
+            self.dropOutRateL = []#[0.2,0.2,0.2]#[0.2,0.2,0.2]
+            #self.activationL  = ['relu','relu','relu','relu','relu','relu','relu','relu','relu','relu','relu']
+            #self.activationL  = ['relu','relu']+['swish' for i in range(5)]+['relu','relu']
+            self.activationL  = ['relu']*10
+            self.activationL  = ['selu']*10
+            self.activationL  = ['relu']*10
+            self.poolL        = [MaxPooling2D,MaxPooling2D,MaxPooling2D,\
+            MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,MaxPooling2D,\
+            MaxPooling2D,MaxPooling2D,MaxPooling2D]
+            #self.poolL        = [MaxPooling2D]*20
+            self.poolL        = [MaxPooling2D]*20
+            #self.poolL        = [AveragePooling2D]*20
+            self.lossFunc     = lossFuncSoftFT(**kwags)#1lossFuncSoft(**kwags)#0
+            self.inAndOutFunc = inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV3MFT_FT#inAndOutFuncNewUp
+            self.lossFuncNP     = lossFuncSoftFTNP(**kwags)#lossFuncSoftNP(**kwags)#
+            self.deepLevel = 1
+        if mode=='surfMul':
+            self.mul           = mul
+            self.inputSize     = [20,1000,1]
+            self.inputSizeI    = [20,1]
+            self.outputSize    = [20,1000,50]
+            self.featureL      = [75 ,150,300,450,600,800]
+            self.featureL      = [75 ,150,300,450,600,800]
+            self.featureL      = [75 ,150,300,600,900,800]
+            self.featureL      = [75 ,150,300,600,1200,800]
+            self.featureL      = [60 ,120,240,480,640,800]
+            #self.featureL      = [75 ,100,125,150,200,250,720]
+            #self.AGSizeL        = [100,75,50,50,50,50,320]
+            #self.featureL      = [10,10,15,20,25,50,320]
+            #self.featureL      = [50,50,75,75,100,100,125]
+            #self.featureL      = [50,75,75,100,125,150,200]
+            #self.featureL      = [75,75,75,75,75,75,75]
+            #self.featureL      = [8,12,16,32,48,64,96,128,160]
+            #self.featureL      = [10,15,20,30,40,60,80,100,120]
+            #self.featureL      = [10,15,20,30,50,80,100,120,160]
+            #self.featureL      = [12,16,24,32,64,128,256,512,512]
+            self.strideL       = [(1,5), (1,5), (1,5), (1,4), (1,2), (1,mul)  ,(1,1)]
+            self.kernelL       = [(1,20),(1,20),(1,20),(1,12), (1,8),(1,mul*2),(1,10)]
             #self.dilation_rate = [(1,1), (4,1), (16,1), (32,1),(128,1),(768,1),(768,1),(512,1),(up,1)]
             #self.kernelL       = [(8,1),(8,1),(8,1),(8,1), (8,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*8,1)]
             #self.kernelL       = [(6,1),(6,1),(8,1),(8,1),(8,1),(8,1),(1,mul*2),(up*4,1)]
@@ -4405,9 +5633,9 @@ class fcnConfig:
             #self.poolL        = [MaxPooling2D]*20
             #self.poolL        = [MaxPooling2D]*20
             self.poolL        = [AveragePooling2D]*20
-            self.lossFunc     = lossFuncMSE(**kwags)#1lossFuncSoft(**kwags)#0
-            self.inAndOutFunc = inAndOutFuncNewNetDenseUpStrideSimpleMSeparableUpNewV2#inAndOutFuncNewUp
-            self.lossFuncNP     = lossFuncMSENP(**kwags)#lossFuncSoftNP(**kwags)#
+            self.lossFunc     =lossFuncMSEMul(N=10)#1lossFuncSoft(**kwags)#0
+            self.inAndOutFunc = inAndOutFuncMul_#inAndOutFuncNewUp
+            self.lossFuncNP     = 'mse'#lossFuncSoftNP(**kwags)#
             self.deepLevel = 1
         elif mode=='surfdt':
             self.inputSize     = [512*3,1,4]
@@ -4909,6 +6137,8 @@ class model(Model):
 
 batchMax=32#8*24/16
 #batchMax=8*24/32
+
+batchMaxFT=8
 class modelUp(Model):
     def __init__(self,weightsFile='',metrics=rateNp,\
         channelList=[0],onlyLevel=-1000,up=1,mul=1,**kwags):
@@ -4921,6 +6151,7 @@ class modelUp(Model):
         self.config = config
         self.Metrics = metrics
         self.channelList = channelList
+        #self.lf = self.config.lossFunc
         self.compile(loss=self.config.lossFunc, optimizer='Adam')
         if len(weightsFile)>0:
             model.load_weights(weightsFile)
@@ -4966,7 +6197,7 @@ class modelUp(Model):
             #timeN0 = np.float32(x.shape[1])
             #timeN  = (x[:,:,:,0]!=0).sum(axis=1,keepdims=True).astype(np.float32)
             #timeN *= 1+0.2*(np.random.rand(*timeN.shape).astype(np.float32)-0.5)
-            x[:,:,:,0]/=(np.abs(x[:,:,:,0]).max(axis=(1,),keepdims=True))#*(timeN0/timeN)**0.5
+            x[:,:,:,0]/=(np.abs(x[:,:,:,0]).max(axis=(1,),keepdims=True))*(np.random.rand(len(x),1,1)*0.2+0.9)#*(timeN0/timeN)**0.5
         else:
             x/=x.std(axis=(1,2,3),keepdims=True)+np.finfo(x.dtype).eps
         return x
@@ -5125,7 +6356,7 @@ class modelUp(Model):
         self.set_weights(w0)
         return resStr,trainTestLoss
     def trainByXYTNewMul(self,XYT,N=2000,perN=200,batchSize=32,xTest='',\
-        yTest='',k0 = 2e-3,t='',count0=20,resL=globalFL,mul=1,testN=-1):
+        yTest='',k0 = 2e-3,t='',count0=20,resL=globalFL,mul=1,testN=-1,isSeparate=False,**kwargs):
         resL.append(0)
         if k0>0:
             K.set_value(self.optimizer.lr, k0)
@@ -5154,11 +6385,47 @@ class modelUp(Model):
             x, y , t0L = XYT(iL,mul=mul,N=mul)
             print('fromT:',np.array(t0L).mean())
             print('loop:',sampleDone.mean())
-            self.fit(x ,y,batchSize=batchSize,)
+            if isSeparate:
+                for j in range(list(y.shape)[-1]):
+                    self.config.lossFunc.focusChannel = j#int(i%list(y.shape)[-1])
+                    for layer in self.layers:
+                        if 'CONV_0__wave_0' in layer.name:
+                            channelStr = 'CONV_0__wave_0_%d'%j
+                            if layer.name==channelStr:
+                                layer.trainable=True
+                                print('train',channelStr)
+                            else:
+                                layer.trainable=False
+                    lr = K.get_value(self.optimizer.lr)
+                    #self.compile(loss=self.config.lossFunc, optimizer='Adam')
+                    for layer in self.layers:
+                        if 'CONV_0__wave_0' in layer.name:
+                            channelStr = 'CONV_0__wave_0_%d'%j
+                            if layer.name==channelStr:
+                                #layer.trainable=True
+                                print('train',channelStr,layer.trainable)
+                            else:
+                                #layer.trainable=False
+                                pass
+                    K.set_value(self.optimizer.lr,lr)
+                    CW = np.zeros([y.shape[0],1,1,y.shape[-1]])
+                    CW[:,:,:,j]=1
+                    CW /= CW.mean() 
+                    self.fit(x ,(y,CW),batchSize=batchSize,)
+            else:
+                #CW = np.zeros([y.shape[0],1,1,y.shape[-1]])
+                #CW[:,:,:,:]=1
+                #CW /= CW.mean() 
+                self.fit(x,y,batchSize=batchSize,)
             x=0
             y=0
             #print(self.layers[47].variables[-2][-10:],self.layers[47].variables[-1][-10:])
-            if int(sampleDone.mean())>sampleTime:
+            if int(sampleDone.mean())>sampleTime or isSeparate:
+                if isSeparate:
+                    #self.config.lossFunc.focusChannel =-1
+                    lr = K.get_value(self.optimizer.lr)
+                    #self.compile(loss=self.config.lossFunc, optimizer='Adam')
+                    K.set_value(self.optimizer.lr,lr )
                 sampleTime = int(sampleDone.mean())
                 if len(xTest)>0:
                     #xTrain=x
@@ -5446,6 +6713,850 @@ class modelUp(Model):
         self.compile(loss=self.config.lossFunc, optimizer='Nadam')
         K.set_value(self.optimizer.lr,  lr0)
 
+class modelFT(Model):
+    def __init__(self,weightsFile='',metrics=rateNp,\
+        channelList=[0],onlyLevel=-1000,up=1,mul=1,**kwags):
+        #channelList=[0]
+        config=fcnConfig('surfFT',up=up,mul=mul,**kwags)
+        #defProcess()
+        self.mul=mul
+        #config.inputSize[-1]=len(channelList)
+        self.genM(config, onlyLevel)
+        self.config = config
+        self.Metrics = metrics
+        self.channelList = channelList
+        #self.lf = self.config.lossFunc
+        self.compile(loss=self.config.lossFunc, optimizer='Adam')
+        if len(weightsFile)>0:
+            model.load_weights(weightsFile)
+        print(self.summary())
+        self.lossFunc=config.lossFuncNP
+    def genM(self,config, onlyLevel=-1000):
+        inputs, outputs = config.inAndOut(onlyLevel=onlyLevel)
+        #outputs  = Softmax(axis=3)(last)
+        super().__init__(inputs=inputs,outputs=outputs)
+        self.compile(loss=config.lossFunc, optimizer='Nadam')
+        return model
+    def predict(self,x,batch_size=-1,**kwargs):
+        #print('inx')
+        maxN = 512
+        NX = len(x)
+        if batch_size==-1:
+            batch_size = int(batchMax/self.mul)
+        #print('inx done')
+        if self.config.mode=='surf' or self.config.mode=='surfUp' or self.config.mode=='surfFT':
+            Y = []
+            #print('inx',batch_size)
+            for i in range(0,NX,maxN):
+                X = self.inx(x[i:min(i+maxN,NX)])
+                if len(X)>0:
+                    Y.append(super().predict(X,batch_size=batch_size,**kwargs))
+            Y=np.concatenate(Y,axis=0)
+            return Y
+        else:
+            return super().predict(x,batch_size=batch_size,**kwargs).astype(np.float32)
+    def fit(self,x,y,batchSize=None,**kwargs):
+        x=self.inx(x)
+        if np.isnan(x).sum()>0 or np.isinf(x).sum()>0:
+            print('bad record')
+            return None
+        return super().fit(x ,y,batch_size=batchSize,**kwargs)
+    def plot(self,filename='model.png'):
+        plot_model(self, to_file=filename)
+    def inx(self,x):
+        x=x.copy()
+        x[:,:,:,0]/=(np.abs(x[:,:,:,0]).max(axis=(1,),keepdims=True))*(np.random.rand(len(x),1,1)*0.2+0.9)#*(timeN0/timeN)**0.5
+        return x
+    #def __call__(self,x,*args,**kwargs):
+    #    return super(Model, self).__call__(K.tensor(self.inx(x)))
+    def trainByXYTNewMul(self,XYT,N=2000,perN=200,batchSize=32,xTest='',\
+        yTest='',k0 = 2e-3,t='',count0=20,resL=globalFL,mul=1,testN=-1,isSeparate=False,**kwargs):
+        resL.append(0)
+        if k0>0:
+            K.set_value(self.optimizer.lr, k0)
+        indexL = list(range(len(XYT)))
+        indexLMul = indexL*100
+        sampleDone = np.zeros(len(XYT))
+        #print(indexL)
+        lossMin =100
+        count   = count0
+        w0 = self.get_weights()
+        resStr=''
+        trainTestLoss = []
+        iL = random.sample(indexL,int(testN/3))
+        xTrain, yTrain , t0LTrain = XYT(iL,mul=mul,FT=True)
+        print('training',xTrain.shape,len(iL))
+        sampleTime=-1
+        r = len(XYT)/len(XYT.corrL)
+        batchSize = int(batchMaxFT/self.mul)
+        perM=int(perN/mul)
+        perM= int(perM/batchSize)*batchSize
+        for i in range(N):
+            gc.collect()
+            iL = random.sample(indexLMul,perM)
+            for ii in iL:
+                sampleDone[ii]+=r*mul
+            x, y , t0L = XYT(iL,mul=mul,N=mul,FT=True)
+            print('fromT:',np.array(t0L).mean())
+            print('loop:',sampleDone.mean())
+            if isSeparate:
+                for j in range(list(y.shape)[-1]):
+                    self.config.lossFunc.focusChannel = j#int(i%list(y.shape)[-1])
+                    for layer in self.layers:
+                        if 'CONV_0__wave_0' in layer.name:
+                            channelStr = 'CONV_0__wave_0_%d'%j
+                            if layer.name==channelStr:
+                                layer.trainable=True
+                                print('train',channelStr)
+                            else:
+                                layer.trainable=False
+                    lr = K.get_value(self.optimizer.lr)
+                    #self.compile(loss=self.config.lossFunc, optimizer='Adam')
+                    for layer in self.layers:
+                        if 'CONV_0__wave_0' in layer.name:
+                            channelStr = 'CONV_0__wave_0_%d'%j
+                            if layer.name==channelStr:
+                                #layer.trainable=True
+                                print('train',channelStr,layer.trainable)
+                            else:
+                                #layer.trainable=False
+                                pass
+                    K.set_value(self.optimizer.lr,lr)
+                    CW = np.zeros([y.shape[0],1,1,y.shape[-1]])
+                    CW[:,:,:,j]=1
+                    CW /= CW.mean() 
+                    self.fit(x ,(y,CW),batchSize=batchSize,)
+            else:
+                #CW = np.zeros([y.shape[0],1,1,y.shape[-1]])
+                #CW[:,:,:,:]=1
+                #CW /= CW.mean() 
+                self.fit(x,y,batchSize=batchSize,)
+            x=0
+            y=0
+            #print(self.layers[47].variables[-2][-10:],self.layers[47].variables[-1][-10:])
+            if int(sampleDone.mean())>sampleTime or isSeparate:
+                if isSeparate:
+                    #self.config.lossFunc.focusChannel =-1
+                    lr = K.get_value(self.optimizer.lr)
+                    #self.compile(loss=self.config.lossFunc, optimizer='Adam')
+                    K.set_value(self.optimizer.lr,lr )
+                sampleTime = int(sampleDone.mean())
+                if len(xTest)>0:
+                    youtTrain = 0
+                    youtTest  = 0
+                    print('cal Predict')
+                    youtTrain = self.predict(xTrain,batch_size=batchSize)
+                    print('cal Test')
+                    print(xTest.shape)
+                    youtTest  = self.predict(xTest,batch_size=batchSize)
+                    print('calDone')
+                    lossTrain = self.lossFunc(yTrain,youtTrain)
+                    lossTest    = self.lossFunc(yTest,youtTest)
+                    print('train loss',lossTrain,'test loss: ',lossTest,\
+                        'no sampleRate:', 1 - np.sign(sampleDone).mean(),\
+                        'sampleTimes',sampleDone.mean(),'last F:',resL[-1],'min Loss:',lossMin,'lr',K.get_value(self.optimizer.lr),'count:',count)
+                    resStr+='\n %d train loss : %f valid loss :%f F: %f sampleTime: %d'%(i,lossTrain,lossTest,resL[-1],sampleTime)
+                    #lossTest-=resL[-1]
+                    trainTestLoss.append([i,lossTrain,lossTest])
+                    resStr+='\ntrain '+printRes_old(yTrain,youtTrain,fromI=200)
+                    resStr+='\ntest '+printRes_old(yTest, youtTest,isUpdate=True,fromI=200)
+                    youtTrain = 0
+                    youtTest  = 0
+                    if lossTest >= lossMin:
+                        count -= 1
+                    if lossTest > 3*lossMin and lossMin>0:
+                        self.set_weights(w0)
+                        #count = count0
+                        print('reset to smallest')
+                    if lossTest < lossMin:
+                        count = count0
+                        lossMin = lossTest
+                        w0 = self.get_weights()
+                        print('find better')
+                    if count <=0:
+                        break
+                    #print(self.metrics)
+                    if True:#i%15==0:
+                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.9)
+                        print('learning rate: ',self.optimizer.lr)
+                    if True:#i>10 and i%50==0:
+                        batchSize = int(batchMaxFT/self.mul)
+                        print('batchSize ',batchSize)
+            gc.collect()
+        self.set_weights(w0)
+        return resStr,trainTestLoss
+    def show(self, x, y0,outputDir='predict/',time0L='',delta=0.5,T=np.arange(19),fileStr='',\
+        level=-1,number=4):
+        y = self.predict(x)
+        f = 1/T
+        dirName = os.path.dirname(outputDir)
+        if not os.path.exists(dirName):
+            os.makedirs(dirName)
+        x = x.transpose([0,2,1,3]).reshape([-1,x.shape[1],1,x.shape[-1]])
+        y = y.transpose([0,2,1,3]).reshape([-1,y.shape[1],1,y.shape[-1]])
+        y0 = y0.transpose([0,2,1,3]).reshape([-1,y0.shape[1],1,y0.shape[-1]])
+        time0L=time0L.reshape([-1])
+        count = x.shape[1]
+        for i in range(len(x)):
+            up = round(y.shape[1]/x.shape[1])
+            #print('show',i)
+            timeL = np.arange(count)*delta
+            timeLOut = np.arange(count*up)*delta/up
+            if len(time0L)>0:
+                timeL+=time0L[i]
+                timeLOut+=time0L[i]
+            xlim=[timeL[0],timeL[-1]]
+            xlim=[0,500]
+            xlimNew=[0,500]
+            #xlim=xlimNew
+            tmpy0=y0[i,:,0,:]
+            pos0  =tmpy0.argmax(axis=0)
+            timeLOutL0=timeLOut[pos0.astype(np.int)]
+            timeLOutL0[tmpy0.max(axis=0)<0.5]=np.nan
+            tmpy=y[i,:,0,:]
+            pos  =tmpy.argmax(axis=0).astype(np.float)
+            timeLOutL=timeLOut[pos.astype(np.int)]
+            timeLOutL[tmpy.max(axis=0)<0.5]=np.nan
+            #pos[tmpy.max(axis=0)<0.5]=np.nan
+            plt.close()
+            if number == 4:
+                plt.figure(figsize=[6,4])
+            else:
+                plt.figure(figsize=[6,3])
+            plt.subplot(number,1,1)
+            plt.title('%s%d'%(outputDir,i))
+            legend = ['r s','i s',\
+            'r h','i h']
+            for j in range(x.shape[-1]*0+2):
+                plt.plot(timeL,self.inx(x[i:i+1,:,0:1,j:j+1])[0,:,-1,0],('rkbg'[j]),\
+                    label=legend[j],linewidth=0.5)
+            #plt.legend()
+            plt.xlim(xlim)
+            ax = plt.gca()
+            plt.xticks([])
+            plt.subplot(number,1,2)
+            #plt.clim(0,1)
+            pc=plt.pcolormesh(timeLOut,f,y0[i,:,0,:].transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True)
+            #figureSet.setColorbar(pc,label='Probility',pos='right')
+            if number==4:
+                plt.plot(timeLOutL,f,'--k',linewidth=0.5)
+            plt.ylabel('f/Hz')
+            plt.gca().semilogy()
+            plt.xlim(xlimNew)
+            if number==4:
+                plt.xticks([])
+            #plt.colorbar(label='Probility')
+            if number==4:
+                plt.subplot(number,1,3)
+                pc=plt.pcolormesh(timeLOut,f,y[i,:,level,:].transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True)
+                #plt.clim(0,1)
+                plt.plot(timeLOutL0,f,'--k',linewidth=0.5)
+                plt.ylabel('f/Hz')
+            plt.xlabel('t/s')
+            plt.gca().semilogy()
+            plt.xlim(xlimNew)
+            plt.subplot(number,1,number)
+            plt.axis('off')
+            #cax=figureSet.getCAX(pos='right')
+            figureSet.setColorbar(pc,label='Probability',pos='Surf')
+            #plt.colorbar(label='Probility')
+            #plt.gca().semilogx()
+            plt.savefig('%s%s_%d_%d.eps'%(outputDir,fileStr,level,i),dpi=200)
+    def predictRaw(self,x):
+        yShape = list(x.shape)
+        yShape[-1] = self.config.outputSize[-1]
+        y = np.zeros(yShape)
+        d = self.config.outputSize[0]
+        halfD = int(self.config.outputSize[0]/2)
+        iL = list(range(0,x.shape[0]-d,halfD))
+        iL.append(x.shape[0]-d)
+        for i0 in iL:
+            y[:,i0:(i0+d)] = x.predict(x[:,i0:(i0+d)])
+        return y
+    def set(self,modelOld):
+        self.set_weights(modelOld.get_weights())
+    def setTrain(self,name,trainable=True):
+        lr0= K.get_value(self.optimizer.lr)
+        for layer in self.layers:
+            if layer.name.split('_')[0] in name:
+                layer.trainable = trainable
+                print('set',layer.name,trainable)
+            else:
+                layer.trainable = not trainable
+                print('set',layer.name,not trainable)
+
+        self.compile(loss=self.config.lossFunc, optimizer='Nadam')
+        K.set_value(self.optimizer.lr,  lr0)
+
+class modelFC(Model):
+    def __init__(self,weightsFile='',metrics=rateNp,\
+        channelList=[0],onlyLevel=-1000,up=1,mul=1,**kwags):
+        #channelList=[0]
+        config=fcnConfig('surfFC',up=up,mul=mul,**kwags)
+        #defProcess()
+        self.mul=mul
+        #config.inputSize[-1]=len(channelList)
+        self.genM(config, onlyLevel)
+        self.config = config
+        self.Metrics = metrics
+        self.channelList = channelList
+        #self.lf = self.config.lossFunc
+        self.compile(loss=self.config.lossFunc, optimizer='Adam')
+        if len(weightsFile)>0:
+            model.load_weights(weightsFile)
+        print(self.summary())
+        self.lossFunc=config.lossFuncNP
+    def genM(self,config, onlyLevel=-1000):
+        inputs, outputs = config.inAndOut(onlyLevel=onlyLevel)
+        #outputs  = Softmax(axis=3)(last)
+        super().__init__(inputs=inputs,outputs=outputs)
+        self.compile(loss=config.lossFunc, optimizer='Nadam')
+        return model
+    def predict(self,x,batch_size=-1,**kwargs):
+        #print('inx')
+        maxN = 512
+        NX = len(x)
+        if batch_size==-1:
+            batch_size = int(batchMax/self.mul)
+        #print('inx done')
+        if self.config.mode=='surf' or self.config.mode=='surfUp':
+            Y = []
+            #print('inx',batch_size)
+            for i in range(0,NX,maxN):
+                X = self.inx(x[i:min(i+maxN,NX)])
+                if len(X)>0:
+                    Y.append(super().predict(X,batch_size=batch_size,**kwargs))
+            Y=np.concatenate(Y,axis=0)
+            return Y
+        else:
+            return super().predict(x,batch_size=batch_size,**kwargs).astype(np.float32)
+    def fit(self,x,y,batchSize=None,**kwargs):
+        x=self.inx(x)
+        if np.isnan(x).sum()>0 or np.isinf(x).sum()>0:
+            print('bad record')
+            return None
+        return super().fit(x ,y,batch_size=batchSize,**kwargs)
+    def plot(self,filename='model.png'):
+        plot_model(self, to_file=filename)
+    def inx(self,x):
+        x=x.copy()
+        #timeN0 = np.float32(x.shape[1])
+        #timeN  = (x[:,:,:,0]!=0).sum(axis=1,keepdims=True).astype(np.float32)
+        #timeN *= 1+0.2*(np.random.rand(*timeN.shape).astype(np.float32)-0.5)
+        x[:,:,:,:]/=(np.abs(x).max(axis=(1,),keepdims=True))*(np.random.rand(len(x),1,1,x.shape[-1])*0.2+0.9)#*(timeN0/timeN)**0.5
+        return x
+    #def __call__(self,x,*args,**kwargs):
+    #    return super(Model, self).__call__(K.tensor(self.inx(x)))
+    def train(self,x,y,**kwarg):
+        if 't' in kwarg:
+            t = kwarg['t']
+        else:
+            t = ''
+        XYT = xyt(x,y,t)
+        self.trainByXYT(XYT,**kwarg)
+    def trainByXYT(self,XYT,N=2000,perN=200,batchSize=32,xTest='',\
+        yTest='',k0 = 2e-3,t='',count0=3,resL=globalFL):
+        resL.append(0)
+        if k0>0:
+            K.set_value(self.optimizer.lr, k0)
+        indexL = range(len(XYT))
+        sampleDone = np.zeros(len(XYT))
+        #print(indexL)
+        lossMin =100
+        count   = count0
+        w0 = self.get_weights()
+        resStr=''
+        trainTestLoss = []
+        iL = random.sample(indexL,xTest.shape[0])
+        xTrain, yTrain , t0LTrain = XYT(iL)
+        #print(self.metrics)
+        for i in range(N):
+            gc.collect()
+            iL = random.sample(indexL,perN)
+            for ii in iL:
+                sampleDone[ii]+=1
+            x, y , t0L = XYT(iL)
+            #print(XYT.iL)
+            self.fit(x ,y,batchSize=batchSize)
+            if i%10==0:
+                if len(xTest)>0:
+                    lossTrain = self.evaluate(self.inx(xTrain),yTrain)
+                    lossTest    = self.evaluate(self.inx(xTest),yTest)
+                    print('train loss',lossTrain,'test loss: ',lossTest,\
+                        'sigma: ',XYT.timeDisKwarg['sigma'],\
+                        'w: ',self.config.lossFunc.w, \
+                        'no sampleRate:', 1 - np.sign(sampleDone).mean(),\
+                        'sampleTimes',sampleDone.mean(),'last F:',resL[-1],'min Loss:',lossMin,'count:',count)
+                    resStr+='\n %d train loss : %f valid loss :%f F: %f'%(i,lossTrain,lossTest,resL[-1])
+                    #lossTest-=resL[-1]
+                    trainTestLoss.append([i,lossTrain,lossTest])
+                    if i%60==0 and i>10:
+                        youtTrain = 0
+                        youtTest  = 0
+                        youtTrain = self.predict(xTrain)
+                        youtTest  = self.predict(xTest)
+                        for level in range(youtTrain.shape[-2]):
+                            print('level',len(self.config.featureL)\
+                                -youtTrain.shape[-2]+level+1)
+                            resStr +='\nlevel: %d'%(len(self.config.featureL)\
+                                -youtTrain.shape[-2]+level+1)
+                            resStr+='\ntrain '+printRes_old(yTrain, youtTrain[:,:,level:level+1])
+                            resStr+='\ntest '+printRes_old(yTest, youtTest[:,:,level:level+1],isUpdate=True)
+                    if lossTest >= lossMin:
+                        count -= 1
+                    if lossTest > 3*lossMin and lossMin>0:
+                        self.set_weights(w0)
+                        #count = count0
+                        print('reset to smallest')
+                    if lossTest < lossMin:
+                        count = count0
+                        lossMin = lossTest
+                        w0 = self.get_weights()
+                        print('find better')
+                    if count <=0:
+                        break
+                    #print(self.metrics)
+                    
+            if i%15==0:
+                print('learning rate: ',self.optimizer.lr)
+                K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.95)
+            if i>10 and i%50==0:
+                perN += int(perN*0.05)
+                perN = min(500, perN)
+        self.set_weights(w0)
+        return resStr,trainTestLoss
+    
+    def trainByXYTNew(self,XYT,N=2000,perN=200,batchSize=32,xTest='',\
+        yTest='',k0 = 2e-3,t='',count0=20,resL=globalFL):
+        resL.append(0)
+        if k0>0:
+            K.set_value(self.optimizer.lr, k0)
+        indexL = range(len(XYT))
+        sampleDone = np.zeros(len(XYT))
+        #print(indexL)
+        lossMin =100
+        count   = count0
+        w0 = self.get_weights()
+        resStr=''
+        trainTestLoss = []
+        iL = random.sample(indexL,xTest.shape[0])
+        xTrain, yTrain , t0LTrain = XYT(iL)
+        #print(self.metrics)
+        sampleTime=0
+        for i in range(N):
+            gc.collect()
+            iL = random.sample(indexL,perN)
+            for ii in iL:
+                sampleDone[ii]+=1
+            x, y , t0L = XYT(iL)
+            print('loop:',sampleDone.mean())
+            self.fit(x ,y,batchSize=batchSize)
+            if int(sampleDone.mean())>sampleTime:
+                sampleTime = int(sampleDone.mean())
+                if len(xTest)>0:
+                    lossTrain = self.evaluate(self.inx(xTrain),yTrain,batch_size=batchSize)
+                    lossTest    = self.evaluate(self.inx(xTest),yTest,batch_size=batchSize)
+                    print('train loss',lossTrain,'test loss: ',lossTest,\
+                        'sigma: ',XYT.timeDisKwarg['sigma'],\
+                        'w: ',self.config.lossFunc.w, \
+                        'no sampleRate:', 1 - np.sign(sampleDone).mean(),\
+                        'sampleTimes',sampleDone.mean(),'last F:',resL[-1],'min Loss:',lossMin,'count:',count)
+                    resStr+='\n %d train loss : %f valid loss :%f F: %f sampleTime: %d'%(i,lossTrain,lossTest,resL[-1],sampleTime)
+                    #lossTest-=resL[-1]
+                    trainTestLoss.append([i,lossTrain,lossTest])
+                    if True:#i%90==0 and i>10:
+                        youtTrain = 0
+                        youtTest  = 0
+                        youtTrain = self.predict(xTrain,batch_size=batchSize)
+                        youtTest  = self.predict(xTest,batch_size=batchSize)
+                        for level in range(youtTrain.shape[-2]):
+                            print('level',len(self.config.featureL)\
+                                -youtTrain.shape[-2]+level+1)
+                            resStr +='\nlevel: %d'%(len(self.config.featureL)\
+                                -youtTrain.shape[-2]+level+1)
+                            resStr+='\ntrain '+printRes_old(yTrain, youtTrain[:,:,level:level+1])
+                            resStr+='\ntest '+printRes_old(yTest, youtTest[:,:,level:level+1],isUpdate=True)
+                    if lossTest >= lossMin:
+                        count -= 1
+                    if lossTest > 3*lossMin and lossMin>0:
+                        self.set_weights(w0)
+                        #count = count0
+                        print('reset to smallest')
+                    if lossTest < lossMin:
+                        count = count0
+                        lossMin = lossTest
+                        w0 = self.get_weights()
+                        print('find better')
+                    if count <=0:
+                        break
+                    #print(self.metrics)
+                    if True:#i%15==0:
+                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.75)
+                        print('learning rate: ',self.optimizer.lr)
+                    if True:#i>10 and i%50==0:
+                        batchSize += batchSize
+                        batchSize = min(256, perN)
+                        print('batchSize ',batchSize)
+        self.set_weights(w0)
+        return resStr,trainTestLoss
+    def trainByXYTNewMul(self,XYT,N=2000,perN=200,batchSize=32,xTest='',\
+        yTest='',k0 = 2e-3,t='',count0=20,resL=globalFL,mul=1,testN=-1,isSeparate=False,FC=True,isOrigin=True):
+        resL.append(0)
+        if k0>0:
+            K.set_value(self.optimizer.lr, k0)
+        indexL = list(range(len(XYT)))
+        indexLMul = indexL*100
+        sampleDone = np.zeros(len(XYT))
+        #print(indexL)
+        lossMin =100
+        count   = count0
+        w0 = self.get_weights()
+        resStr=''
+        trainTestLoss = []
+        iL = random.sample(indexL,int(testN/3))
+        xTrain, yTrain , t0LTrain = XYT(iL,mul=mul,FC=FC,isOrigin=isOrigin)
+        print('training',xTrain.shape,len(iL))
+        sampleTime=-1
+        r = len(XYT)/len(XYT.corrL)
+        batchSize = int(batchMax/self.mul)
+        perM=int(perN/mul)
+        perM= int(perM/batchSize)*batchSize
+        for i in range(N):
+            gc.collect()
+            iL = random.sample(indexLMul,perM)
+            for ii in iL:
+                sampleDone[ii]+=r*mul
+            x, y , t0L = XYT(iL,mul=mul,N=mul,FC=FC,isOrigin=isOrigin)
+            print(x.shape,y.shape)
+            print('fromT:',np.array(t0L).mean())
+            print('loop:',sampleDone.mean())
+            if isSeparate:
+                for j in range(list(y.shape)[-1]):
+                    self.config.lossFunc.focusChannel = j#int(i%list(y.shape)[-1])
+                    for layer in self.layers:
+                        if 'CONV_0__wave_0' in layer.name:
+                            channelStr = 'CONV_0__wave_0_%d'%j
+                            if layer.name==channelStr:
+                                layer.trainable=True
+                                print('train',channelStr)
+                            else:
+                                layer.trainable=False
+                    lr = K.get_value(self.optimizer.lr)
+                    #self.compile(loss=self.config.lossFunc, optimizer='Adam')
+                    for layer in self.layers:
+                        if 'CONV_0__wave_0' in layer.name:
+                            channelStr = 'CONV_0__wave_0_%d'%j
+                            if layer.name==channelStr:
+                                #layer.trainable=True
+                                print('train',channelStr,layer.trainable)
+                            else:
+                                #layer.trainable=False
+                                pass
+                    K.set_value(self.optimizer.lr,lr)
+                    CW = np.zeros([y.shape[0],1,1,y.shape[-1]])
+                    CW[:,:,:,j]=1
+                    CW /= CW.mean() 
+                    self.fit(x ,(y,CW),batchSize=batchSize,)
+            else:
+                #CW = np.zeros([y.shape[0],1,1,y.shape[-1]])
+                #CW[:,:,:,:]=1
+                #CW /= CW.mean() 
+                self.fit(x,y,batchSize=batchSize,)
+            x=0
+            y=0
+            #print(self.layers[47].variables[-2][-10:],self.layers[47].variables[-1][-10:])
+            if int(sampleDone.mean())>sampleTime or isSeparate:
+                if isSeparate:
+                    #self.config.lossFunc.focusChannel =-1
+                    lr = K.get_value(self.optimizer.lr)
+                    #self.compile(loss=self.config.lossFunc, optimizer='Adam')
+                    K.set_value(self.optimizer.lr,lr )
+                sampleTime = int(sampleDone.mean())
+                if len(xTest)>0:
+                    #xTrain=x
+                    #yTrain=y
+                    #xTrain = x
+                    #yTrain = y
+                    youtTrain = 0
+                    youtTest  = 0
+                    youtTrain = self.predict(xTrain,batch_size=batchSize)
+                    #youtTrain = self.predict(x,batch_size=batchSize)
+                    youtTest  = self.predict(xTest,batch_size=batchSize)
+                    #print(youtTest.mean())
+                    lossTrain = self.lossFunc(yTrain,youtTrain)
+                    lossTest    = self.lossFunc(yTest,youtTest)
+                    #lossTrain = self.evaluate(self.inx(xTrain),yTrain)
+                    #lossTest    = self.evaluate(self.inx(xTest),yTest)
+                    #print(xTrain.shape,yTrain.shape)
+                    print('train loss',lossTrain,'test loss: ',lossTest,\
+                        'no sampleRate:', 1 - np.sign(sampleDone).mean(),\
+                        'sampleTimes',sampleDone.mean(),'last F:',resL[-1],'min Loss:',lossMin,'lr',K.get_value(self.optimizer.lr),'count:',count)
+                    resStr+='\n %d train loss : %f valid loss :%f F: %f sampleTime: %d'%(i,lossTrain,lossTest,resL[-1],sampleTime)
+                    #lossTest-=resL[-1]
+                    trainTestLoss.append([i,lossTrain,lossTest])
+                    resStr+='\ntrain '+printRes_old(yTrain,youtTrain)
+                    resStr+='\ntest '+printRes_old(yTest, youtTest,isUpdate=True)
+                    youtTrain = 0
+                    youtTest  = 0
+                    if lossTest >= lossMin:
+                        count -= 1
+                    if lossTest > 3*lossMin and lossMin>0:
+                        self.set_weights(w0)
+                        #count = count0
+                        print('reset to smallest')
+                    if lossTest < lossMin:
+                        count = count0
+                        lossMin = lossTest
+                        w0 = self.get_weights()
+                        print('find better')
+                    if count <=0:
+                        break
+                    #print(self.metrics)
+                    if True:#i%15==0:
+                        K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.9)
+                        print('learning rate: ',self.optimizer.lr)
+                    if True:#i>10 and i%50==0:
+                        batchSize = int(batchMax/self.mul)
+                        print('batchSize ',batchSize)
+            gc.collect()
+        self.set_weights(w0)
+        return resStr,trainTestLoss
+    def trainByXYTCross(self,self1,XYT0,XYT1,N=2000,perN=100,batchSize=None,\
+        xTest='',yTest='',k0 = -1,t='',per1=0.5):
+        #XYT0 syn
+        #XYT1 real
+        if k0>1:
+            K.set_value(self.optimizer.lr, k0)
+        indexL0 = range(len(XYT0))
+        indexL1 = range(len(XYT1))
+        #print(indexL)
+        lossMin =100
+        count0  = 10
+        count   = count0
+        w0 = self.get_weights()
+
+        #print(self.metrics)
+        for i in range(N):
+            is0 =False
+            if (i < 10) or (np.random.rand()<per1  and i <20):
+                print('1')
+                is0 =False
+                XYT = XYT1
+                iL = random.sample(indexL1,perN)
+                SELF = self1
+            else:
+                print('0')
+                is0 = True
+                XYT = XYT0
+                iL = random.sample(indexL0,perN)
+                SELF = self
+            x, y , t0L = XYT(iL)   
+            #print(XYT.iL)
+            SELF.fit(x ,y ,batchSize=batchSize)
+            if  is0:
+                self1.set_weights(self.get_weights())
+            else:
+                self.set_weights(self1.get_weights())
+            if i%3==0 and (is0 or per1>=1):
+                if len(xTest)>0:
+                    loss    = self.evaluate(self.inx(xTest),yTest)
+                    lossM = self.Metrics(yTest,self.predict(xTest))
+                    if loss >= lossMin:
+                        count -= 1
+                    if loss > 3*lossMin:
+                        self.set_weights(w0)
+                        #count = count0
+                        print('reset to smallest')
+                    if loss < lossMin:
+                        count = count0
+                        lossMin = loss
+                        w0 = self.get_weights()
+                    if count ==0:
+                        break
+                    #print(self.metrics)
+                   
+                    print('test loss: ',loss,' metrics: ',lossM,'sigma: ',\
+                        XYT.timeDisKwarg['sigma'],'w: ',self.config.lossFunc.w)
+            if i%5==0:
+                print('learning rate: ',self.optimizer.lr)
+                K.set_value(self.optimizer.lr, K.get_value(self.optimizer.lr) * 0.9)
+                K.set_value(self1.optimizer.lr, K.get_value(self1.optimizer.lr) * 0.9)
+            if i==50:
+                perN = 100
+            if i>10 and i%5==0:
+                perN += int(perN*0.02)
+        self.set_weights(w0)
+    def show_(self, x, y0,outputDir='predict/',time0L='',delta=0.5,T=np.arange(19),fileStr='',\
+        level=-1):
+        y = self.predict(x)
+        f = 1/T
+        count = x.shape[1]
+        x = x.transpose([0,2,1,3]).reshape([-1,x.shape[1],1,x.shape[-1]])
+        y = y.transpose([0,2,1,3]).reshape([-1,y.shape[1],1,y.shape[-1]])
+        time0L=time0L.reshape([-1])
+        for i in range(len(x)):
+            up = round(y.shape[1]/x.shape[1])
+            #print('show',i)
+            timeL = np.arange(count)*delta
+            timeLOut = np.arange(count*up)*delta/up
+            if len(time0L)>0:
+                timeL+=time0L[i]
+                timeLOut+=time0L[i]
+            xlim=[timeL[0],timeL[-1]]
+            xlim=[0,500]
+            xlimNew=[0,500]
+            #xlim=xlimNew
+            tmpy0=y0[i,:,0,:]
+            pos0  =tmpy0.argmax(axis=0)
+            timeLOutL0=timeLOut[pos0.astype(np.int)]
+            timeLOutL0[tmpy0.max(axis=0)<0.5]=np.nan
+            tmpy=y[i,:,0,:]
+            pos  =tmpy.argmax(axis=0).astype(np.float)
+            timeLOutL=timeLOut[pos.astype(np.int)]
+            timeLOutL[tmpy.max(axis=0)<0.5]=np.nan
+            #pos[tmpy.max(axis=0)<0.5]=np.nan
+            plt.close()
+            plt.figure(figsize=[12,8])
+            plt.subplot(4,1,1)
+            plt.title('%s%d'%(outputDir,i))
+            legend = ['r s','i s',\
+            'r h','i h']
+            for j in range(x.shape[-1]):
+                plt.plot(timeL,self.inx(x[i:i+1,:,0:1,j:j+1])[0,:,-1,0]-j,'rbgk'[j],\
+                    label=legend[j],linewidth=0.3)
+            #plt.legend()
+            plt.xlim(xlim)
+            plt.subplot(4,1,2)
+            #plt.clim(0,1)
+            plt.pcolormesh(timeLOut,f,y0[i,:,0,:].transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True)
+            plt.plot(timeLOutL,f,'k',linewidth=0.5,alpha=0.5)
+            plt.ylabel('f/Hz')
+            plt.gca().semilogy()
+            plt.xlim(xlimNew)
+            plt.subplot(4,1,3)
+            plt.pcolormesh(timeLOut,f,y[i,:,level,:].transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True)
+            #plt.clim(0,1)
+            plt.plot(timeLOutL0,f,'k',linewidth=0.5,alpha=0.5)
+            plt.ylabel('f/Hz')
+            plt.xlabel('t/s')
+            plt.gca().semilogy()
+            plt.xlim(xlimNew)
+            plt.subplot(4,1,4)
+            delta = timeL[1] -timeL[0]
+            N = len(timeL)
+            fL = np.arange(N)/N*1/delta
+            for j in range(x.shape[-1]*0+1):
+                spec=np.abs(np.fft.fft(self.inx(x[i:i+1,:,0:1,j:j+1])[0,:,0,0])).reshape([-1])
+                plt.plot(fL,spec/(spec.max()+1e-16),'rbgk'[j],\
+                    label=legend[j],linewidth=0.3)
+            plt.xlabel('f/Hz')
+            plt.ylabel('A')
+            plt.xlim([fL[1],fL[-1]/2])
+            plt.ylim([-3,3])
+            #plt.gca().semilogx()
+            plt.savefig('%s%s_%d_%d.eps'%(outputDir,fileStr,level,i),dpi=200)
+    def show(self, x, y0,outputDir='predict/',time0L='',delta=0.5,T=np.arange(19),fileStr='',\
+        level=-1,number=4):
+        y = self.predict(x)
+        f = 1/T
+        dirName = os.path.dirname(outputDir)
+        if not os.path.exists(dirName):
+            os.makedirs(dirName)
+        x = x.transpose([0,2,1,3]).reshape([-1,x.shape[1],1,x.shape[-1]])
+        y = y.transpose([0,2,1,3]).reshape([-1,y.shape[1],1,y.shape[-1]])
+        y0 = y0.transpose([0,2,1,3]).reshape([-1,y0.shape[1],1,y0.shape[-1]])
+        time0L=time0L.reshape([-1])
+        count = x.shape[1]
+        for i in range(len(x)):
+            up = round(y.shape[1]/x.shape[1])
+            #print('show',i)
+            timeL = np.arange(count)*delta
+            timeLOut = np.arange(count*up)*delta/up
+            if len(time0L)>0:
+                timeL+=time0L[i]
+                timeLOut+=time0L[i]
+            xlim=[timeL[0],timeL[-1]]
+            xlim=[0,500]
+            xlimNew=[0,500]
+            #xlim=xlimNew
+            tmpy0=y0[i,:,0,:]
+            pos0  =tmpy0.argmax(axis=0)
+            timeLOutL0=timeLOut[pos0.astype(np.int)]
+            timeLOutL0[tmpy0.max(axis=0)<0.5]=np.nan
+            tmpy=y[i,:,0,:]
+            pos  =tmpy.argmax(axis=0).astype(np.float)
+            timeLOutL=timeLOut[pos.astype(np.int)]
+            timeLOutL[tmpy.max(axis=0)<0.5]=np.nan
+            #pos[tmpy.max(axis=0)<0.5]=np.nan
+            plt.close()
+            if number == 4:
+                plt.figure(figsize=[6,4])
+            else:
+                plt.figure(figsize=[6,3])
+            plt.subplot(number,1,1)
+            plt.title('%s%d'%(outputDir,i))
+            legend = ['r s','i s',\
+            'r h','i h']
+            for j in range(x.shape[-1]*0+2):
+                plt.plot(timeL,self.inx(x[i:i+1,:,0:1,j:j+1])[0,:,-1,0],('rkbg'[j]),\
+                    label=legend[j],linewidth=0.5)
+            #plt.legend()
+            plt.xlim(xlim)
+            ax = plt.gca()
+            plt.xticks([])
+            plt.subplot(number,1,2)
+            #plt.clim(0,1)
+            pc=plt.pcolormesh(timeLOut,f,y0[i,:,0,:].transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True)
+            #figureSet.setColorbar(pc,label='Probility',pos='right')
+            if number==4:
+                plt.plot(timeLOutL,f,'--k',linewidth=0.5)
+            plt.ylabel('f/Hz')
+            plt.gca().semilogy()
+            plt.xlim(xlimNew)
+            if number==4:
+                plt.xticks([])
+            #plt.colorbar(label='Probility')
+            if number==4:
+                plt.subplot(number,1,3)
+                pc=plt.pcolormesh(timeLOut,f,y[i,:,level,:].transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True)
+                #plt.clim(0,1)
+                plt.plot(timeLOutL0,f,'--k',linewidth=0.5)
+                plt.ylabel('f/Hz')
+            plt.xlabel('t/s')
+            plt.gca().semilogy()
+            plt.xlim(xlimNew)
+            plt.subplot(number,1,number)
+            plt.axis('off')
+            #cax=figureSet.getCAX(pos='right')
+            figureSet.setColorbar(pc,label='Probability',pos='Surf')
+            #plt.colorbar(label='Probility')
+            #plt.gca().semilogx()
+            plt.savefig('%s%s_%d_%d.eps'%(outputDir,fileStr,level,i),dpi=200)
+    def predictRaw(self,x):
+        yShape = list(x.shape)
+        yShape[-1] = self.config.outputSize[-1]
+        y = np.zeros(yShape)
+        d = self.config.outputSize[0]
+        halfD = int(self.config.outputSize[0]/2)
+        iL = list(range(0,x.shape[0]-d,halfD))
+        iL.append(x.shape[0]-d)
+        for i0 in iL:
+            y[:,i0:(i0+d)] = x.predict(x[:,i0:(i0+d)])
+        return y
+    def set(self,modelOld):
+        self.set_weights(modelOld.get_weights())
+    def setTrain(self,name,trainable=True):
+        lr0= K.get_value(self.optimizer.lr)
+        for layer in self.layers:
+            if layer.name.split('_')[0] in name:
+                layer.trainable = trainable
+                print('set',layer.name,trainable)
+            else:
+                layer.trainable = not trainable
+                print('set',layer.name,not trainable)
+
+        self.compile(loss=self.config.lossFunc, optimizer='Nadam')
+        K.set_value(self.optimizer.lr,  lr0)
 
 class modelSq(Model):
     def __init__(self,weightsFile='',metrics=rateNp,\

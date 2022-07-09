@@ -14,6 +14,7 @@ from multiprocessing import Process, Manager,Pool
 import random
 from glob import glob
 from obspy.taup import TauPyModel
+from tensorflow.core.framework.attr_value_pb2 import _ATTRVALUE_LISTVALUE
 from ..io.seism import Dist, taup
 from ..io import seism
 from .fk import FK,getSourceSacName,FKL
@@ -3192,15 +3193,15 @@ class corr:
                 V = FV(F).astype(np.float32)
             DT=self.dDis / V
             
-        if isNoise and np.random.rand()<0.6:
+        if isNoise and np.random.rand()<0.5:
             TRef = self.dDis / 4
             FValid=F[(aF > rThreshold*0.9)*(DT>1/F/disMaxR)*(DT<1/F/disRandA)]
             if len(FValid)>0:
                 fMin=FValid.min()
             else:
                 fMin=1/150
-            minDT = 1/fMin*1.5
-            A = (np.random.rand()-0.5)*0.30
+            minDT = 1/fMin*2
+            A = (np.random.rand()-0.5)*0.20
             dt=0
             if np.random.rand()>0.5:
                 dt = TRef*(0.1+np.random.rand()*0.0)
@@ -3469,7 +3470,7 @@ class corr:
             dvRef,KRef = fvRef.getDVK(f)
         tRef = d/vRef
         #print(len(data),f,tRef)
-        Phi,std = calPhi(data,timeL,f,tRef,isNoMove=isNoMove,isStr=isStr)
+        Phi,std = calPhi(data,timeL,f,tRef,isNoMove=isNoMove)
         Phi = np.unwrap(Phi)
         t = (-Phi/np.pi/2/(f)).reshape([-1,1])+Loop.reshape([1,-1])/f.reshape([-1,1])
         if isByLoop:
@@ -3547,7 +3548,7 @@ class corr:
             dvRef,KRef = fvRef.getDVK(f)
         tRef = d/vRef
         #print(len(data),f,tRef)
-        Phi,std = calPhi(data,timeL,f,tRef,isNoMove=isNoMove,isStr=isStr)
+        Phi,std = calPhi(data,timeL,f,tRef,isNoMove=isNoMove)
         Phi = np.unwrap(Phi)
         t = (-Phi/np.pi/2/(f)).reshape([-1,1])+Loop.reshape([1,-1])/f.reshape([-1,1])
         if isByLoop:
@@ -3607,8 +3608,7 @@ def calPhi_(data,timeL,f,sigmaF=8,deltaF=0/100,sigmaT=4,deltaT=0):
         #print(timeF,Phi)
     return Phi
 
-def calPhi__(data,timeL,f,tRef,gamma=4,deltaF=0/100,gammaW=20,deltaT=0,isS=False,isNoMove=False,isStr=False):
-    isStr=False
+def calPhi(data,timeL,f,tRef,gamma=4,deltaF=0/100,gammaW=20,deltaT=0,isS=False,isNoMove=False):
     delta= timeL[1]-timeL[0]
     #print(timeL[0],timeL[-1])
     fMax  = 1/(delta)
@@ -3624,12 +3624,6 @@ def calPhi__(data,timeL,f,tRef,gamma=4,deltaF=0/100,gammaW=20,deltaT=0,isS=False
     #f=np.unique(f)
     for i in range(len(f)):
         TRef = tRef[i]
-        '''
-        if isStr:
-            i0 = np.abs(timeL-TRef+0.75/f[i]).argmin()
-            i1 = np.abs(timeL-TRef-0.75/f[i]).argmin()
-        else:
-        '''
         i0 = np.abs(timeL-TRef*0.75+0.25/f[i]).argmin()
         i1 = np.abs(timeL-TRef*1.25-0.25/f[i]).argmin()
         iN0 = np.abs(timeL-TRef*1.8).argmin()
@@ -3643,10 +3637,7 @@ def calPhi__(data,timeL,f,tRef,gamma=4,deltaF=0/100,gammaW=20,deltaT=0,isS=False
         F1=1/140
         gammaW0=20
         gammaW1=15
-        if isStr:
-            gammaW = 20
-        else:
-            gammaW = 20#((np.log(F)-np.log(F0))*gammaW1+(np.log(F1)-np.log(F))*gammaW0)/(np.log(F1)-np.log(F0))
+        gammaW = 20#((np.log(F)-np.log(F0))*gammaW1+(np.log(F1)-np.log(F))*gammaW0)/(np.log(F1)-np.log(F0))
         wn = 2*np.pi*F
         alpha = gamma**2 * wn
         t0 = np.sqrt( emin * np.log(10) * 4 * alpha) / wn
@@ -3661,17 +3652,12 @@ def calPhi__(data,timeL,f,tRef,gamma=4,deltaF=0/100,gammaW=20,deltaT=0,isS=False
         x1x2h = x1x2h[it0-1:len(data)+it0-1]
         x1x2h = signal.detrend(x1x2h)
         if isS:
+            #print(len(x1x2h))
             S0.append(x1x2h.copy())
+        #x1x2h -=x1x2h.mean()
         if i0>=i1:
             i1=i0+1
-        if isStr:
-            #indexMax= (x1x2h[i0:i1]).argmax()+i0
-            iL,vL=mathFunc.getDetec(x1x2h[i0:i1],minValue=0.1*x1x2h[i0:i1].max(),minDelta=int(T/delta*0.6))
-            if len(iL)==0:
-                iL = np.array([0])
-            indexMax=iL[np.abs(timeL[iL+i0]-TRef).argmin()]+i0
-        else:
-            indexMax= np.abs(x1x2h[i0:i1]).argmax()+i0
+        indexMax= np.abs(x1x2h[i0:i1]).argmax()+i0
         #print(timeL[indexMax]/TRef)
         if isNoMove:
             indexMax= np.abs(timeL-TRef).argmin()
@@ -3685,101 +3671,6 @@ def calPhi__(data,timeL,f,tRef,gamma=4,deltaF=0/100,gammaW=20,deltaT=0,isS=False
         std[i] = aMax/noise
         if isS:
             S1.append(x1x2h.copy())
-    if isS:
-        return Phi,std,np.array(S0),np.array(S1)
-    return Phi,std
-
-def calPhi(data,timeL,f,tRef,gamma=4,deltaF=0/100,gammaW=20,deltaT=0,isS=False,isNoMove=False,isStr=False,onlyS0=False,isMat=False):
-    isStr=False
-    delta= timeL[1]-timeL[0]
-    #print(timeL[0],timeL[-1])
-    fMax  = 1/(delta)
-    N = len(timeL)
-    fMin = fMax/N
-    Phi = f*0
-    std = f*0
-    emin=7
-    if isS or onlyS0:
-        S0=[]
-        S1=[]
-    #f= np.round(f/fMin)*fMin
-    #f=np.unique(f)
-    for i in range(len(f)):
-        '''
-        if isStr:
-            i0 = np.abs(timeL-TRef+0.75/f[i]).argmin()
-            i1 = np.abs(timeL-TRef-0.75/f[i]).argmin()
-        else:
-        '''
-        F = f[i]
-        T = 1/f[i]
-        #gammaW=20
-        F0=1/10
-        F1=1/140
-        gammaW0=20
-        gammaW1=15
-        if isStr:
-            gamma = 20
-            gammaW = 20
-        else:
-            gammaW = 20#((np.log(F)-np.log(F0))*gammaW1+(np.log(F1)-np.log(F))*gammaW0)/(np.log(F1)-np.log(F0))
-        wn = 2*np.pi*F
-        alpha = gamma**2 * wn
-        t0 = np.sqrt( emin * np.log(10) * 4 * alpha) / wn
-        it0 =  t0/delta;
-        it0 = round(it0/2) * 2
-        nfil = it0 * 2 - 1
-
-        tfil = delta *  ( np.arange(nfil) - it0+1 )
-        yfil = wn / (2 * np.sqrt( np.pi * alpha )) * np.exp( - wn**2 / ( 4 * alpha ) * tfil**2)
-        yfil = (yfil * np.cos( wn * tfil )).astype(np.float32)
-        if isMat:
-            x1x2h=np.apply_along_axis(signal.fftconvolve,1,data,yfil)[:,it0-1:data.shape[1]+it0-1]
-            x1x2h = signal.detrend(x1x2h,axis=1)
-        else:
-            x1x2h = signal.fftconvolve(data,yfil)
-            x1x2h = x1x2h[it0-1:len(data)+it0-1]
-            x1x2h = signal.detrend(x1x2h)
-        if isS:
-            S0.append(x1x2h.copy())
-        if onlyS0:
-            if isMat:
-                S0.append(x1x2h.reshape([data.shape[0],data.shape[1],1]))
-            else:
-                S0.append(x1x2h)
-            continue
-        TRef = tRef[i]
-        i0 = np.abs(timeL-TRef*0.75+0.25/f[i]).argmin()
-        i1 = np.abs(timeL-TRef*1.25-0.25/f[i]).argmin()
-        iN0 = np.abs(timeL-TRef*1.8).argmin()
-        iN1 = np.abs(timeL-TRef*2.5).argmin()
-        iN0 = int(0.75*len(timeL))
-        iN1 = -1
-        if i0>=i1:
-            i1=i0+1
-        if isStr:
-            #indexMax= (x1x2h[i0:i1]).argmax()+i0
-            iL,vL=mathFunc.getDetec(x1x2h[i0:i1],minValue=0.1*x1x2h[i0:i1].max(),minDelta=int(T/delta*0.6))
-            if len(iL)==0:
-                iL = np.array([0])
-            indexMax=iL[np.abs(timeL[iL+i0]-TRef).argmin()]+i0
-        else:
-            indexMax= np.abs(x1x2h[i0:i1]).argmax()+i0
-        #print(timeL[indexMax]/TRef)
-        if isNoMove:
-            indexMax= np.abs(timeL-TRef).argmin()
-        aMax= np.abs(x1x2h[i0:i1]).max()
-        noise=(x1x2h[iN0:iN1]).std()
-        alpha = (gammaW)**2 * wn
-        h = ((np.arange(len(data))-indexMax)*delta)**2 * wn**2 / (4*alpha);
-        h = np.exp(-h).astype(np.float32);
-        x1x2h = x1x2h * h
-        Phi[i] =np.angle(calSpec(x1x2h,timeL,np.array([F])))[0]
-        std[i] = aMax/noise
-        if isS:
-            S1.append(x1x2h.copy())
-    if onlyS0:
-        return S0
     if isS:
         return Phi,std,np.array(S0),np.array(S1)
     return Phi,std
@@ -3839,7 +3730,7 @@ def compareList(i0, i1):
 isRandVMM=True
 class corrL(list):
 
-    def __init__(self, *argv,vmax=5.0,vmin=1.5,vL=np.arange(1,5,0.005), **kwargs):
+    def __init__(self, *argv,vmax=5.0,vmin=1.5,vL=np.arange(1.5,5.5,0.01), **kwargs):
         super().__init__()
         if len(argv) > 0:
             for tmp in argv[0]:
@@ -3866,11 +3757,11 @@ class corrL(list):
                     pass
                 self.append(tmp)
         self.iL = np.arange(0)
-        self.vL = vL
         self.timeDisArgv = ()
         self.timeDisKwarg = {}
         self.vmax=vmax
         self.vmin=vmin
+        self.vL=vL
 
     def reSetUp(self, up=1):
         for corr in self:
@@ -4145,7 +4036,7 @@ class corrL(list):
         self.timeDisKwarg = kwargs
         self.iL = np.arange(0)
 
-    def __call__(self, iL,FT=False,dI=20,isByT=False,gamma=20,FC=False,isOrigin=True):
+    def __call__(self, iL,FT=False):
         (self.getTimeDis)(iL, *(self.timeDisArgv), **self.timeDisKwarg)
         if FT:
             '''
@@ -4156,59 +4047,19 @@ class corrL(list):
             self.dDisL = dDisL
             '''
             vL= self.vL
-            T = self.T
-            #ABL=[signal.butter(4,[1/T-,1/(T*0.95)],'bandpass',fs=1/self.deltaL[0]) for T in T]
-            #X = np.array([signal.filtfilt(ABL[i][0],ABL[i][1],self.x[:,:,0,0],axis=1)for i in range(len(self.T))]).reshape([len(T),len(self.x),self.x.shape[1]])
-            #X = []
-            #for i in range(len(self.x)):
-            timeL =np.arange(self.x.shape[0])*self.deltaL[0]+self.t0L[0]
-            X=np.concatenate(calPhi(self.x[:,:,0,0],timeL,1/T,T,onlyS0=True,isMat=True,gamma=gamma),axis=-1)
-            #print(X.shape)
+            TL = self.TL
+            ABL=[signal.butter(4,[1/(T+3),1/(T-3)],'bandpass',fs=1/self.deltaL[0]) for T in TL]
+            X = np.array([signal.filtfilt(ABL[i][0],ABL[i][1],self.x[:,:,:,0],axis=1)for i in range(len(self.TL))]).reshape([len(TL),len(self.x),self.x.shape[1]])
             x=[]
             y=[]
             for i in range(len(self.x)):
-                tmpX = X[i,:,:]
+                tmpX = X[:,i,:].transpose()
                 tmpY = self.y[i,:,0,:]
-                indexL = np.round((self.dDisL[i]/vL-self.t0L[i])/self.deltaL[i]).astype(np.int)
-                indexL[indexL>=self.x.shape[1]]=self.x.shape[1]-1
+                indexL = ((self.dDisL[i]/vL-self.t0L[i])/self.deltaL[i]).astype(np.int)
                 x.append(tmpX[indexL])
-                Y = tmpY[indexL]
-                if not isByT:
-                    maxI = Y.argmax(axis=0)
-                    maxY = Y.max(axis=0)
-                    Y=np.exp(-(np.arange(len(Y)).reshape([-1,1])-maxI.reshape([1,-1]))**2/dI**2)
-                    Y[:,maxY<0.5]=0
-                y.append(Y)
-                if 'disRandA' in self.timeDisKwarg:
-                    disRandA=self.timeDisKwarg['disRandA']
-                    disMaxR=self.timeDisKwarg['disMaxR']
-                    t=self.dDisL[i]/vL.reshape([-1,1])
-                    tMax = T.reshape([1,-1])/disRandA
-                    tMin = T.reshape([1,-1])/disMaxR
-                    y[-1][t<tMin]=-0.02
-                    y[-1][t>tMax]=-0.02
-            return np.array(x).reshape([-1,len(vL),len(T),1]),np.array(y).reshape([-1,len(vL),len(T),1]),self.t0L
-        if FC:
-            '''
-            self.y = y
-            self.randIndexL = randIndexL
-            self.t0L = t0L
-            self.t0FL = t0FL
-            self.dDisL = dDisL
-            '''
-            vL= self.vL
-            T = self.T
-            #ABL=[signal.butter(4,[1/T-,1/(T*0.95)],'bandpass',fs=1/self.deltaL[0]) for T in T]
-            #X = np.array([signal.filtfilt(ABL[i][0],ABL[i][1],self.x[:,:,0,0],axis=1)for i in range(len(self.T))]).reshape([len(T),len(self.x),self.x.shape[1]])
-            #X = []
-            #for i in range(len(self.x)):
-            timeL =np.arange(self.x.shape[1])*self.deltaL[0]+self.t0L[0]
-            X=np.concatenate([self.x[:,:,0,:1],self.x[:,:,0,1:]]+calPhi(self.x[:,:,0,0],timeL,1/T,T,onlyS0=True,isMat=True,gamma=gamma),axis=-1)
-            #print(X.shape)
-            X/=np.abs(X+1e-7).max(axis=1,keepdims=True)
-            if not isOrigin:
-                X[:,:,:,0]=0
-            return X.reshape([X.shape[0],len(timeL),1,-1]),self.y,self.t0L
+                y.append(tmpY[indexL])
+            return np.array(x),np.array(y),self.t0L
+
         return (self.x, self.y, self.t0L)
 
     def newCall(self, iL):
@@ -4322,8 +4173,8 @@ class corrL(list):
             vmax=self.vmax
             vmin=self.vmin
             if isRandVMM:
-                vmax=self.vmax*(np.random.rand()*0.3+0.85)
-                vmin=self.vmin*(np.random.rand()*0.3+0.85)
+                vmax=self.vmax*(np.random.rand()*0.2+0.9)
+                vmin=self.vmin*(np.random.rand()*0.2+0.9)
             timeMin = dDis / vmax-fromT
             timeMax = dDis / vmin-fromT
             I0 = int(np.round(timeMin / delta0).astype(np.int))
@@ -4363,9 +4214,9 @@ class corrL(list):
         self.y = y
         self.randIndexL = randIndexL
         self.t0L = t0L
-        self.T  = T
         self.t0FL = t0FL
         self.dDisL = dDisL
+        self.TL = TL
         self.deltaL = deltaL
     def clear(self):
         self.x=0
@@ -4939,7 +4790,7 @@ class corrD(dict):
 
         self.keyL = list(self.keys())
 
-    def __call__(self, keyL=[], mul=1, N=-1,isRand=True,isSyn=False,isNoise=False,FT=False,FC=False,isOrigin=True):
+    def __call__(self, keyL=[], mul=1, N=-1,isRand=True,isSyn=False,isNoise=False):
         N0 = N
         iL = []
         if len(keyL) == 0:
@@ -4976,9 +4827,7 @@ class corrD(dict):
             np.random.shuffle(iLNew)
             iL = iLNew.reshape([-1])
         #print(len(iL))
-        x, y, t = self.corrL(np.array(iL),FT=FT,FC=FC,isOrigin=isOrigin)
-        if FT:
-            return x,y,t
+        x, y, t = self.corrL(np.array(iL))
         return (x.reshape([-1, mul, x.shape[1], x.shape[(-1)]]).transpose([0, 2, 1, 3]), y.reshape([-1, mul, y.shape[1], y.shape[(-1)]]).transpose([0, 2, 1, 3]), t.reshape([-1, mul]))
     def getAndSaveOld(self, model, fileName, stations, isPlot=False, isSimple=True, D=0.2, isLimit=False, isFit=False, minProb=0.7, mul=1):
         if 'T' in self.corrL.timeDisKwarg:
@@ -5007,23 +4856,6 @@ class corrD(dict):
             x, y, t = self(keyL=keyL[i:min(i+per,len(keyL))],mul=mul)
             Y = model.predict(x)
             v, prob, vM, probM = self.corrL.getV((Y.transpose([0, 2, 1, 3]).reshape([-1, Y.shape[1], 1, Y.shape[(-1)]])), isSimple=isSimple, D=D, isLimit=isLimit, isFit=isFit)
-            self.corrL.saveV(v, prob, T, (self.corrL.iL), stations, resDir=resDir, minProb=minProb)
-            self.corrL.clear()
-    def getAndSaveOldPerFT(self, model, fileName, stations, isPlot=False, isSimple=True, D=0.2, isLimit=False, isFit=False, minProb=0.7, mul=1,per=100):
-        if 'T' in self.corrL.timeDisKwarg:
-            T = self.corrL.timeDisKwarg['T']
-        else:
-            T = self.corrL.timeDisArgv[1]
-        resDir = os.path.dirname(fileName)
-        if not os.path.exists(resDir):
-            os.makedirs(resDir)
-        keyL = self.keyL
-        for i in range(0,len(keyL),per):
-            print(i,'in',len(keyL) )
-            x, y, t = self(keyL=keyL[i:min(i+per,len(keyL))],mul=mul,FT=True)
-            Y = model.predict(x)
-            v = self.corrL.vL[Y.argmax(axis=1)]
-            prob =Y.max(axis=1)
             self.corrL.saveV(v, prob, T, (self.corrL.iL), stations, resDir=resDir, minProb=minProb)
             self.corrL.clear()
 
@@ -5263,78 +5095,6 @@ def showCorrD(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
             figL[nn].savefig('%s/%s_%s_%s.pdf'%(outputDir,head,kind,tail),dpi=500)
         for nn in range(number):
             plt.close()
-
-def showCorrDFT(x,y0,y,t,iL,corrL,outputDir,T,mul=6,number=3):
-    f = 1/T
-    dirName = os.path.dirname(outputDir)
-    if not os.path.exists(dirName):
-        os.makedirs(dirName)
-    cmap = plt.cm.bwr
-    norm = colors.Normalize(vmin=0, vmax=1)
-    pc =cm.ScalarMappable(norm=norm, cmap=cmap)
-    for i in range(len(x)):
-        plt.close()
-        axL=[]
-        caxL=[]
-        figL=[]
-        for nn in range(number):
-            fig=plt.figure(figsize=[3.2,1.6])
-            #axL.append(fig.add_subplot(projection='3d'))
-            axL.append(plt.gca())
-            figL.append(fig)
-            plt.gca().set_position([0.16,0.32,0.7,0.58])
-            ax_divider = make_axes_locatable(axL[-1])
-            caxL.append(ax_divider.append_axes('bottom', size="10%", pad="70%",))
-        for j in range(1):
-            print(j)
-            index= iL[i,j]
-            if j==0:
-                sta0,sta1 = corrL[index].modelFile.split('_')[-2:]
-                head = sta0+'_'+sta1
-            vL = corrL.vL[y0[i,:,:,0].argmax(axis=0)]
-            vL[y0[i,:,:,0].max(axis=0)<0.5]=np.nan
-            pc=axL[0].pcolormesh(corrL.vL,1/T,x[i,:,:,0].transpose(),vmin=-1,vmax=1,cmap='bwr',rasterized=True)
-            axL[0].plot(vL,1/T,'k',linewidth=0.5)
-            #plt.legend()
-            #axL[0].set_xlim(xlim)
-            #axL[0].set_ylim(ylim)
-            axL[0].set_xlabel('$v$(km/s)')
-            axL[0].set_ylabel('$f(Hz)$')
-            cbar=plt.colorbar(pc, cax=caxL[0], orientation="horizontal")
-            cbar.set_label('D')
-            #axL[0].set_yticks(np.arange(mul))
-            #axL[0].set_yticks([-2,0,2])
-            #caxL[0].axis('off')
-            #figureSet.setColorbar(None,label='Probability',pos='bottom',isAppend=False)
-            #plt.clim(0,1)
-            #pc=plt.pcolormesh(timeLOut,f,tmpy0.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
-            pc=axL[1].pcolormesh(corrL.vL,1/T,y0[i,:,:,0].transpose(),vmin=0,vmax=1,cmap='bwr',rasterized=True)
-            axL[1].set_xlabel('$v$(km/s)')
-            axL[1].set_ylabel('$f(Hz)$')
-            cbar=plt.colorbar(pc, cax=caxL[1], orientation="horizontal")
-            cbar.set_label('Probability')
-            #plt.colorbar(label='Probility')
-            if number==3:
-                #pc=plt.pcolormesh(timeLOut,f,tmpy.transpose(),cmap='bwr',vmin=0,vmax=1,rasterized=True,zs=j,zdir='y')
-                pc=axL[2].pcolormesh(corrL.vL,1/T,y[i,:,:,0].transpose(),vmin=0,vmax=1,cmap='bwr',rasterized=True)
-                axL[2].plot(vL,1/T,'k',linewidth=0.5)
-                axL[2].set_xlabel('$v$(km/s)')
-                axL[2].set_ylabel('$f(Hz)$')
-                cbar=plt.colorbar(pc, cax=caxL[2], orientation="horizontal")
-                cbar.set_label('Probability')
-        #plt.colorbar(label='Probility')
-        #plt.gca().semilogx()
-        for nn in range(number):
-            if number==3:
-                tail = 'with'
-                kind = ['wave','label','predict'][nn]
-            if number==2:
-                tail = 'without'
-                kind = ['wave','label'][nn]
-            figL[nn].savefig('%s/%s_%s_%s.pdf'%(outputDir,head,kind,tail),dpi=500)
-        for nn in range(number):
-            plt.close()
-
 
 def analyModel(depth, v, resDir='predict/KEA20/'):
     if not os.path.exists(resDir):
@@ -5676,13 +5436,6 @@ def corrSac(d, sac0, sac1, name0='', name1='', quakeName='', az=np.array([0, 0])
     corr.srcSac = srcSac
     corr.quakeName = quakeName
     return corr
-
-def corrSacSimple(sac0,sac1,time0=-100,time1=100,dDis=0):
-    x=signal.correlate(sac0.data,sac1.data)
-    timeL = sac0.stats.starttime.timestamp-sac1.stats.starttime.timestamp+np.arange(-len(sac1.data)+1,len(sac0.data))*sac0.stats['delta']
-    i0 = np.abs(timeL-time0).argmin()
-    i1 = np.abs(timeL-time1).argmin()
-    return corr(x[i0:i1],timeL[i0:i1],dDis=dDis,fs=1/sac0.stats['delta'],dis=[dDis,0],modelFile='ref',)
 
 
 iasp91 = taup(phase_list=['S', 's'])

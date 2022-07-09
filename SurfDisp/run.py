@@ -72,7 +72,7 @@ class runConfig:
 		sacPara = {#'pre_filt': (1/500, 1/350, 1/2, 1/1.5),\
 				   'output':'DISP','freq':[1/160,1/8],\
 					#[1/250,1/8*0+1/6]
-					'delta0':0.25,
+					'delta0':0.5,
 				   'filterName':'bandpass',\
 				   'corners':4,'toDisp':False,\
 				   'zerophase':True,'maxA':1e15,'gaussianTail':800}
@@ -170,7 +170,11 @@ def output(M,S,file,isRand='T',method='SurfNet',isStd=True):
 
 disRandA=1/15
 disMaxR =1
-delta   =0.25
+disRandA=1/40
+disMaxR =5
+disRandA=1/15
+disMaxR =1
+delta   =0.5
 up=2
 defaultTrainSetDir ='/media/jiangyr/1TSSD/trainSet/'
 defaultMatSaveDir ='/media/jiangyr/1TSSD/matDir/'
@@ -713,7 +717,46 @@ class run:
 		k  = (s1-s0)/(np.log(T[-1])**8-np.log(T[0])**8)
 		sigma = k*(np.log(T)**8-np.log(T[0])**8)+s0
 		return sigma.astype(np.float32)
-	def trainMul(self,isRand=True,isShuffle=False,isAverage=False,isRun=True,isAll=False,isAllTrainSyn=False,**kwargs):
+	def SigmaFT(self):
+		sigma = np.ones(len(self.config.para['T']))
+		N =len(self.config.para['T'])
+		T = self.config.para['T']
+		N_5=int(N/5)
+		N_10=int(N/10)
+		N_20=int(N/20)
+		'''
+		sigma[:N_10]        = 1.7
+		sigma[1*N_10:2*N_10]   = 1.8
+		sigma[2*N_10:3*N_10]   = 1.8
+		sigma[3*N_10:4*N_10] = 1.85
+		sigma[4*N_10:5*N_10] = 1.95
+		sigma[5*N_10:6*N_10] = 2.0
+		sigma[6*N_10:7*N_10] = 2.5
+		sigma[7*N_10:8*N_10] = 3.5
+		sigma[8*N_10:9*N_10] = 3.8
+		sigma[9*N_10:10*N_10] = 4.6
+		sigma[9*N_10:10*N_10] = 4.8
+		'''
+		sigma[:N_10]        = 1.5
+		sigma[1*N_10:2*N_10]   = 1.75
+		sigma[2*N_10:3*N_10]   = 1.75
+		sigma[3*N_10:4*N_10] = 2.0
+		sigma[4*N_10:5*N_10] = 2.2
+		sigma[5*N_10:6*N_10] = 2.4
+		sigma[6*N_10:7*N_10] = 2.8
+		sigma[7*N_10:8*N_10] = 3.2
+		sigma[8*N_10:9*N_10] = 3.6
+		sigma[9*N_10:10*N_10] = 4.2
+		sigma[9*N_10:10*N_10] = 4.5
+		s0 = 4
+		s1 = 10
+		#s0 = 4
+		#s1 = 16:：
+		k  = (s1-s0)/(np.log(T[-1])**8-np.log(T[0])**8)
+		sigma = k*(np.log(T)**8-np.log(T[0])**8)+s0
+		return sigma.astype(np.float32)
+	
+	def trainMul(self,isRand=True,isShuffle=False,isAverage=False,isRun=True,isAll=False,isAllTrainSyn=False,k0=1e-3,FT=False,FC=False,isOrigin=True,**kwargs):
 		if isAll:
 			corrL = self.corrL
 		else:
@@ -775,7 +818,10 @@ class run:
 			fvD =self.fvD0
 		isGuassianMove = False
 		randR=0.5
-		sigma=self.Sigma()
+		if FT:
+			sigma=run.SigmaFT(self)
+		else:
+			sigma=self.Sigma()
 		self.config.sigma=sigma
 		self.corrLTrain.setTimeDis(fvD,tTrain,sigma=sigma,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=5e-4,byAverage=False,\
@@ -784,11 +830,11 @@ class run:
 		self.corrLTest.setTimeDis(fvD,tTrain,sigma=sigma,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=5e-4,byAverage=False,\
 		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,isGuassianMove=isGuassianMove,\
-			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'],fvDSyn=self.fvDSynTest,disRandA=disRandA,disMaxR=disMaxR,**kwargs)
+			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'],fvDSyn=self.fvDSynTest,disRandA=disRandA,disMaxR=disMaxR,isAllSyn=isAllTrainSyn,**kwargs)
 		self.corrLValid.setTimeDis(fvD,tTrain,sigma=sigma,maxCount=para['maxCount'],\
 		byT=False,noiseMul=0.0,byA=False,rThreshold=5e-4,byAverage=False,\
 		set2One=para['set2One'],move2Int=para['move2Int'],randMove=True,isGuassianMove=isGuassianMove,\
-			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'],fvDSyn=self.fvDSynValid,disRandA=disRandA,disMaxR=disMaxR,**kwargs)
+			randA=para['randA'],randR=randR,midV=para['midV'],mul=para['mul'],disAmp=para['disAmp'],fromT=para['fromT'],fvDSyn=self.fvDSynValid,disRandA=disRandA,disMaxR=disMaxR,isAllSyn=isAllTrainSyn,**kwargs)
 		#self.loadModel()
 		self.corrDTrain = d.corrD(self.corrLTrain)
 		self.corrDTest = d.corrD(self.corrLTest)
@@ -802,7 +848,7 @@ class run:
 		
 		if isRun:
 			self.config.para['modelFile']=fcn.trainAndTestMul(self.model,self.corrDTrain,self.corrDValid,self.corrDTest,\
-							outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=2048,count0=3,w0=1,k0=1e-3,mul=para['mul'])#w0=3#4
+							outputDir=para['trainDir'],sigmaL=[sigma],tTrain=tTrain,perN=1024,count0=3,w0=1,k0=k0,mul=para['mul'],FT=FT,FC=FC,isOrigin=isOrigin)#w0=3#4
 		self.corrLTrain.clear()
 		self.corrLValid.clear()
 		self.corrLTest.clear()
@@ -896,6 +942,26 @@ class run:
 			if 'delta0' in self.config.para['sacPara']:
 				delta = self.config.para['sacPara']['delta0']
 			self.model = fcn.modelUp(channelList=[0,1],up=self.config.para['up'],mul=self.config.para['mul'],randA=self.config.para['randA'],TL=self.config.para['T'],disRandA=disRandA,disMaxR=disMaxR,maxCount=self.config.para['maxCount'],delta=delta)
+			self.weight0 = self.model.get_weights()
+		self.model.set_weights(self.weight0)
+		if file != '':
+			self.model.load_weights(file, by_name= True)
+	def loadModelFT(self,file=''):
+		if self.model == None:
+			fcn.defProcess()
+			if 'delta0' in self.config.para['sacPara']:
+				delta = self.config.para['sacPara']['delta0']
+			self.model = fcn.modelFT(channelList=[0,1],up=self.config.para['up'],mul=self.config.para['mul'],randA=self.config.para['randA'],TL=self.config.para['T'],disRandA=disRandA,disMaxR=disMaxR,maxCount=400,delta=delta)
+			self.weight0 = self.model.get_weights()
+		self.model.set_weights(self.weight0)
+		if file != '':
+			self.model.load_weights(file, by_name= True)
+	def loadModelFC(self,file=''):
+		if self.model == None:
+			fcn.defProcess()
+			if 'delta0' in self.config.para['sacPara']:
+				delta = self.config.para['sacPara']['delta0']
+			self.model = fcn.modelFC(channelList=[0,1],up=self.config.para['up'],mul=self.config.para['mul'],randA=self.config.para['randA'],TL=self.config.para['T'],disRandA=disRandA,disMaxR=disMaxR,maxCount=self.config.para['maxCount'],delta=delta)
 			self.weight0 = self.model.get_weights()
 		self.model.set_weights(self.weight0)
 		if file != '':
@@ -1070,7 +1136,7 @@ class run:
 							corrD=0
 							corrL = d.corrL()
 						gc.collect()
-	def calFromCorrL(self,isRand=False):
+	def calFromCorrL(self,isRand=False,FT=False):
 		para = self.config.para
 		fvDAverage={}
 		fvDAverage[para['refModel']]=d.fv(para['refModel']+'_fv_flat_new_p_0','file')
@@ -1080,7 +1146,11 @@ class run:
 		self.corrL.reSetUp(up=para['up'])
 		corrD = d.corrD(self.corrL)
 		print('predicting')
-		corrD.getAndSaveOldPer(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
+		if FT:
+			corrD.getAndSaveOldPerFT(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
+		,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'],mul=para['mul'],per=20)
+		else:
+			corrD.getAndSaveOldPer(self.model,'%s/CEA_P_'%para['resDir'],self.stations\
 		,isPlot=False,isLimit=False,isSimple=True,D=0.2,minProb = para['minProb'],mul=para['mul'],per=20)
 		corrD.corrL.clear()
 		gc.collect()
@@ -1193,12 +1263,12 @@ class run:
 		self.fvAvGetO={}
 		for key in self.fvAvGet:
 			self.fvAvGetO[key]=self.fvAvGet[key].copy()
-	def showTest(self,isSyn=False,isNoise=False):
+	def showTest(self,isSyn=False,isNoise=False,FT=False):
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/waveform/'
 		corrD = d.corrD(self.corrDTest.corrL)
 		mul   = self.config.para['mul']
 		T     = self.config.para['T']
-		x,y0,t= corrD(mul=mul,N=1,isRand=False,isSyn=isSyn,isNoise=isNoise)
+		x,y0,t= corrD(mul=mul,N=1,isRand=False,isSyn=isSyn,isNoise=isNoise,FT=FT)
 		if isSyn:
 			resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/waveform/syn/'
 		if isNoise:
@@ -1206,7 +1276,10 @@ class run:
 		y =  self.model.predict(x)
 		x   =  self.model.inx(x)
 		iL  = np.array(corrD.corrL.iL).reshape([-1,mul])
-		d.showCorrD(x,y0,y,t,iL,corrD.corrL,resDir,T,mul=mul,number=3)
+		if FT:
+			d.showCorrDFT(x,y0,y,t,iL,corrD.corrL,resDir,T,mul=mul,number=3)
+		else:
+			d.showCorrD(x,y0,y,t,iL,corrD.corrL,resDir,T,mul=mul,number=3)
 		#d.showCorrD(x,y0,y,t,iL,corrD.corrL,resDir,T,mul=mul,number=3)
 	def showSigma(self,format='eps'):
 		resDir = 'predict/'+self.config.para['resDir'].split('/')[-2]+'/'
@@ -1740,17 +1813,17 @@ N3 =N1/3
 N4 =N1/4
 paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'stationFileL': ['../stations/CEA.sta_labeled_sort'],#**********'stations/CEA.sta_know_few'\
-	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220616-114906_model.h55',
+	'modelFile'   : '/home/jiangyr//Surface-Wave-Dispersion/SeismTool/predict/0130_0.95_0.05_3.2_randMove/resStr_220619-224756_model.h5',
 	'isLoadFvL'   : [True],#False********\
 	'byRecordL'   : [True],\
-	'maxCount'    : 512*12,\
+	'maxCount'    : 512*6,\
 	'minSNRL'     : [3],\
 	'time0'       : obspy.UTCDateTime(2009,10,16).timestamp,\
 	'oRemoveL'    : [False],\
 	'trainMatDir'	  :'/media/jiangyr/1TSSD/',\
 	'matDir'	  :'/media/jiangyr/1TSSD/matDirAll/',\
 	'trainH5'	  :'/media/jiangyr/1TSSD/trainSet.h5',\
-	'matH5'	  :'/media/jiangyr/1TSSD/trainTest5Hz_20220402_snrSTD3_noX01_V8000000.h5',#/media/jiangyr/1TSSD/trainTest2Hz_0_New8_snrSTD2.5V8.h5
+	'matH5'	  :'/media/jiangyr/1TSSD/trainTest2Hz_20220402_snrSTD3_noX01_V9000000.h5',#/media/jiangyr/1TSSD/trainTest2Hz_0_New8_snrSTD2.5V8.h5
 	'badFile' : 'data/badFVDV3',
 	'randA'       : 0.04,\
 	'disAmp'      : 1,\
@@ -1763,7 +1836,7 @@ paraTrainTest={ 'quakeFileL'  : ['CEA_quakesAll'],\
 	'set2One'	  : False,
 	'trainDir'    : 'predict/0130_0.95_0.05_3.2_randMove/',\
 	'synDir'      : 'predict/model/syn/',\
-	'resDir'      : '/media/jiangyr/MSSD/20220613_it2_0.02_V3_relu_deeper/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
+	'resDir'      : '/media/jiangyr/MSSD/20220613_it2_0.02_V120_relu_deeper/',#'models/ayu/Pairs_pvt/',#'results/1001/',#'results/1005_allV1/',\
 	'perN'        : 20,\
 	'eventDir'    : '/media/jiangyr/1TSSD/eventSac/',\
 	'z'           :[0,5,10,15,20,25,30,35,40,45,50,60,70,80,100,120,150,180,220,280,320,380,500],#[0,4,8,12,16,20,25,30,35,40,45,50,60,70,80,100,120,150,180,220,300,380,500],#[5,10,20,30,45,60,80,100,125,150,175,200,250,300,350](350**(np.arange(0,1.01,1/18)+1/18)).tolist(),\

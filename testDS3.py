@@ -1,3 +1,4 @@
+from xml.etree.ElementTree import TreeBuilder
 from matplotlib import colors
 from SeismTool.plotTool import figureSet
 from SeismTool.SurfDisp.src.disp import calDisp as surf96
@@ -11,13 +12,15 @@ findBad = False
 isCheckBad=False
 isNew = True
 isRun= True
+isFC=True
+isOrigin=True
 isDS = True
 isSave= True
 isPlot=True
 isAn= True
 isSurfNet = True
 isConv=  True
-doL=[1,2]
+doL=[1]
 isPredict= True
 isCheck=True
 isStaCheck = False
@@ -36,6 +39,7 @@ isNoise=True
 isTestMFT=True
 isAverage=False
 isControl = True
+isFromOld = False
 if False:
     isNew = True
     isRun= False
@@ -197,17 +201,17 @@ if isCheckSignal:
             allCount+=len(f)
             if len(corr.xx)==0:
                 continue
-            fvGet=run.d.corr.getFV(corr,f,fvRef,-100+f*0,100+f*0,1000+f*0,-0.03+f*0,0.03+f*0,minSNR=0+para['T']*0,N=100,v0=1.5,v1=5.,k=0,isControl=False,isByLoop=False,isStr=True)
+            fvGet=run.d.corr.getFV(corr,f,fvRef,-100+f*0,100+f*0,1000+f*0,-0.05+f*0,0.05+f*0,minSNR=0+para['T']*0,N=100,v0=1.5,v1=5.,k=0,isControl=False,isByLoop=False,isStr=True)
             #if 1/fvGet.f.min()-1/fvGet.f.max()<5:
             #    continue
             validCount+=len(fvGet.f)
             fvDGet[modelFile]=fvGet
-            if len(f)/len(fvGet.f)-1>0.1:
+            if len(f)/len(fvGet.f)-1>0.15:
                 print(modelFile,corr.dDis,corr.dis,'wrong')
                 continue
             getCount+=1
             print(validCount/allCount,getCount/fvCount,fvCount/len(fvd))
-    saveDir='../models/New/Pairs_pvtsel_5Hz_-384-1152-6-2-V60000/'
+    saveDir='../models/New/Pairs_pvtsel_2Hz_-384-1152-6-2-V60000-NoStr/'
     run.d.saveFVD(fvDGet,sta,q,saveDir,'pair',isOverwrite=True)
     #exit()
 
@@ -408,7 +412,9 @@ resDir = R.config.para['resDir']
 R.config.para['resDir']=resDir
 
 if isNew:
-    R.config.para['pairDirL'][0]='../models/New/Pairs_pvtsel_5Hz_-384-1152-6-2-V60000/'
+    R.config.para['pairDirL'][0]='../models/New/Pairs_pvtsel_2Hz_-384-1152-6-2-V60000-NoStr/'
+
+
 if not os.path.exists(R.config.para['matH5']):
     R.calCorrOneByOne()
 
@@ -518,10 +524,16 @@ if isSurfNet:
             if isRun:
                 #R.model=None
                 R.loadModelUp()
+                if isFromOld:
+                    R.loadModelUp(file=R.config.para['modelFile'])
             elif isPredict:
                 #R.model=None
                 R.loadModelUp(file=R.config.para['modelFile'])
-            run.run.trainMul(R,isAverage=isAverage,isRand=True,isShuffle=True,isRun=isRun,isAll=isAll,isNoise=isNoise,isAllTrainSyn=False)
+            if isFromOld:
+                k0=1e-3
+            else:
+                k0=1e-3
+            run.run.trainMul(R,isAverage=isAverage,isRand=True,isShuffle=True,isRun=isRun,isAll=isAll,isNoise=isNoise,isAllTrainSyn=False,k0=k0)
             if isTestSyn:
                 corrLOri = R.corrL
                 fvD0    = R.fvD0
@@ -656,6 +668,99 @@ if isSurfNet:
                     run.run.analyRes(R,thresholdAverage=thresholdAverage, thresholdSingle=thresholdSingle,format='eps',isHalf=isHalf,isAverage=isAverage)
             if False:
                 R.config.para['resDir']=resDir[:-1]+'_rand2__noDis/'
+                #R.config.para['randA'] = 0.05
+                if isRun:
+                    R.calFromCorrL(isRand=True)
+                run.run.loadRes(R,isCoverQC=isCoverQC,isDisQC=isDisQC)
+                run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+                run.run.getAV(R)
+                run.run.limit(R)
+                run.run.analyRes(R,format='eps')
+                if i==0:
+                    run.run.plotGetAvDis(R)
+                    run.run.plotGetDis(R)
+    if 3 in doL:
+        for i in range(N):
+            resDir=resDir0[:-1]+('_%d/'%i)
+            R.config.para['resDir']=resDir
+            R.config.para['disAmp']=1
+            tmpDir='predict/'+R.config.para['resDir'].split('/')[-2]+'/'
+            if not isRun:
+                if len(glob(tmpDir+'resOnTrainTestValid_0.0??'))>0:
+                    with open(glob(tmpDir+'resOnTrainTestValid_0.0??')[0]) as f:
+                        R.config.para['modelFile']=f.readline()[:-1]
+            #R.config.para['randA'] = 0.0
+            if isRun:
+                #R.model=None
+                run.run.loadModelFC(R)
+                if isFromOld:
+                    R.loadModelFC(file=R.config.para['modelFile'])
+            elif isPredict:
+                #R.model=None
+                R.loadModelFC(file=R.config.para['modelFile'])
+            if isFromOld:
+                k0=1e-3
+            else:
+                k0=1e-3
+            run.run.trainMul(R,isAverage=isAverage,isRand=True,isShuffle=True,isRun=isRun,isAll=isAll,isNoise=isNoise,isAllTrainSyn=False,k0=k0,FC=True,isOrigin=isOrigin)
+            if isTestSyn:
+                corrLOri = R.corrL
+                fvD0    = R.fvD0
+                resDir=R.config.para['resDir']
+                R.config.para['resDir']=resDir[:-1]+'_syn/'
+                if isRunSyn:
+                    R.corrL = corrLSyn
+                    R.calFromCorrL(isRand=False)
+                R.fvD0 = fvDSyn
+                run.run.loadRes(R,isCoverQC=isCoverQC)
+                fvTest = R.fvTest
+                R.fvTest = R.fvTest+R.fvValid+R.fvTrain
+                run.run.analyRes(R,thresholdAverage=thresholdAverage, thresholdSingle=thresholdSingle_syn,format='eps',onlySingle=True,isAverage=False)
+                R.fvTest = fvTest
+                R.corrL = corrLOri
+                R.fvD0  = fvD0
+                #corrLSyn = 0
+                #corr = 0
+                gc.collect()
+                R.config.para['resDir']=resDir
+                #continue
+            R.config.para['disAmp']=1
+            if isRun:
+                R.calFromCorrL(isRand=True)
+            run.run.loadRes(R,isCoverQC=isCoverQC)
+            run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob')
+            run.run.getAV(R)
+            run.run.limit(R)
+            if isAn:
+                run.run.analyRes(R,thresholdAverage=thresholdAverage, thresholdSingle=thresholdSingle,format='eps',isAverage=isAverage)
+            if i==0:
+                if isAn:
+                    run.run.plotGetAvDis(R)
+                    run.run.plotGetDis(R)
+                    R.plotTrainDis(isSyn=isSyn)
+                    R.plotStaDis(staPairStr=staPairStr)
+                R.plotStaDis(isAll=True,isAllQuake=True)
+                if isPredict:
+                    R.showTest()
+                    R.showTest(isSyn=True)
+                    R.showTest(isNoise=True)
+                R.preDS(isByTrain=True,do=isDS,isRun=isDS,isSameFre=False)
+                R.preDSTrain(do=isDS,isRun=isDS)
+                R.preDSSyn(isByTrain=True,do=isDS,isRun=isDS)
+            if isHalf!=False:
+                R.config.para['resDir']=resDir[:-1]+'_half/'
+                run.run.getAv(R,isCoverQC=isCoverQC,isDisQC=isDisQC,isWeight=False,weightType='prob',isHalf=isHalf)
+                run.run.getAV(R)
+                run.run.limit(R)
+                if isAn:
+                    run.run.analyRes(R,thresholdAverage=thresholdAverage, thresholdSingle=thresholdSingle,format='eps',isHalf=isHalf,isAverage=isAverage)
+            if isRePick:
+                R.config.para['resDir']=resDir[:-1]+'_re/'
+                if doRePick:
+                    R.rePick()
+                run.run.loadRes(R,isCoverQC=isCoverQC)
+            if False:
+                R.config.para['resDir']=resDir[:-1]+'_rand2/'
                 #R.config.para['randA'] = 0.05
                 if isRun:
                     R.calFromCorrL(isRand=True)
